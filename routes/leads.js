@@ -1,6 +1,7 @@
 const express = require('express');
 const OpenAI = require('openai');
 const XLSX = require('xlsx');
+const axios = require('axios');
 const router = express.Router();
 
 // Initialize OpenAI client
@@ -249,36 +250,64 @@ router.post('/complete-workflow', async (req, res) => {
         const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true } = req.body;
 
         console.log('🚀 Starting complete lead generation workflow...');
+        console.log('📋 Request body:', { jobTitles, companySizes, maxRecords, generateOutreach });
+        
+        // Check environment variables first
+        console.log('🔍 Environment check:');
+        console.log('- APIFY_API_TOKEN:', process.env.APIFY_API_TOKEN ? '✅ Set' : '❌ Missing');
+        console.log('- OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing');
+        
+        // Validate request data
+        if (!jobTitles || !Array.isArray(jobTitles) || jobTitles.length === 0) {
+            console.error('❌ Validation Error: Job titles missing or invalid');
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Job titles are required and must be a non-empty array'
+            });
+        }
+        
+        if (!companySizes || !Array.isArray(companySizes) || companySizes.length === 0) {
+            console.error('❌ Validation Error: Company sizes missing or invalid');
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Company sizes are required and must be a non-empty array'
+            });
+        }
 
         // Step 1: Generate Apollo URL
         console.log('📋 Step 1: Generating Apollo URL...');
-        const apolloResponse = await fetch(`${req.protocol}://${req.get('host')}/api/apollo/generate-url`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobTitles, companySizes })
-        });
-
-        if (!apolloResponse.ok) {
-            throw new Error('Failed to generate Apollo URL');
+        let apolloData;
+        try {
+            const apolloResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/generate-url`, {
+                jobTitles,
+                companySizes
+            }, {
+                timeout: 30000
+            });
+            apolloData = apolloResponse.data;
+        } catch (axiosError) {
+            console.error('❌ Apollo URL generation error:', axiosError.response?.data || axiosError.message);
+            throw new Error(`Failed to generate Apollo URL: ${axiosError.response?.data?.message || axiosError.message}`);
         }
 
-        const { apolloUrl } = await apolloResponse.json();
-        console.log('✅ Apollo URL generated successfully');
+        const { apolloUrl } = apolloData;
+        console.log('✅ Apollo URL generated successfully:', apolloUrl);
 
         // Step 2: Scrape leads from Apollo
         console.log('🔍 Step 2: Scraping leads from Apollo...');
-        const scrapeResponse = await fetch(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ apolloUrl, maxRecords })
-        });
-
-        if (!scrapeResponse.ok) {
-            const scrapeError = await scrapeResponse.json();
-            throw new Error(scrapeError.message || 'Failed to scrape leads');
+        let scrapeData;
+        try {
+            const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
+                apolloUrl,
+                maxRecords
+            }, {
+                timeout: 180000 // 3 minutes for scraping
+            });
+            scrapeData = scrapeResponse.data;
+        } catch (axiosError) {
+            console.error('❌ Apollo scraping error:', axiosError.response?.data || axiosError.message);
+            throw new Error(`Failed to scrape leads: ${axiosError.response?.data?.message || axiosError.message}`);
         }
-
-        const scrapeData = await scrapeResponse.json();
         const { leads, metadata: scrapeMetadata } = scrapeData;
 
         console.log(`✅ Successfully scraped ${leads.length} leads from Apollo`);
@@ -309,21 +338,19 @@ router.post('/complete-workflow', async (req, res) => {
             console.log(`🤖 Step 3: Generating AI outreach for ${leads.length} leads...`);
             
             try {
-                const outreachResponse = await fetch(`${req.protocol}://${req.get('host')}/api/leads/generate-outreach`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ leads })
+                const outreachResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/leads/generate-outreach`, {
+                    leads
+                }, {
+                    timeout: 300000 // 5 minutes for outreach generation
                 });
 
-                if (outreachResponse.ok) {
-                    const outreachData = await outreachResponse.json();
-                    finalLeads = outreachData.leads;
+                if (outreachResponse.data) {
+                    finalLeads = outreachResponse.data.leads;
                     console.log('✅ AI outreach content generated successfully');
-                } else {
-                    console.warn('⚠️ Outreach generation failed, continuing without it');
                 }
             } catch (outreachError) {
-                console.warn('⚠️ Outreach generation error:', outreachError.message);
+                console.warn('⚠️ Outreach generation error:', outreachError.response?.data || outreachError.message);
+                // Continue without outreach generation on error
             }
         }
 
