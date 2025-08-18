@@ -126,9 +126,15 @@ router.post('/scrape-leads', async (req, res) => {
                     {
                         headers: {
                             'Accept': 'application/json',
-                            'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`
+                            'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                            'Connection': 'keep-alive',
+                            'User-Agent': 'LGA-Lead-Generator/1.0'
                         },
-                        timeout: 0 // No timeout - let it run until completion
+                        timeout: 0, // No timeout - let it run until completion
+                        maxRedirects: 5,
+                        validateStatus: function (status) {
+                            return status < 500; // Resolve only if status is less than 500
+                        }
                     }
                 ).catch(error => {
                     // Remove sensitive data from error logs
@@ -146,16 +152,32 @@ router.post('/scrape-leads', async (req, res) => {
                 console.error(`❌ Attempt ${retryCount}/${maxRetries + 1} failed:`, error.code || error.message);
                 
                 if (retryCount > maxRetries) {
-                    // All retries exhausted
+                    // All retries exhausted - provide specific error messages
                     if (error.code === 'ECONNABORTED') {
                         throw new Error(`Apollo scraping was interrupted. Please try again with fewer records (current: ${recordLimit}) or check your network connection.`);
+                    } else if (error.code === 'ECONNRESET' || error.message.includes('socket hang up') || error.message.includes('ECONNRESET')) {
+                        throw new Error(`Network connection lost during scraping. This may be due to high server load. Please try again in a few minutes or reduce the record count (current: ${recordLimit}).`);
+                    } else if (error.code === 'ETIMEDOUT' || error.message.includes('ETIMEDOUT')) {
+                        throw new Error(`Network timeout during scraping. Please check your internet connection and try again.`);
+                    } else if (error.response && error.response.status === 429) {
+                        throw new Error(`Apify API rate limit exceeded. Please wait a few minutes before trying again.`);
+                    } else if (error.response && error.response.status >= 500) {
+                        throw new Error(`Apify server error (${error.response.status}). Please try again in a few minutes.`);
                     } else {
                         throw new Error(`Apify scraper failed after ${maxRetries + 1} attempts: ${error.message}`);
                     }
                 } else {
-                    // Wait before retry (exponential backoff)
-                    const waitTime = Math.pow(2, retryCount - 1) * 5000; // 5s, 10s delays
-                    console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
+                    // Wait before retry with longer delays for network issues
+                    let waitTime;
+                    if (error.code === 'ECONNRESET' || error.message.includes('socket hang up')) {
+                        // Longer wait for connection issues
+                        waitTime = Math.pow(2, retryCount - 1) * 10000; // 10s, 20s delays
+                        console.log(`🌐 Network issue detected - waiting ${waitTime/1000}s before retry...`);
+                    } else {
+                        // Standard exponential backoff
+                        waitTime = Math.pow(2, retryCount - 1) * 5000; // 5s, 10s delays
+                        console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
+                    }
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                 }
             }
