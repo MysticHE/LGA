@@ -1,0 +1,120 @@
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const path = require('path');
+require('dotenv').config();
+
+const apolloRoutes = require('./routes/apollo');
+const leadRoutes = require('./routes/leads');
+const { rateLimiter } = require('./middleware/rateLimiter');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'", "https://unpkg.com"],
+            imgSrc: ["'self'", "data:", "https:"],
+            connectSrc: ["'self'"]
+        }
+    }
+}));
+
+// CORS configuration
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? ['https://yourdomain.com'] 
+        : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    credentials: true
+}));
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Rate limiting
+app.use(rateLimiter);
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// API Routes
+app.use('/api/apollo', apolloRoutes);
+app.use('/api/leads', leadRoutes);
+
+// Serve the main application
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'lead-generator.html'));
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0'
+    });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Error:', err);
+    
+    if (err.type === 'rate_limit') {
+        return res.status(429).json({
+            error: 'Rate limit exceeded',
+            message: 'Too many requests. Please try again later.'
+        });
+    }
+    
+    if (err.name === 'ValidationError') {
+        return res.status(400).json({
+            error: 'Validation Error',
+            message: err.message
+        });
+    }
+    
+    res.status(500).json({
+        error: 'Internal Server Error',
+        message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+    res.status(404).json({
+        error: 'Not Found',
+        message: 'The requested resource was not found'
+    });
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`🚀 Lead Generation Server running on port ${PORT}`);
+    console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌐 Access: http://localhost:${PORT}`);
+    
+    // Check for required environment variables
+    const requiredEnvVars = ['APIFY_API_TOKEN', 'OPENAI_API_KEY'];
+    const missing = requiredEnvVars.filter(envVar => !process.env[envVar]);
+    
+    if (missing.length > 0) {
+        console.warn(`⚠️  Missing environment variables: ${missing.join(', ')}`);
+        console.warn('📝 Please check your .env file');
+    }
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('📴 SIGTERM received. Shutting down gracefully...');
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('📴 SIGINT received. Shutting down gracefully...');
+    process.exit(0);
+});

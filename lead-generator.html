@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Generation Tool</title>
+    <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            /* Typography */
+            --font-family: 'Inter', 'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-weight-normal: 400;
+            --font-weight-medium: 500;
+            --font-weight-semibold: 600;
+            --font-weight-bold: 700;
+            
+            --font-size-sm: 12px;
+            --font-size-base: 14px;
+            --font-size-md: 16px;
+            --font-size-lg: 18px;
+            --font-size-xl: 20px;
+            --font-size-2xl: 24px;
+
+            /* Colors */
+            --color-white: #ffffff;
+            --color-gray-50: #f8fafc;
+            --color-gray-100: #f1f5f9;
+            --color-gray-200: #e2e8f0;
+            --color-gray-300: #cbd5e1;
+            --color-gray-400: #94a3b8;
+            --color-gray-500: #64748b;
+            --color-gray-600: #475569;
+            --color-gray-700: #334155;
+            --color-gray-800: #1e293b;
+            --color-gray-900: #0f172a;
+
+            --color-primary-500: #ff6d5a;
+            --color-primary-600: #ea580c;
+            --color-primary-700: #c2410c;
+
+            --color-success: #10b981;
+            --color-error: #ef4444;
+            --color-warning: #f59e0b;
+
+            /* Spacing */
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-6: 24px;
+            --space-8: 32px;
+
+            /* Border radius */
+            --border-radius-md: 6px;
+            --border-radius-lg: 8px;
+            --border-radius-xl: 12px;
+
+            /* Shadows */
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: var(--color-gray-50);
+            min-height: 100vh;
+            padding: var(--space-6);
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .form-card {
+            background: var(--color-white);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--border-radius-xl);
+            box-shadow: var(--shadow-lg);
+            padding: var(--space-8);
+            margin-bottom: var(--space-6);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .form-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+            border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
+        }
+
+        .form-header {
+            text-align: center;
+            margin-bottom: var(--space-8);
+        }
+
+        .form-title {
+            font-size: var(--font-size-2xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-gray-900);
+            margin-bottom: var(--space-2);
+        }
+
+        .form-description {
+            font-size: var(--font-size-md);
+            color: var(--color-gray-600);
+        }
+
+        .form-group {
+            margin-bottom: var(--space-6);
+        }
+
+        .form-label {
+            display: block;
+            color: var(--color-gray-700);
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-medium);
+            margin-bottom: var(--space-2);
+        }
+
+        .form-label.required::after {
+            content: '*';
+            color: var(--color-error);
+            margin-left: 4px;
+        }
+
+        .select-container {
+            position: relative;
+        }
+
+        .form-select {
+            width: 100%;
+            padding: var(--space-3);
+            border: 1px solid var(--color-gray-300);
+            border-radius: var(--border-radius-md);
+            background: var(--color-white);
+            color: var(--color-gray-700);
+            font-size: var(--font-size-base);
+            font-family: var(--font-family);
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+
+        .form-select:focus {
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 3px rgba(255, 109, 90, 0.1);
+        }
+
+        /* Legacy multi-select styles (kept for compatibility) */
+        .multi-select {
+            min-height: 120px;
+            background-image: none;
+        }
+
+        /* Custom Multi-Select with Checkboxes */
+        .custom-multiselect {
+            border: 1px solid var(--color-gray-300);
+            border-radius: var(--border-radius-md);
+            background: var(--color-white);
+            max-height: 200px;
+            overflow-y: auto;
+            transition: var(--transition-colors);
+        }
+
+        .custom-multiselect:focus-within {
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 3px rgba(255, 109, 90, 0.1);
+        }
+
+        .multiselect-option {
+            display: flex;
+            align-items: center;
+            padding: var(--space-3);
+            border-bottom: 1px solid var(--color-gray-100);
+            cursor: pointer;
+            transition: var(--transition-colors);
+            user-select: none;
+        }
+
+        .multiselect-option:last-child {
+            border-bottom: none;
+        }
+
+        .multiselect-option:hover {
+            background: var(--color-gray-50);
+        }
+
+        .multiselect-option.selected {
+            background: rgba(255, 109, 90, 0.05);
+            border-left: 3px solid var(--color-primary-500);
+        }
+
+        .multiselect-checkbox {
+            width: 18px;
+            height: 18px;
+            margin-right: var(--space-3);
+            accent-color: var(--color-primary-500);
+            cursor: pointer;
+        }
+
+        .multiselect-label {
+            flex: 1;
+            font-size: var(--font-size-base);
+            cursor: pointer;
+        }
+
+        /* Selected options indicator */
+        .selection-preview {
+            margin-top: var(--space-2);
+            padding: var(--space-3);
+            background: var(--color-gray-50);
+            border-radius: var(--border-radius-md);
+            font-size: var(--font-size-sm);
+            min-height: 40px;
+            border: 1px solid var(--color-gray-200);
+        }
+
+        .selection-tag {
+            display: inline-flex;
+            align-items: center;
+            background: var(--color-primary-500);
+            color: var(--color-white);
+            padding: 4px var(--space-3);
+            border-radius: var(--border-radius-full);
+            font-size: var(--font-size-xs);
+            margin: 2px 4px 2px 0;
+            gap: var(--space-1);
+        }
+
+        .selection-tag .remove {
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            transition: var(--transition-colors);
+        }
+
+        .selection-tag .remove:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .selection-count {
+            font-weight: var(--font-weight-medium);
+            color: var(--color-primary-600);
+        }
+
+        .submit-btn {
+            width: 100%;
+            height: 48px;
+            background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+            color: var(--color-white);
+            border: none;
+            border-radius: var(--border-radius-md);
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-semibold);
+            font-family: var(--font-family);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+
+        .submit-btn:hover {
+            background: linear-gradient(135deg, var(--color-primary-600) 0%, var(--color-primary-700) 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px 0 rgba(255, 109, 90, 0.25);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .output-section {
+            background: var(--color-white);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--border-radius-xl);
+            box-shadow: var(--shadow-lg);
+            padding: var(--space-8);
+            margin-top: var(--space-6);
+        }
+
+        .output-header {
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-gray-900);
+            margin-bottom: var(--space-4);
+        }
+
+        .apollo-url {
+            background: var(--color-gray-50);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--border-radius-md);
+            padding: var(--space-4);
+            margin: var(--space-4) 0;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: var(--font-size-sm);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: var(--space-3);
+            margin-top: var(--space-6);
+        }
+
+        .btn {
+            padding: var(--space-3) var(--space-6);
+            border: 1px solid var(--color-gray-300);
+            border-radius: var(--border-radius-md);
+            background: var(--color-white);
+            color: var(--color-gray-700);
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .btn:hover {
+            background: var(--color-gray-50);
+            border-color: var(--color-gray-400);
+        }
+
+        .btn-primary {
+            background: var(--color-primary-500);
+            color: var(--color-white);
+            border-color: var(--color-primary-500);
+        }
+
+        .btn-primary:hover {
+            background: var(--color-primary-600);
+            border-color: var(--color-primary-600);
+        }
+
+        .btn-success {
+            background: var(--color-success);
+            color: var(--color-white);
+            border-color: var(--color-success);
+        }
+
+        .btn-success:hover {
+            background: #059669;
+            border-color: #059669;
+        }
+
+        .status-message {
+            padding: var(--space-3);
+            border-radius: var(--border-radius-md);
+            margin: var(--space-4) 0;
+            font-size: var(--font-size-sm);
+        }
+
+        .status-success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .status-error {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+
+        .status-info {
+            background: #dbeafe;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        /* Animation */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Table styles */
+        #leadsTable tbody tr:hover {
+            background: var(--color-gray-50);
+        }
+
+        #leadsTable td {
+            padding: var(--space-3);
+            border-bottom: 1px solid var(--color-gray-100);
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container {
+                padding: var(--space-4);
+            }
+            
+            .form-card, .output-section {
+                padding: var(--space-6);
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            #leadsTable {
+                font-size: var(--font-size-xs);
+            }
+
+            #leadsTable th,
+            #leadsTable td {
+                padding: var(--space-2);
+                max-width: 120px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Form Card -->
+        <div class="form-card">
+            <div class="form-header">
+                <h1 class="form-title">🎯 Lead Generation Tool</h1>
+                <p class="form-description">Generate targeted leads from Singapore business directory and export to Excel</p>
+            </div>
+            
+            <form id="leadForm">
+                <div class="form-group">
+                    <label class="form-label required">👔 Job Titles</label>
+                    <div class="custom-multiselect" id="jobTitlesMultiselect">
+                        <div class="multiselect-option" data-value="Owner">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-owner">
+                            <label class="multiselect-label" for="job-owner">Owner</label>
+                        </div>
+                        <div class="multiselect-option" data-value="Founder">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-founder">
+                            <label class="multiselect-label" for="job-founder">Founder</label>
+                        </div>
+                        <div class="multiselect-option" data-value="C suite">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-csuite">
+                            <label class="multiselect-label" for="job-csuite">C suite</label>
+                        </div>
+                        <div class="multiselect-option" data-value="Partner">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-partner">
+                            <label class="multiselect-label" for="job-partner">Partner</label>
+                        </div>
+                        <div class="multiselect-option" data-value="Vp">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-vp">
+                            <label class="multiselect-label" for="job-vp">VP</label>
+                        </div>
+                        <div class="multiselect-option" data-value="Head">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-head">
+                            <label class="multiselect-label" for="job-head">Head</label>
+                        </div>
+                        <div class="multiselect-option" data-value="Director">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-director">
+                            <label class="multiselect-label" for="job-director">Director</label>
+                        </div>
+                        <div class="multiselect-option" data-value="Manager">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-manager">
+                            <label class="multiselect-label" for="job-manager">Manager</label>
+                        </div>
+                        <div class="multiselect-option" data-value="Senior">
+                            <input type="checkbox" class="multiselect-checkbox" id="job-senior">
+                            <label class="multiselect-label" for="job-senior">Senior</label>
+                        </div>
+                    </div>
+                    <div class="selection-preview" id="jobTitlesPreview">
+                        <em style="color: var(--color-gray-400);">Click checkboxes above to select job titles...</em>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required">🏢 Company Size (Employees)</label>
+                    <div class="custom-multiselect" id="companySizeMultiselect">
+                        <div class="multiselect-option" data-value="1-10">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-1-10">
+                            <label class="multiselect-label" for="size-1-10">1-10 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="11-20">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-11-20">
+                            <label class="multiselect-label" for="size-11-20">11-20 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="21-50">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-21-50">
+                            <label class="multiselect-label" for="size-21-50">21-50 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="51-100">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-51-100">
+                            <label class="multiselect-label" for="size-51-100">51-100 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="101-200">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-101-200">
+                            <label class="multiselect-label" for="size-101-200">101-200 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="201-500">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-201-500">
+                            <label class="multiselect-label" for="size-201-500">201-500 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="501-1000">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-501-1000">
+                            <label class="multiselect-label" for="size-501-1000">501-1000 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="1001-2000">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-1001-2000">
+                            <label class="multiselect-label" for="size-1001-2000">1001-2000 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="2001-5000">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-2001-5000">
+                            <label class="multiselect-label" for="size-2001-5000">2001-5000 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="5001-10000">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-5001-10000">
+                            <label class="multiselect-label" for="size-5001-10000">5001-10000 employees</label>
+                        </div>
+                        <div class="multiselect-option" data-value="10001+">
+                            <input type="checkbox" class="multiselect-checkbox" id="size-10001">
+                            <label class="multiselect-label" for="size-10001">10001+ employees</label>
+                        </div>
+                    </div>
+                    <div class="selection-preview" id="companySizePreview">
+                        <em style="color: var(--color-gray-400);">Click checkboxes above to select company sizes...</em>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">⚙️ Processing Options</label>
+                    <div style="display: flex; gap: var(--space-4); margin-bottom: var(--space-3); flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); padding: var(--space-2); border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); background: var(--color-gray-50);">
+                            <input type="checkbox" id="generateOutreach" checked style="accent-color: var(--color-primary-500);">
+                            🤖 Generate AI Outreach Content
+                        </label>
+                        <div style="display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); padding: var(--space-2); border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); background: var(--color-gray-50);">
+                            <label for="maxRecords">📊 Max Leads:</label>
+                            <input type="number" id="maxRecords" value="500" min="10" max="2000" style="width: 80px; padding: 4px var(--space-2); border: 1px solid var(--color-gray-300); border-radius: 4px; font-size: var(--font-size-sm);">
+                            <small style="color: var(--color-gray-500);">(0 = unlimited)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons" style="margin-bottom: 0; gap: var(--space-4);">
+                    <button type="button" class="btn btn-primary" id="generateUrlBtn" style="flex: 1;">
+                        🔗 Generate Search Link
+                    </button>
+                    <button type="submit" class="submit-btn" id="generateBtn" style="flex: 2;">
+                        🚀 Generate & Process Leads
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Results Section -->
+        <div class="output-section hidden" id="outputSection">
+            <h2 class="output-header" id="outputHeader">🎉 Results</h2>
+            
+            <!-- Search URL Display -->
+            <div id="urlSection" class="hidden">
+                <h3 style="font-size: var(--font-size-lg); margin-bottom: var(--space-3);">🔗 Generated Search URL</h3>
+                <div class="apollo-url" id="apolloUrl" style="background: var(--color-gray-50); padding: var(--space-4); border-radius: var(--border-radius-md); border: 1px solid var(--color-gray-200); font-family: monospace; word-break: break-all; font-size: var(--font-size-sm);"></div>
+                <div class="action-buttons">
+                    <button type="button" class="btn" id="copyBtn">📋 Copy URL</button>
+                    <a href="#" class="btn btn-primary" id="openApolloBtn" target="_blank">🚀 Open Search</a>
+                </div>
+            </div>
+
+            <!-- Leads Display -->
+            <div id="leadsSection" class="hidden">
+                <h3 style="font-size: var(--font-size-lg); margin-bottom: var(--space-3);">📋 Generated Leads</h3>
+                <div id="leadsStats" style="margin-bottom: var(--space-4);"></div>
+                
+                <!-- Leads Table -->
+                <div style="overflow-x: auto; border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md);">
+                    <table id="leadsTable" style="width: 100%; border-collapse: collapse; font-size: var(--font-size-sm);">
+                        <thead style="background: var(--color-gray-50);">
+                            <tr>
+                                <th style="padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--color-gray-200);">Name</th>
+                                <th style="padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--color-gray-200);">Title</th>
+                                <th style="padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--color-gray-200);">Company</th>
+                                <th style="padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--color-gray-200);">Email</th>
+                                <th style="padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--color-gray-200);">LinkedIn</th>
+                                <th style="padding: var(--space-3); text-align: left; border-bottom: 1px solid var(--color-gray-200);">Industry</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leadsTableBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="action-buttons" style="margin-top: var(--space-4);">
+                    <button type="button" class="btn btn-success" id="downloadExcelBtn">
+                        📊 Download Excel File
+                    </button>
+                    <button type="button" class="btn" id="viewOutreachBtn" style="display: none;">
+                        💬 View Outreach Content
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Progress Indicator -->
+            <div id="progressSection" class="hidden">
+                <div style="background: var(--color-gray-100); border-radius: var(--border-radius-md); padding: var(--space-4); margin: var(--space-4) 0;">
+                    <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2);">
+                        <div class="spinner" style="width: 20px; height: 20px; border: 2px solid var(--color-gray-300); border-top: 2px solid var(--color-primary-500); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                        <span id="progressText">Processing...</span>
+                    </div>
+                    <div id="progressSteps"></div>
+                </div>
+            </div>
+            
+            <div id="statusMessage"></div>
+        </div>
+    </div>
+
+    <script>
+        class LeadGenerator {
+            constructor() {
+                this.form = document.getElementById('leadForm');
+                this.outputSection = document.getElementById('outputSection');
+                this.progressSection = document.getElementById('progressSection');
+                this.urlSection = document.getElementById('urlSection');
+                this.leadsSection = document.getElementById('leadsSection');
+                
+                this.generateUrlBtn = document.getElementById('generateUrlBtn');
+                this.generateBtn = document.getElementById('generateBtn');
+                this.copyBtn = document.getElementById('copyBtn');
+                this.downloadExcelBtn = document.getElementById('downloadExcelBtn');
+                this.viewOutreachBtn = document.getElementById('viewOutreachBtn');
+                
+                this.statusMessage = document.getElementById('statusMessage');
+                this.progressText = document.getElementById('progressText');
+                this.progressSteps = document.getElementById('progressSteps');
+                
+                this.jobTitlesMultiselect = document.getElementById('jobTitlesMultiselect');
+                this.companySizeMultiselect = document.getElementById('companySizeMultiselect');
+                this.jobTitlesPreview = document.getElementById('jobTitlesPreview');
+                this.companySizePreview = document.getElementById('companySizePreview');
+                
+                this.currentLeads = null;
+                
+                this.bindEvents();
+                this.updatePreviews(); // Initialize previews
+            }
+
+            bindEvents() {
+                this.form.addEventListener('submit', (e) => this.handleCompleteWorkflow(e));
+                this.generateUrlBtn.addEventListener('click', () => this.handleGenerateUrl());
+                this.copyBtn.addEventListener('click', () => this.copyUrl());
+                this.downloadExcelBtn.addEventListener('click', () => this.downloadExcel());
+                this.viewOutreachBtn.addEventListener('click', () => this.viewOutreachContent());
+                
+                // Bind custom multiselect events
+                this.bindMultiselectEvents();
+            }
+
+            bindMultiselectEvents() {
+                // Job titles multiselect
+                const jobCheckboxes = this.jobTitlesMultiselect.querySelectorAll('input[type="checkbox"]');
+                jobCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', () => {
+                        this.updateMultiselectOption(checkbox.closest('.multiselect-option'));
+                        this.updatePreviews();
+                    });
+                });
+
+                // Company size multiselect  
+                const sizeCheckboxes = this.companySizeMultiselect.querySelectorAll('input[type="checkbox"]');
+                sizeCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', () => {
+                        this.updateMultiselectOption(checkbox.closest('.multiselect-option'));
+                        this.updatePreviews();
+                    });
+                });
+
+                // Click on option to toggle checkbox
+                this.jobTitlesMultiselect.querySelectorAll('.multiselect-option').forEach(option => {
+                    option.addEventListener('click', (e) => {
+                        if (e.target.type !== 'checkbox' && e.target.tagName !== 'LABEL') {
+                            const checkbox = option.querySelector('input[type="checkbox"]');
+                            checkbox.checked = !checkbox.checked;
+                            this.updateMultiselectOption(option);
+                            this.updatePreviews();
+                        }
+                    });
+                });
+
+                this.companySizeMultiselect.querySelectorAll('.multiselect-option').forEach(option => {
+                    option.addEventListener('click', (e) => {
+                        if (e.target.type !== 'checkbox' && e.target.tagName !== 'LABEL') {
+                            const checkbox = option.querySelector('input[type="checkbox"]');
+                            checkbox.checked = !checkbox.checked;
+                            this.updateMultiselectOption(option);
+                            this.updatePreviews();
+                        }
+                    });
+                });
+            }
+
+            updateMultiselectOption(option) {
+                const checkbox = option.querySelector('input[type="checkbox"]');
+                if (checkbox.checked) {
+                    option.classList.add('selected');
+                } else {
+                    option.classList.remove('selected');
+                }
+            }
+
+            updatePreviews() {
+                // Update job titles preview
+                const selectedTitles = this.getSelectedValues(this.jobTitlesMultiselect);
+                if (selectedTitles.length > 0) {
+                    this.jobTitlesPreview.innerHTML = `
+                        <span class="selection-count">${selectedTitles.length} selected:</span> 
+                        ${selectedTitles.map(title => 
+                            `<span class="selection-tag">${title} <span class="remove" onclick="this.parentElement.parentElement.parentElement.querySelector('[data-value=&quot;${title}&quot;] input').click()">×</span></span>`
+                        ).join('')}
+                    `;
+                } else {
+                    this.jobTitlesPreview.innerHTML = '<em style="color: var(--color-gray-400);">Click checkboxes above to select job titles...</em>';
+                }
+
+                // Update company sizes preview
+                const selectedSizes = this.getSelectedValues(this.companySizeMultiselect);
+                if (selectedSizes.length > 0) {
+                    this.companySizePreview.innerHTML = `
+                        <span class="selection-count">${selectedSizes.length} selected:</span> 
+                        ${selectedSizes.map(size => 
+                            `<span class="selection-tag">${size} <span class="remove" onclick="this.parentElement.parentElement.parentElement.querySelector('[data-value=&quot;${size}&quot;] input').click()">×</span></span>`
+                        ).join('')}
+                    `;
+                } else {
+                    this.companySizePreview.innerHTML = '<em style="color: var(--color-gray-400);">Click checkboxes above to select company sizes...</em>';
+                }
+            }
+
+            getSelectedValues(multiselectElement) {
+                const selectedOptions = multiselectElement.querySelectorAll('.multiselect-option input[type="checkbox"]:checked');
+                return Array.from(selectedOptions).map(checkbox => 
+                    checkbox.closest('.multiselect-option').getAttribute('data-value')
+                );
+            }
+
+            handleGenerateUrl() {
+                const { jobTitles, companySizes } = this.getFormData();
+                if (!this.validateFormData(jobTitles, companySizes)) return;
+
+                try {
+                    this.showProgress('Generating Apollo URL...');
+                    
+                    // Generate URL client-side (same logic as backend)
+                    const apolloUrl = this.generateApolloUrlClientSide(jobTitles, companySizes);
+                    
+                    this.displayUrl(apolloUrl);
+                    this.hideProgress();
+                    this.showStatus('Search URL generated successfully!', 'success');
+
+                } catch (error) {
+                    this.hideProgress();
+                    this.showStatus(`Error: ${error.message}`, 'error');
+                }
+            }
+
+            generateApolloUrlClientSide(jobTitles, companySizes) {
+                // Same logic as your n8n workflow and backend
+                const baseUrl = "https://app.apollo.io/#/people?page=1";
+                
+                const defaultFilters = [
+                    "contactEmailStatusV2[]=verified",
+                    "existFields[]=person_title_normalized",
+                    "existFields[]=organization_domain",
+                    "personLocations[]=Singapore",
+                    "personLocations[]=Singapore%2C%20Singapore",
+                    "sortAscending=true",
+                    "sortByField=sanitized_organization_name_unanalyzed"
+                ];
+
+                const titleFilters = jobTitles.map(title => 
+                    `personTitles[]=${encodeURIComponent(title)}`
+                );
+
+                const sizeFilters = companySizes.map(size => {
+                    const normalized = size.replace("-", ",");
+                    return `organizationNumEmployeesRanges[]=${encodeURIComponent(normalized)}`;
+                });
+
+                const allFilters = [...defaultFilters, ...titleFilters, ...sizeFilters];
+                return `${baseUrl}&${allFilters.join("&")}`;
+            }
+
+            async handleCompleteWorkflow(e) {
+                e.preventDefault();
+                
+                const { jobTitles, companySizes, generateOutreach, maxRecords } = this.getFormData();
+                if (!this.validateFormData(jobTitles, companySizes)) return;
+
+                try {
+                    this.showProgress('Starting lead generation workflow...');
+                    this.updateProgress('Step 1: Generating search URL');
+                    
+                    const response = await fetch('/api/leads/complete-workflow', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jobTitles,
+                            companySizes,
+                            generateOutreach,
+                            maxRecords
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.message || 'Workflow failed');
+                    }
+
+                    if (data.leads.length === 0) {
+                        this.hideProgress();
+                        this.showStatus('No leads found for the specified criteria. Try adjusting your filters.', 'info');
+                        return;
+                    }
+
+                    // Show total found vs scraped
+                    const totalFound = data.metadata.totalFound || data.leads.length;
+                    const actualLimit = maxRecords === 0 ? 'unlimited' : maxRecords;
+                    
+                    this.updateProgress(`Step 2: Found ${totalFound} leads matching criteria`);
+                    this.updateProgress(`Step 3: Processing ${data.leads.length} leads (limit: ${actualLimit})`);
+                    
+                    if (generateOutreach) {
+                        this.updateProgress(`Step 4: Generated AI outreach for ${data.leads.filter(l => l.outreach_generated).length} leads`);
+                    }
+
+                    this.currentLeads = data.leads;
+                    this.displayLeads(data.leads, data.metadata);
+                    this.hideProgress();
+                    
+                    const successMsg = totalFound > data.leads.length 
+                        ? `Found ${totalFound} leads, processed ${data.leads.length} (due to limit)`
+                        : `Successfully generated ${data.leads.length} leads!`;
+                    
+                    this.showStatus(successMsg, 'success');
+
+                } catch (error) {
+                    this.hideProgress();
+                    
+                    // Check if it's a server connection error
+                    if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+                        // Server not running - offer URL-only generation as fallback
+                        const apolloUrl = this.generateApolloUrlClientSide(jobTitles, companySizes);
+                        this.displayUrl(apolloUrl);
+                        this.showStatus('⚠️ Server not running. Generated search URL only. Start server with "npm start" for full workflow.', 'info');
+                    } else {
+                        this.showStatus(`Error: ${error.message}`, 'error');
+                    }
+                }
+            }
+
+            getFormData() {
+                const jobTitles = this.getSelectedValues(this.jobTitlesMultiselect);
+                const companySizes = this.getSelectedValues(this.companySizeMultiselect);
+                const generateOutreach = document.getElementById('generateOutreach').checked;
+                const maxRecords = parseInt(document.getElementById('maxRecords').value) || 0;
+                
+                return { jobTitles, companySizes, generateOutreach, maxRecords };
+            }
+
+            validateFormData(jobTitles, companySizes) {
+                if (jobTitles.length === 0) {
+                    this.showStatus('Please select at least one job title.', 'error');
+                    return false;
+                }
+                if (companySizes.length === 0) {
+                    this.showStatus('Please select at least one company size.', 'error');
+                    return false;
+                }
+                
+                // Show selection summary for confirmation
+                const summary = `Selected: ${jobTitles.length} job title(s), ${companySizes.length} company size(s)`;
+                console.log('Filter Summary:', summary);
+                
+                return true;
+            }
+
+            displayUrl(apolloUrl) {
+                document.getElementById('apolloUrl').textContent = apolloUrl;
+                document.getElementById('openApolloBtn').href = apolloUrl;
+                
+                this.outputSection.classList.remove('hidden');
+                this.urlSection.classList.remove('hidden');
+                this.leadsSection.classList.add('hidden');
+            }
+
+            displayLeads(leads, metadata) {
+                // Update stats
+                const stats = document.getElementById('leadsStats');
+                const outreachCount = leads.filter(lead => lead.outreach_generated).length;
+                const totalFound = metadata.totalFound || leads.length;
+                
+                // Show applied filters
+                const filtersDisplay = `
+                    <div style="margin-bottom: var(--space-3); padding: var(--space-3); background: var(--color-gray-50); border-radius: var(--border-radius-md);">
+                        <strong>Applied Filters:</strong>
+                        <div style="margin-top: var(--space-2);">
+                            <span style="font-size: var(--font-size-sm);">
+                                <strong>Job Titles:</strong> ${metadata.jobTitles.join(', ')} | 
+                                <strong>Company Sizes:</strong> ${metadata.companySizes.join(', ')} | 
+                                <strong>Location:</strong> Singapore
+                            </span>
+                        </div>
+                    </div>
+                `;
+                
+                stats.innerHTML = filtersDisplay + `
+                    <div style="display: flex; gap: var(--space-6); flex-wrap: wrap;">
+                        <div><strong>Total Found:</strong> ${totalFound}</div>
+                        <div><strong>Processed:</strong> ${leads.length}</div>
+                        <div><strong>With Email:</strong> ${leads.filter(l => l.email).length}</div>
+                        <div><strong>With LinkedIn:</strong> ${leads.filter(l => l.linkedin_url).length}</div>
+                        ${metadata.outreachGenerated ? `<div><strong>AI Outreach:</strong> ${outreachCount}</div>` : ''}
+                        <div><strong>Limit:</strong> ${metadata.maxRecords === 0 || metadata.maxRecords === 'unlimited' ? 'None' : metadata.maxRecords}</div>
+                    </div>
+                `;
+
+                // Update table
+                const tbody = document.getElementById('leadsTableBody');
+                tbody.innerHTML = leads.map(lead => `
+                    <tr>
+                        <td title="${lead.name || ''}">${lead.name || 'N/A'}</td>
+                        <td title="${lead.title || ''}">${lead.title || 'N/A'}</td>
+                        <td title="${lead.organization_name || ''}">${lead.organization_name || 'N/A'}</td>
+                        <td title="${lead.email || ''}">${lead.email || 'N/A'}</td>
+                        <td title="${lead.linkedin_url || ''}">
+                            ${lead.linkedin_url ? `<a href="${lead.linkedin_url}" target="_blank" style="color: var(--color-primary-600);">View Profile</a>` : 'N/A'}
+                        </td>
+                        <td title="${lead.industry || ''}">${lead.industry || 'N/A'}</td>
+                    </tr>
+                `).join('');
+
+                // Show/hide outreach button
+                if (metadata.outreachGenerated && outreachCount > 0) {
+                    this.viewOutreachBtn.style.display = 'inline-flex';
+                }
+
+                this.outputSection.classList.remove('hidden');
+                this.leadsSection.classList.remove('hidden');
+                this.urlSection.classList.add('hidden');
+            }
+
+            copyUrl() {
+                const url = document.getElementById('apolloUrl').textContent;
+                navigator.clipboard.writeText(url).then(() => {
+                    this.showStatus('URL copied to clipboard!', 'success');
+                }).catch(() => {
+                    this.showStatus('Failed to copy URL', 'error');
+                });
+            }
+
+            async downloadExcel() {
+                if (!this.currentLeads) {
+                    this.showStatus('No leads data available', 'error');
+                    return;
+                }
+
+                try {
+                    this.showStatus('Generating Excel file...', 'info');
+                    
+                    const response = await fetch('/api/leads/export-excel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ leads: this.currentLeads })
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.message || 'Export failed');
+                    }
+
+                    // Download the file
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = response.headers.get('Content-Disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'leads.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+
+                    this.showStatus('Excel file downloaded successfully!', 'success');
+
+                } catch (error) {
+                    this.showStatus(`Export error: ${error.message}`, 'error');
+                }
+            }
+
+            viewOutreachContent() {
+                if (!this.currentLeads) return;
+
+                const leadsWithOutreach = this.currentLeads.filter(lead => lead.notes && lead.outreach_generated);
+                
+                if (leadsWithOutreach.length === 0) {
+                    this.showStatus('No outreach content available', 'info');
+                    return;
+                }
+
+                // Create modal to display outreach content
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+                    background: rgba(0,0,0,0.5); z-index: 1000; 
+                    display: flex; align-items: center; justify-content: center;
+                    padding: var(--space-4);
+                `;
+
+                const modalContent = document.createElement('div');
+                modalContent.style.cssText = `
+                    background: white; max-width: 800px; max-height: 80vh; 
+                    overflow-y: auto; border-radius: var(--border-radius-xl);
+                    padding: var(--space-6);
+                `;
+
+                modalContent.innerHTML = `
+                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: var(--space-4);">
+                        <h3>AI-Generated Outreach Content</h3>
+                        <button onclick="this.closest('div[style*=\"fixed\"]').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+                    </div>
+                    ${leadsWithOutreach.map(lead => `
+                        <div style="border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); padding: var(--space-4); margin-bottom: var(--space-4);">
+                            <h4 style="margin-bottom: var(--space-2);">${lead.name} - ${lead.organization_name}</h4>
+                            <pre style="white-space: pre-wrap; font-family: var(--font-family); font-size: var(--font-size-sm);">${lead.notes}</pre>
+                        </div>
+                    `).join('')}
+                `;
+
+                modal.appendChild(modalContent);
+                document.body.appendChild(modal);
+            }
+
+            showProgress(message) {
+                this.progressText.textContent = message;
+                this.progressSection.classList.remove('hidden');
+                this.outputSection.classList.remove('hidden');
+                this.generateBtn.disabled = true;
+                this.generateUrlBtn.disabled = true;
+            }
+
+            updateProgress(step) {
+                this.progressSteps.innerHTML += `<div style="font-size: var(--font-size-sm); color: var(--color-gray-600); margin-top: var(--space-1);">✓ ${step}</div>`;
+            }
+
+            hideProgress() {
+                this.progressSection.classList.add('hidden');
+                this.generateBtn.disabled = false;
+                this.generateUrlBtn.disabled = false;
+            }
+
+            showStatus(message, type) {
+                this.statusMessage.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+                setTimeout(() => {
+                    this.statusMessage.innerHTML = '';
+                }, 5000);
+            }
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            new LeadGenerator();
+        });
+    </script>
+</body>
+</html>
