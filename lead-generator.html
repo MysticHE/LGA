@@ -824,7 +824,11 @@
 
             async handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, maxRecords) {
                 let allLeads = [];
-                let metadata = {};
+                let metadata = {
+                    jobTitles: jobTitles,
+                    companySizes: companySizes,
+                    maxRecords: maxRecords
+                };
                 
                 try {
                     this.showProgress('Starting streaming lead generation...');
@@ -928,6 +932,7 @@
                         break;
                         
                     case 'scraped':
+                        // Merge scraped metadata while preserving form data
                         Object.assign(metadata, data.metadata);
                         this.updateProgress(`✅ Scraped ${data.count} leads from Apollo`);
                         break;
@@ -953,8 +958,9 @@
                         break;
                         
                     case 'complete':
-                        // Final display with complete metadata
-                        this.displayLeads(allLeads, data.metadata);
+                        // Merge final metadata and display
+                        Object.assign(metadata, data.metadata);
+                        this.displayLeads(allLeads, metadata);
                         this.showStatus(`🎉 Successfully loaded ${data.count} leads!`, 'success');
                         break;
                         
@@ -1012,19 +1018,22 @@
                 const limitReached = metadata.scrapeMetadata?.limitReached || false;
                 const deduplicationRate = metadata.scrapeMetadata?.deduplicationStats?.deduplicationRate || '0%';
                 
-                // Show applied filters
-                const filtersDisplay = `
+                // Show applied filters - handle undefined arrays safely
+                const jobTitles = metadata.jobTitles || [];
+                const companySizes = metadata.companySizes || [];
+                
+                const filtersDisplay = jobTitles.length > 0 || companySizes.length > 0 ? `
                     <div style="margin-bottom: var(--space-3); padding: var(--space-3); background: var(--color-gray-50); border-radius: var(--border-radius-md);">
                         <strong>Applied Filters:</strong>
                         <div style="margin-top: var(--space-2);">
                             <span style="font-size: var(--font-size-sm);">
-                                <strong>Job Titles:</strong> ${metadata.jobTitles.join(', ')} | 
-                                <strong>Company Sizes:</strong> ${metadata.companySizes.join(', ')} | 
+                                ${jobTitles.length > 0 ? `<strong>Job Titles:</strong> ${jobTitles.join(', ')} | ` : ''}
+                                ${companySizes.length > 0 ? `<strong>Company Sizes:</strong> ${companySizes.join(', ')} | ` : ''}
                                 <strong>Location:</strong> Singapore
                             </span>
                         </div>
                     </div>
-                `;
+                ` : '';
                 
                 // Enhanced statistics display
                 const limitDisplay = metadata.maxRecords === 0 || metadata.maxRecords === 'unlimited' ? 'No Limit' : `${metadata.maxRecords} records`;
