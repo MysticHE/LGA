@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: lead-generation-automation
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: APIFY_API_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY  
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: MAX_REQUESTS_PER_MINUTE
+        value: 10
+      - key: MAX_LEADS_PER_REQUEST
+        value: 500
+    healthCheckPath: /
