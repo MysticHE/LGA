@@ -596,7 +596,7 @@
                 <div id="leadsStats" style="margin-bottom: var(--space-4);"></div>
                 
                 <!-- Leads Table -->
-                <div style="overflow-x: auto; border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md);">
+                <div style="overflow-x: auto; overflow-y: auto; max-height: 600px; border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md);">
                     <table id="leadsTable" style="width: 100%; border-collapse: collapse; font-size: var(--font-size-sm);">
                         <thead style="background: var(--color-gray-50);">
                             <tr>
@@ -633,6 +633,20 @@
                 </div>
             </div>
             
+            <!-- Processing Logs -->
+            <div id="processingLogs" class="hidden">
+                <div style="background: var(--color-gray-900); border-radius: var(--border-radius-md); padding: var(--space-4); margin: var(--space-4) 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3);">
+                        <h4 style="color: var(--color-white); margin: 0; font-size: var(--font-size-base);">🔍 Processing Logs</h4>
+                        <button onclick="document.getElementById('processingLogs').classList.add('hidden')" 
+                                style="background: none; border: none; color: var(--color-gray-300); cursor: pointer; font-size: 18px;">✕</button>
+                    </div>
+                    <div id="logsContainer" style="max-height: 300px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; color: var(--color-gray-300); line-height: 1.4;">
+                        <!-- Logs will appear here -->
+                    </div>
+                </div>
+            </div>
+            
             <div id="statusMessage"></div>
         </div>
     </div>
@@ -655,6 +669,8 @@
                 this.statusMessage = document.getElementById('statusMessage');
                 this.progressText = document.getElementById('progressText');
                 this.progressSteps = document.getElementById('progressSteps');
+                this.processingLogs = document.getElementById('processingLogs');
+                this.logsContainer = document.getElementById('logsContainer');
                 
                 this.jobTitlesMultiselect = document.getElementById('jobTitlesMultiselect');
                 this.companySizeMultiselect = document.getElementById('companySizeMultiselect');
@@ -929,16 +945,22 @@
                 switch(eventType) {
                     case 'progress':
                         this.updateProgress(`Step ${data.step}/${data.total}: ${data.message}`);
+                        this.addLog(`📋 ${data.message}`, 'progress');
                         break;
                         
                     case 'scraped':
                         // Merge scraped metadata while preserving form data
                         Object.assign(metadata, data.metadata);
                         this.updateProgress(`✅ Scraped ${data.count} leads from Apollo`);
+                        this.addLog(`🔍 Apollo scraping completed - ${data.count} leads found`, 'progress');
+                        if (data.metadata?.duplicatesRemoved > 0) {
+                            this.addLog(`🧹 Removed ${data.metadata.duplicatesRemoved} duplicate records`, 'info');
+                        }
                         break;
                         
                     case 'chunk_start':
                         this.updateProgress(`🔄 Processing batch ${data.chunk}/${data.total} (${data.size} leads)...`);
+                        this.addLog(`📦 Starting batch ${data.chunk}/${data.total} - processing ${data.size} leads`, 'processing');
                         break;
                         
                     case 'chunk_complete':
@@ -946,12 +968,20 @@
                         allLeads.push(...data.leads);
                         this.currentLeads = allLeads;
                         
+                        // Add detailed logs for each lead
+                        data.leads.forEach((lead, index) => {
+                            const leadNum = data.processed - data.leads.length + index + 1;
+                            const outreachStatus = lead.outreach_generated ? '✅ AI content generated' : '⚪ No outreach';
+                            this.addLog(`Processing lead ${leadNum}/${data.processed + data.remaining}: ${lead.name} - ${outreachStatus}`, 'processing');
+                        });
+                        
                         // Update display with all leads so far
                         this.displayLeads(allLeads, metadata);
                         
                         // Update progress
                         const progressMsg = `📦 Loaded ${data.processed} leads (batch ${data.chunk}/${data.total})`;
                         this.updateProgress(progressMsg);
+                        this.addLog(`✅ Batch ${data.chunk} completed - ${data.processed}/${data.processed + data.remaining} total leads processed`, 'progress');
                         
                         // Show live count
                         this.showStatus(`Loading... ${data.processed}/${data.processed + data.remaining} leads processed`, 'info');
@@ -961,10 +991,12 @@
                         // Merge final metadata and display
                         Object.assign(metadata, data.metadata);
                         this.displayLeads(allLeads, metadata);
+                        this.addLog(`🎉 Workflow completed successfully - ${data.count} leads generated`, 'progress');
                         this.showStatus(`🎉 Successfully loaded ${data.count} leads!`, 'success');
                         break;
                         
                     case 'error':
+                        this.addLog(`❌ Error: ${data.message}`, 'error');
                         this.showStatus(`Error: ${data.message}`, 'error');
                         break;
                 }
@@ -1171,6 +1203,7 @@
 
                 // Create modal to display outreach content
                 const modal = document.createElement('div');
+                modal.id = 'outreachModal';
                 modal.style.cssText = `
                     position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
                     background: rgba(0,0,0,0.5); z-index: 1000; 
@@ -1186,9 +1219,9 @@
                 `;
 
                 modalContent.innerHTML = `
-                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: var(--space-4);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4);">
                         <h3>AI-Generated Outreach Content</h3>
-                        <button onclick="this.closest('div[style*=\"fixed\"]').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+                        <button onclick="document.getElementById('outreachModal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background='var(--color-gray-100)'" onmouseout="this.style.background='none'">&times;</button>
                     </div>
                     ${leadsWithOutreach.map(lead => `
                         <div style="border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); padding: var(--space-4); margin-bottom: var(--space-4);">
@@ -1205,19 +1238,55 @@
             showProgress(message) {
                 this.progressText.textContent = message;
                 this.progressSection.classList.remove('hidden');
+                this.processingLogs.classList.remove('hidden');
                 this.outputSection.classList.remove('hidden');
                 this.generateBtn.disabled = true;
                 this.generateUrlBtn.disabled = true;
+                
+                // Clear previous logs
+                this.logsContainer.innerHTML = '';
+                this.addLog('🚀 Starting lead generation workflow...', 'info');
             }
 
             updateProgress(step) {
                 this.progressSteps.innerHTML += `<div style="font-size: var(--font-size-sm); color: var(--color-gray-600); margin-top: var(--space-1);">✓ ${step}</div>`;
+                this.addLog(step, 'progress');
             }
 
             hideProgress() {
                 this.progressSection.classList.add('hidden');
+                // Keep processing logs visible after completion
+                // User can manually close them
                 this.generateBtn.disabled = false;
                 this.generateUrlBtn.disabled = false;
+            }
+            
+            addLog(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString('en-US', { 
+                    hour12: false, 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit' 
+                });
+                
+                const colors = {
+                    info: '#64748b',      // gray
+                    progress: '#10b981',  // green  
+                    error: '#ef4444',     // red
+                    warning: '#f59e0b',   // yellow
+                    processing: '#3b82f6' // blue
+                };
+                
+                const logEntry = document.createElement('div');
+                logEntry.style.marginBottom = '2px';
+                logEntry.innerHTML = `
+                    <span style="color: #6b7280;">${timestamp}</span> 
+                    <span style="color: ${colors[type] || colors.info};">●</span> 
+                    <span style="color: ${colors[type] || colors.info};">${message}</span>
+                `;
+                
+                this.logsContainer.appendChild(logEntry);
+                this.logsContainer.scrollTop = this.logsContainer.scrollHeight;
             }
 
             showStatus(message, type) {
