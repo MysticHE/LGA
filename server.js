@@ -17,7 +17,7 @@ app.use(helmet({
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'", "https://unpkg.com"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'"]
         }
@@ -49,6 +49,11 @@ app.use('/api/leads', leadRoutes);
 // Serve the main application
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'lead-generator.html'));
+});
+
+// Favicon route to prevent 404 errors
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).send();
 });
 
 // Health check endpoint
