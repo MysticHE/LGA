@@ -298,17 +298,54 @@ router.post('/complete-workflow', async (req, res) => {
         console.log(`⏱️ No timeout limit - will wait for scraper to complete (${maxRecords} records)`);
         
         let scrapeData;
-        try {
-            const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
-                apolloUrl,
-                maxRecords
-            }, {
-                timeout: 0 // No timeout - wait for completion
-            });
-            scrapeData = scrapeResponse.data;
-        } catch (axiosError) {
-            console.error('❌ Apollo scraping error:', axiosError.response?.data || axiosError.message);
-            throw new Error(`Failed to scrape leads: ${axiosError.response?.data?.message || axiosError.message}`);
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (retryCount <= maxRetries) {
+            try {
+                console.log(`🎯 Internal API call attempt ${retryCount + 1}/${maxRetries + 1} - Calling Apollo scraper...`);
+                
+                const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
+                    apolloUrl,
+                    maxRecords
+                }, {
+                    timeout: 0, // No timeout - wait for completion
+                    headers: {
+                        'Connection': 'keep-alive',
+                        'User-Agent': 'LGA-Lead-Generator/1.0'
+                    }
+                });
+                
+                scrapeData = scrapeResponse.data;
+                console.log('✅ Internal API call completed successfully');
+                break; // Success, exit retry loop
+                
+            } catch (axiosError) {
+                retryCount++;
+                console.error(`❌ Internal API attempt ${retryCount}/${maxRetries + 1} failed:`, axiosError.code || axiosError.message);
+                
+                if (retryCount > maxRetries) {
+                    // All retries exhausted
+                    if (axiosError.code === 'ECONNRESET' || axiosError.message.includes('socket hang up')) {
+                        throw new Error(`Network connection lost during lead scraping. The Apollo scraper may have completed successfully but the connection was interrupted. Please check the results or try again.`);
+                    } else if (axiosError.response && axiosError.response.data) {
+                        throw new Error(`Failed to scrape leads: ${axiosError.response.data.message || axiosError.response.data.error || 'Unknown server error'}`);
+                    } else {
+                        throw new Error(`Failed to scrape leads after ${maxRetries + 1} attempts: ${axiosError.message}`);
+                    }
+                } else {
+                    // Wait before retry with longer delays for network issues
+                    let waitTime;
+                    if (axiosError.code === 'ECONNRESET' || axiosError.message.includes('socket hang up')) {
+                        waitTime = Math.pow(2, retryCount - 1) * 8000; // 8s, 16s delays
+                        console.log(`🌐 Network issue in internal API - waiting ${waitTime/1000}s before retry...`);
+                    } else {
+                        waitTime = Math.pow(2, retryCount - 1) * 3000; // 3s, 6s delays  
+                        console.log(`⏳ Waiting ${waitTime/1000}s before internal API retry...`);
+                    }
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                }
+            }
         }
         const { leads, metadata: scrapeMetadata } = scrapeData;
 
