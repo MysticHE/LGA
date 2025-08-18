@@ -817,67 +817,150 @@
                 
                 const { jobTitles, companySizes, generateOutreach, maxRecords } = this.getFormData();
                 if (!this.validateFormData(jobTitles, companySizes)) return;
+                
+                // Use streaming for better UX
+                return this.handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, maxRecords);
+            }
 
+            async handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, maxRecords) {
+                let allLeads = [];
+                let metadata = {};
+                
                 try {
-                    this.showProgress('Starting lead generation workflow...');
-                    this.updateProgress('Step 1: Generating search URL');
+                    this.showProgress('Starting streaming lead generation...');
+                    this.currentLeads = []; // Clear previous results
+                    this.displayLeads([], {}); // Clear display
                     
-                    const response = await fetch('/api/leads/complete-workflow', {
+                    // Start streaming request
+                    const response = await fetch('/api/leads/complete-workflow-stream', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             jobTitles,
                             companySizes,
                             generateOutreach,
-                            maxRecords
+                            maxRecords,
+                            chunkSize: 100
                         })
                     });
 
-                    const data = await response.json();
-                    
                     if (!response.ok) {
-                        throw new Error(data.message || 'Workflow failed');
+                        throw new Error('Failed to start streaming workflow');
                     }
 
-                    if (data.leads.length === 0) {
-                        this.hideProgress();
+                    // Process streaming response
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    const processStream = async () => {
+                        try {
+                            let currentEventType = '';
+                            
+                            while (true) {
+                                const { value, done } = await reader.read();
+                                if (done) break;
+
+                                buffer += decoder.decode(value, { stream: true });
+                                
+                                // Process complete events
+                                const events = buffer.split('\n\n');
+                                buffer = events.pop() || ''; // Keep incomplete event in buffer
+
+                                for (const eventBlock of events) {
+                                    if (!eventBlock.trim()) continue;
+                                    
+                                    const lines = eventBlock.split('\n');
+                                    let eventType = '';
+                                    let data = null;
+                                    
+                                    for (const line of lines) {
+                                        if (line.startsWith('event:')) {
+                                            eventType = line.substring(6).trim();
+                                        } else if (line.startsWith('data:')) {
+                                            try {
+                                                data = JSON.parse(line.substring(5).trim());
+                                            } catch (e) {
+                                                console.error('Failed to parse data:', line);
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (eventType && data) {
+                                        this.handleStreamEvent(eventType, data, allLeads, metadata);
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Stream processing error:', error);
+                            this.showStatus('Error processing stream', 'error');
+                        }
+                    };
+
+                    let eventType = '';
+                    await processStream();
+                    
+                    this.hideProgress();
+                    
+                    if (allLeads.length === 0) {
                         this.showStatus('No leads found for the specified criteria. Try adjusting your filters.', 'info');
                         return;
                     }
-
-                    // Show total found vs scraped
-                    const totalFound = data.metadata.totalFound || data.leads.length;
-                    const actualLimit = maxRecords === 0 ? 'unlimited' : maxRecords;
                     
-                    this.updateProgress(`Step 2: Found ${totalFound} leads matching criteria`);
-                    this.updateProgress(`Step 3: Processing ${data.leads.length} leads (limit: ${actualLimit})`);
-                    
-                    if (generateOutreach) {
-                        this.updateProgress(`Step 4: Generated AI outreach for ${data.leads.filter(l => l.outreach_generated).length} leads`);
-                    }
-
-                    this.currentLeads = data.leads;
-                    this.displayLeads(data.leads, data.metadata);
-                    this.hideProgress();
-                    
-                    const successMsg = totalFound > data.leads.length 
-                        ? `Found ${totalFound} leads, processed ${data.leads.length} (due to limit)`
-                        : `Successfully generated ${data.leads.length} leads!`;
-                    
+                    const successMsg = `🎉 Successfully loaded ${allLeads.length} leads!`;
                     this.showStatus(successMsg, 'success');
-
+                    
                 } catch (error) {
                     this.hideProgress();
+                    console.error('Streaming error:', error);
                     
-                    // Check if it's a server connection error
-                    if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
-                        // Server not running - offer URL-only generation as fallback
-                        const apolloUrl = this.generateApolloUrlClientSide(jobTitles, companySizes);
-                        this.displayUrl(apolloUrl);
-                        this.showStatus('⚠️ Server not running. Generated search URL only. Start server with "npm start" for full workflow.', 'info');
-                    } else {
-                        this.showStatus(`Error: ${error.message}`, 'error');
-                    }
+                    // Fallback to URL-only generation
+                    const apolloUrl = this.generateApolloUrlClientSide(jobTitles, companySizes);
+                    this.displayUrl(apolloUrl);
+                    this.showStatus('⚠️ Streaming failed. Generated search URL only.', 'warning');
+                }
+            }
+
+            handleStreamEvent(eventType, data, allLeads, metadata) {
+                switch(eventType) {
+                    case 'progress':
+                        this.updateProgress(`Step ${data.step}/${data.total}: ${data.message}`);
+                        break;
+                        
+                    case 'scraped':
+                        Object.assign(metadata, data.metadata);
+                        this.updateProgress(`✅ Scraped ${data.count} leads from Apollo`);
+                        break;
+                        
+                    case 'chunk_start':
+                        this.updateProgress(`🔄 Processing batch ${data.chunk}/${data.total} (${data.size} leads)...`);
+                        break;
+                        
+                    case 'chunk_complete':
+                        // Add new leads to collection
+                        allLeads.push(...data.leads);
+                        this.currentLeads = allLeads;
+                        
+                        // Update display with all leads so far
+                        this.displayLeads(allLeads, metadata);
+                        
+                        // Update progress
+                        const progressMsg = `📦 Loaded ${data.processed} leads (batch ${data.chunk}/${data.total})`;
+                        this.updateProgress(progressMsg);
+                        
+                        // Show live count
+                        this.showStatus(`Loading... ${data.processed}/${data.processed + data.remaining} leads processed`, 'info');
+                        break;
+                        
+                    case 'complete':
+                        // Final display with complete metadata
+                        this.displayLeads(allLeads, data.metadata);
+                        this.showStatus(`🎉 Successfully loaded ${data.count} leads!`, 'success');
+                        break;
+                        
+                    case 'error':
+                        this.showStatus(`Error: ${data.message}`, 'error');
+                        break;
                 }
             }
 

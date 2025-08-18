@@ -244,6 +244,146 @@ router.post('/export-excel', async (req, res) => {
     }
 });
 
+// Streaming lead generation workflow with chunked responses  
+router.post('/complete-workflow-stream', async (req, res) => {
+    try {
+        const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true, chunkSize = 100 } = req.body;
+
+        // Set SSE headers for streaming
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Methods': 'POST'
+        });
+
+        function sendEvent(type, data) {
+            const payload = JSON.stringify(data);
+            res.write(`event: ${type}\ndata: ${payload}\n\n`);
+        }
+
+        // Handle client disconnect
+        req.on('close', () => {
+            console.log('Client disconnected from stream');
+        });
+
+        console.log('🚀 Starting streaming lead generation workflow...');
+        sendEvent('progress', { step: 1, message: 'Starting workflow...', total: 4 });
+        
+        // Step 1: Generate Apollo URL
+        sendEvent('progress', { step: 2, message: 'Generating Apollo URL...', total: 4 });
+        const apolloResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/generate-url`, {
+            jobTitles, companySizes
+        });
+        const { apolloUrl } = apolloResponse.data;
+        
+        sendEvent('progress', { step: 3, message: 'Scraping leads from Apollo...', total: 4 });
+        
+        // Step 2: Scrape all leads
+        const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
+            apolloUrl, maxRecords
+        }, { timeout: 0 });
+        
+        const { leads, metadata: scrapeMetadata } = scrapeResponse.data;
+        console.log(`✅ Successfully scraped ${leads.length} leads`);
+        
+        sendEvent('scraped', { 
+            count: leads.length, 
+            metadata: scrapeMetadata,
+            apolloUrl 
+        });
+
+        if (leads.length === 0) {
+            sendEvent('complete', { 
+                success: true, 
+                count: 0, 
+                message: 'No leads found' 
+            });
+            res.end();
+            return;
+        }
+
+        // Step 3: Process leads in chunks
+        sendEvent('progress', { step: 4, message: `Processing ${leads.length} leads in batches...`, total: 4 });
+        
+        let processedLeads = [];
+        const totalChunks = Math.ceil(leads.length / chunkSize);
+        
+        for (let i = 0; i < leads.length; i += chunkSize) {
+            const chunk = leads.slice(i, i + chunkSize);
+            const chunkNumber = Math.floor(i / chunkSize) + 1;
+            
+            sendEvent('chunk_start', { 
+                chunk: chunkNumber, 
+                total: totalChunks, 
+                size: chunk.length 
+            });
+
+            let finalChunk = chunk;
+
+            // Generate outreach for this chunk if enabled
+            if (generateOutreach && openai) {
+                try {
+                    const outreachResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/leads/generate-outreach`, {
+                        leads: chunk
+                    }, { timeout: 0 });
+                    
+                    if (outreachResponse.data && outreachResponse.data.leads) {
+                        finalChunk = outreachResponse.data.leads;
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Outreach generation failed for chunk ${chunkNumber}:`, error.message);
+                }
+            }
+
+            processedLeads.push(...finalChunk);
+
+            // Send this chunk to frontend
+            sendEvent('chunk_complete', {
+                chunk: chunkNumber,
+                total: totalChunks,
+                leads: finalChunk,
+                processed: processedLeads.length,
+                remaining: leads.length - processedLeads.length
+            });
+
+            // Small delay between chunks to prevent overwhelming
+            if (i + chunkSize < leads.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+
+        // Send final completion event
+        sendEvent('complete', {
+            success: true,
+            count: processedLeads.length,
+            metadata: {
+                apolloUrl,
+                jobTitles,
+                companySizes,
+                maxRecords,
+                totalFound: leads.length,
+                processed: processedLeads.length,
+                outreachGenerated: generateOutreach && !!openai,
+                scrapeMetadata,
+                completedAt: new Date().toISOString()
+            }
+        });
+
+        res.end();
+
+    } catch (error) {
+        console.error('Streaming workflow error:', error);
+        res.write(`event: error\ndata: ${JSON.stringify({
+            error: 'Workflow Error',
+            message: error.message
+        })}\n\n`);
+        res.end();
+    }
+});
+
 // Complete lead generation workflow with progress updates
 router.post('/complete-workflow', async (req, res) => {
     try {
@@ -433,6 +573,46 @@ router.post('/complete-workflow', async (req, res) => {
             message: 'Failed to complete lead generation workflow',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    }
+});
+
+// Test streaming endpoint
+router.post('/test-stream', async (req, res) => {
+    try {
+        // Set SSE headers
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+        });
+
+        function sendEvent(type, data) {
+            res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+        }
+
+        // Send test events
+        sendEvent('progress', { step: 1, total: 3, message: 'Starting test...' });
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        sendEvent('progress', { step: 2, total: 3, message: 'Processing...' });
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        sendEvent('chunk_complete', { 
+            chunk: 1, 
+            total: 1, 
+            leads: [{ name: 'Test Lead', email: 'test@example.com' }],
+            processed: 1,
+            remaining: 0
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        sendEvent('complete', { success: true, count: 1 });
+        
+        res.end();
+    } catch (error) {
+        console.error('Test stream error:', error);
+        res.status(500).json({ error: 'Test failed' });
     }
 });
 
