@@ -73,22 +73,48 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 1400px;
             margin: 0 auto;
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: var(--space-8);
+            align-items: start;
         }
 
-        .form-card {
+        .filters-panel {
             background: var(--color-white);
             border: 1px solid var(--color-gray-200);
             border-radius: var(--border-radius-xl);
             box-shadow: var(--shadow-lg);
             padding: var(--space-8);
-            margin-bottom: var(--space-6);
-            position: relative;
-            overflow: hidden;
+            position: sticky;
+            top: var(--space-6);
+            height: fit-content;
+            max-height: calc(100vh - 48px);
+            overflow-y: auto;
         }
 
-        .form-card::before {
+        .results-panel {
+            background: var(--color-white);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--border-radius-xl);
+            box-shadow: var(--shadow-lg);
+            padding: var(--space-8);
+            min-height: 600px;
+        }
+
+        .form-card {
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            padding: 0;
+            margin-bottom: 0;
+            position: relative;
+            overflow: visible;
+        }
+
+        .filters-panel::before {
             content: '';
             position: absolute;
             top: 0;
@@ -96,6 +122,17 @@
             right: 0;
             height: 4px;
             background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+            border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
+        }
+
+        .results-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(135deg, var(--color-success) 0%, #059669 100%);
             border-radius: var(--border-radius-xl) var(--border-radius-xl) 0 0;
         }
 
@@ -121,11 +158,17 @@
         }
 
         .form-label {
-            display: block;
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
             color: var(--color-gray-700);
             font-size: var(--font-size-base);
             font-weight: var(--font-weight-medium);
-            margin-bottom: var(--space-2);
+            margin-bottom: var(--space-3);
+        }
+
+        .form-label .emoji {
+            font-size: var(--font-size-lg);
         }
 
         .form-label.required::after {
@@ -167,9 +210,10 @@
             border: 1px solid var(--color-gray-300);
             border-radius: var(--border-radius-md);
             background: var(--color-white);
-            max-height: 200px;
+            max-height: 180px;
             overflow-y: auto;
-            transition: var(--transition-colors);
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         .custom-multiselect:focus-within {
@@ -216,13 +260,18 @@
 
         /* Selected options indicator */
         .selection-preview {
-            margin-top: var(--space-2);
+            margin-top: var(--space-3);
             padding: var(--space-3);
-            background: var(--color-gray-50);
+            background: linear-gradient(135deg, var(--color-gray-50) 0%, var(--color-white) 100%);
             border-radius: var(--border-radius-md);
             font-size: var(--font-size-sm);
-            min-height: 40px;
+            min-height: 50px;
             border: 1px solid var(--color-gray-200);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--space-2);
         }
 
         .selection-tag {
@@ -287,12 +336,12 @@
         }
 
         .output-section {
-            background: var(--color-white);
-            border: 1px solid var(--color-gray-200);
-            border-radius: var(--border-radius-xl);
-            box-shadow: var(--shadow-lg);
-            padding: var(--space-8);
-            margin-top: var(--space-6);
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            padding: 0;
+            margin-top: 0;
         }
 
         .output-header {
@@ -416,13 +465,39 @@
             white-space: nowrap;
         }
 
+        .panel-header {
+            text-align: center;
+            margin-bottom: var(--space-6);
+            padding-bottom: var(--space-4);
+            border-bottom: 1px solid var(--color-gray-100);
+        }
+
+        .panel-title {
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-gray-900);
+            margin-bottom: var(--space-2);
+        }
+
+        .panel-description {
+            font-size: var(--font-size-sm);
+            color: var(--color-gray-600);
+        }
+
         /* Responsive */
-        @media (max-width: 640px) {
+        @media (max-width: 1024px) {
             .container {
+                grid-template-columns: 1fr;
+                gap: var(--space-6);
                 padding: var(--space-4);
             }
             
-            .form-card, .output-section {
+            .filters-panel {
+                position: static;
+                max-height: none;
+            }
+            
+            .filters-panel, .results-panel {
                 padding: var(--space-6);
             }
             
@@ -440,20 +515,33 @@
                 max-width: 120px;
             }
         }
+
+        @media (max-width: 640px) {
+            .container {
+                padding: var(--space-3);
+            }
+            
+            .filters-panel, .results-panel {
+                padding: var(--space-4);
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Form Card -->
-        <div class="form-card">
-            <div class="form-header">
-                <h1 class="form-title">🎯 Lead Generation Tool</h1>
-                <p class="form-description">Generate targeted leads from Singapore business directory and export to Excel</p>
+        <!-- Filters Panel -->
+        <div class="filters-panel">
+            <div class="panel-header">
+                <h1 class="panel-title">🎯 Lead Generation Filters</h1>
+                <p class="panel-description">Configure your search criteria</p>
             </div>
             
             <form id="leadForm">
                 <div class="form-group">
-                    <label class="form-label required">👔 Job Titles</label>
+                    <label class="form-label required">
+                        <span class="emoji">👔</span>
+                        <span>Job Titles</span>
+                    </label>
                     <div class="custom-multiselect" id="jobTitlesMultiselect">
                         <div class="multiselect-option" data-value="Owner">
                             <input type="checkbox" class="multiselect-checkbox" id="job-owner">
@@ -498,7 +586,10 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label required">🏢 Company Size (Employees)</label>
+                    <label class="form-label required">
+                        <span class="emoji">🏢</span>
+                        <span>Company Size (Employees)</span>
+                    </label>
                     <div class="custom-multiselect" id="companySizeMultiselect">
                         <div class="multiselect-option" data-value="1-10">
                             <input type="checkbox" class="multiselect-checkbox" id="size-1-10">
@@ -551,7 +642,10 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">⚙️ Processing Options</label>
+                    <label class="form-label">
+                        <span class="emoji">⚙️</span>
+                        <span>Processing Options</span>
+                    </label>
                     <div style="display: flex; gap: var(--space-4); margin-bottom: var(--space-3); flex-wrap: wrap;">
                         <label style="display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); padding: var(--space-2); border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); background: var(--color-gray-50);">
                             <input type="checkbox" id="generateOutreach" checked style="accent-color: var(--color-primary-500);">
@@ -576,9 +670,20 @@
             </form>
         </div>
 
-        <!-- Results Section -->
-        <div class="output-section hidden" id="outputSection">
-            <h2 class="output-header" id="outputHeader">🎉 Results</h2>
+        <!-- Results Panel -->
+        <div class="results-panel">
+            <div class="panel-header">
+                <h2 class="panel-title" id="resultsTitle">📊 Results & Logs</h2>
+                <p class="panel-description" id="resultsDescription">Your generated leads will appear here</p>
+            </div>
+            
+            <div class="results-empty-state" id="emptyState">
+                <div class="icon">🎯</div>
+                <h3>Ready to Generate Leads</h3>
+                <p>Configure your filters on the left and click "Generate & Process Leads" to begin.</p>
+            </div>
+            
+            <div class="output-section hidden" id="outputSection">
             
             <!-- Search URL Display -->
             <div id="urlSection" class="hidden">
@@ -624,29 +729,33 @@
             
             <!-- Progress Indicator -->
             <div id="progressSection" class="hidden">
-                <div style="background: var(--color-gray-100); border-radius: var(--border-radius-md); padding: var(--space-4); margin: var(--space-4) 0;">
-                    <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2);">
-                        <div class="spinner" style="width: 20px; height: 20px; border: 2px solid var(--color-gray-300); border-top: 2px solid var(--color-primary-500); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                        <span id="progressText">Processing...</span>
+                <div class="progress-section">
+                    <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
+                        <div class="spinner" style="width: 20px; height: 20px; border: 2px solid var(--color-blue-300); border-top: 2px solid var(--color-blue-600); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                        <span id="progressText" style="color: var(--color-blue-700); font-weight: var(--font-weight-medium);">Processing...</span>
                     </div>
-                    <div id="progressSteps"></div>
+                    <div id="progressSteps" style="color: var(--color-blue-600);"></div>
                 </div>
             </div>
             
             <!-- Processing Logs -->
             <div id="processingLogs" class="hidden">
-                <div style="background: var(--color-gray-900); border-radius: var(--border-radius-md); padding: var(--space-4); margin: var(--space-4) 0;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3);">
-                        <h4 style="color: var(--color-white); margin: 0; font-size: var(--font-size-base);">🔍 Processing Logs</h4>
-                        <button id="closeLogsBtn" style="background: none; border: none; color: var(--color-gray-300); cursor: pointer; font-size: 18px;">✕</button>
+                <div class="logs-section">
+                    <div class="logs-header">
+                        <h4>🔍 Processing Logs</h4>
+                        <div>
+                            <button id="toggleLogsBtn" class="logs-toggle" title="Expand/Collapse">⏷</button>
+                            <button id="closeLogsBtn" class="logs-toggle" title="Close">✕</button>
+                        </div>
                     </div>
-                    <div id="logsContainer" style="max-height: 300px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; color: var(--color-gray-300); line-height: 1.4;">
+                    <div id="logsContainer" style="max-height: 250px; overflow-y: auto; font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; font-size: 12px; color: var(--color-gray-300); line-height: 1.5; padding: var(--space-4);">
                         <!-- Logs will appear here -->
                     </div>
                 </div>
             </div>
             
             <div id="statusMessage"></div>
+            </div>
         </div>
     </div>
 
@@ -658,6 +767,7 @@
                 this.progressSection = document.getElementById('progressSection');
                 this.urlSection = document.getElementById('urlSection');
                 this.leadsSection = document.getElementById('leadsSection');
+                this.emptyState = document.getElementById('emptyState');
                 
                 this.generateUrlBtn = document.getElementById('generateUrlBtn');
                 this.generateBtn = document.getElementById('generateBtn');
@@ -689,9 +799,25 @@
                 this.downloadExcelBtn.addEventListener('click', () => this.downloadExcel());
                 this.viewOutreachBtn.addEventListener('click', () => this.viewOutreachContent());
                 
-                // Add event listener for closing logs
+                // Add event listeners for log controls
                 document.getElementById('closeLogsBtn').addEventListener('click', () => {
                     this.processingLogs.classList.add('hidden');
+                });
+                
+                document.getElementById('toggleLogsBtn').addEventListener('click', () => {
+                    const container = this.logsContainer;
+                    const button = document.getElementById('toggleLogsBtn');
+                    if (container.style.maxHeight === '0px' || container.style.display === 'none') {
+                        container.style.maxHeight = '250px';
+                        container.style.display = 'block';
+                        button.textContent = '⏷';
+                        button.title = 'Collapse';
+                    } else {
+                        container.style.maxHeight = '0px';
+                        container.style.display = 'none';
+                        button.textContent = '⏶';
+                        button.title = 'Expand';
+                    }
                 });
                 
                 // Bind custom multiselect events
@@ -1093,12 +1219,27 @@
                 document.getElementById('searchUrl').textContent = searchUrl;
                 document.getElementById('openSearchBtn').href = searchUrl;
                 
+                this.emptyState.classList.add('hidden');
                 this.outputSection.classList.remove('hidden');
                 this.urlSection.classList.remove('hidden');
                 this.leadsSection.classList.add('hidden');
+                
+                // Update results panel header
+                document.getElementById('resultsTitle').textContent = '🔗 Search URL Generated';
+                document.getElementById('resultsDescription').textContent = 'Your search URL is ready';
             }
 
             displayLeads(leads, metadata) {
+                // Hide empty state and show results
+                this.emptyState.classList.add('hidden');
+                this.outputSection.classList.remove('hidden');
+                this.leadsSection.classList.remove('hidden');
+                this.urlSection.classList.add('hidden');
+                
+                // Update results panel header
+                document.getElementById('resultsTitle').textContent = `🎉 ${leads.length} Leads Generated`;
+                document.getElementById('resultsDescription').textContent = 'Lead generation completed successfully';
+                
                 // Update stats
                 const stats = document.getElementById('leadsStats');
                 const outreachCount = leads.filter(lead => lead.outreach_generated).length;
@@ -1199,10 +1340,6 @@
                 if (metadata.outreachGenerated && outreachCount > 0) {
                     this.viewOutreachBtn.style.display = 'inline-flex';
                 }
-
-                this.outputSection.classList.remove('hidden');
-                this.leadsSection.classList.remove('hidden');
-                this.urlSection.classList.add('hidden');
             }
 
             copyUrl() {
