@@ -583,10 +583,10 @@
             <!-- Search URL Display -->
             <div id="urlSection" class="hidden">
                 <h3 style="font-size: var(--font-size-lg); margin-bottom: var(--space-3);">🔗 Generated Search URL</h3>
-                <div class="apollo-url" id="apolloUrl" style="background: var(--color-gray-50); padding: var(--space-4); border-radius: var(--border-radius-md); border: 1px solid var(--color-gray-200); font-family: monospace; word-break: break-all; font-size: var(--font-size-sm);"></div>
+                <div class="search-url" id="searchUrl" style="background: var(--color-gray-50); padding: var(--space-4); border-radius: var(--border-radius-md); border: 1px solid var(--color-gray-200); font-family: monospace; word-break: break-all; font-size: var(--font-size-sm);"></div>
                 <div class="action-buttons">
                     <button type="button" class="btn" id="copyBtn">📋 Copy URL</button>
-                    <a href="#" class="btn btn-primary" id="openApolloBtn" target="_blank">🚀 Open Search</a>
+                    <a href="#" class="btn btn-primary" id="openSearchBtn" target="_blank">🚀 Open Search</a>
                 </div>
             </div>
 
@@ -638,8 +638,7 @@
                 <div style="background: var(--color-gray-900); border-radius: var(--border-radius-md); padding: var(--space-4); margin: var(--space-4) 0;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3);">
                         <h4 style="color: var(--color-white); margin: 0; font-size: var(--font-size-base);">🔍 Processing Logs</h4>
-                        <button onclick="document.getElementById('processingLogs').classList.add('hidden')" 
-                                style="background: none; border: none; color: var(--color-gray-300); cursor: pointer; font-size: 18px;">✕</button>
+                        <button id="closeLogsBtn" style="background: none; border: none; color: var(--color-gray-300); cursor: pointer; font-size: 18px;">✕</button>
                     </div>
                     <div id="logsContainer" style="max-height: 300px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; color: var(--color-gray-300); line-height: 1.4;">
                         <!-- Logs will appear here -->
@@ -689,6 +688,11 @@
                 this.copyBtn.addEventListener('click', () => this.copyUrl());
                 this.downloadExcelBtn.addEventListener('click', () => this.downloadExcel());
                 this.viewOutreachBtn.addEventListener('click', () => this.viewOutreachContent());
+                
+                // Add event listener for closing logs
+                document.getElementById('closeLogsBtn').addEventListener('click', () => {
+                    this.processingLogs.classList.add('hidden');
+                });
                 
                 // Bind custom multiselect events
                 this.bindMultiselectEvents();
@@ -786,12 +790,12 @@
                 if (!this.validateFormData(jobTitles, companySizes)) return;
 
                 try {
-                    this.showProgress('Generating Apollo URL...');
+                    this.showProgress('Generating search URL...');
                     
                     // Generate URL client-side (same logic as backend)
-                    const apolloUrl = this.generateApolloUrlClientSide(jobTitles, companySizes);
+                    const searchUrl = this.generateSearchUrlClientSide(jobTitles, companySizes);
                     
-                    this.displayUrl(apolloUrl);
+                    this.displayUrl(searchUrl);
                     this.hideProgress();
                     this.showStatus('Search URL generated successfully!', 'success');
 
@@ -801,8 +805,8 @@
                 }
             }
 
-            generateApolloUrlClientSide(jobTitles, companySizes) {
-                // Same logic as your n8n workflow and backend
+            generateSearchUrlClientSide(jobTitles, companySizes) {
+                // Generate search URL with filters
                 const baseUrl = "https://app.apollo.io/#/people?page=1";
                 
                 const defaultFilters = [
@@ -851,21 +855,50 @@
                     this.currentLeads = []; // Clear previous results
                     this.displayLeads([], {}); // Clear display
                     
-                    // Start streaming request
-                    const response = await fetch('/api/leads/complete-workflow-stream', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            jobTitles,
-                            companySizes,
-                            generateOutreach,
-                            maxRecords,
-                            chunkSize: 100
-                        })
-                    });
+                    // Start streaming request with retry logic
+                    let response;
+                    let retryCount = 0;
+                    const maxRetries = 3;
+                    
+                    while (retryCount <= maxRetries) {
+                        try {
+                            response = await fetch('/api/leads/complete-workflow-stream', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    jobTitles,
+                                    companySizes,
+                                    generateOutreach,
+                                    maxRecords,
+                                    chunkSize: 100
+                                })
+                            });
 
-                    if (!response.ok) {
-                        throw new Error('Failed to start streaming workflow');
+                            if (response.ok) {
+                                break; // Success, exit retry loop
+                            }
+                            
+                            if (response.status === 429) {
+                                retryCount++;
+                                if (retryCount <= maxRetries) {
+                                    const waitTime = Math.pow(2, retryCount - 1) * 5000; // 5s, 10s, 20s
+                                    this.addLog(`⚠️ Rate limit hit, waiting ${waitTime/1000}s before retry ${retryCount}/${maxRetries}...`, 'warning');
+                                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                                    continue;
+                                }
+                            }
+                            
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            
+                        } catch (error) {
+                            if (retryCount >= maxRetries) {
+                                throw error;
+                            }
+                            retryCount++;
+                            const waitTime = 3000;
+                            this.addLog(`❌ Request failed, retrying in ${waitTime/1000}s (${retryCount}/${maxRetries})...`, 'warning');
+                            await new Promise(resolve => setTimeout(resolve, waitTime));
+                        }
                     }
 
                     // Process streaming response
@@ -934,25 +967,53 @@
                     this.hideProgress();
                     console.error('Streaming error:', error);
                     
-                    // Fallback to URL-only generation
-                    const apolloUrl = this.generateApolloUrlClientSide(jobTitles, companySizes);
-                    this.displayUrl(apolloUrl);
-                    this.showStatus('⚠️ Streaming failed. Generated search URL only.', 'warning');
+                    let errorMessage = 'Unknown error occurred';
+                    let shouldFallback = true;
+                    
+                    if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
+                        errorMessage = '⚠️ Rate limit exceeded. Please wait a few minutes before trying again.';
+                        this.addLog('❌ Rate limit exceeded after retries', 'error');
+                        shouldFallback = false;
+                    } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                        errorMessage = '🔌 Network connection failed. Please check your internet connection.';
+                        this.addLog('❌ Network connection failed', 'error');
+                    } else if (error.message.includes('500')) {
+                        errorMessage = '🔧 Server error. Please try again in a few minutes.';
+                        this.addLog('❌ Server error encountered', 'error');
+                    } else {
+                        errorMessage = `❌ ${error.message}`;
+                        this.addLog(`❌ Streaming error: ${error.message}`, 'error');
+                    }
+                    
+                    if (shouldFallback) {
+                        // Fallback to URL-only generation
+                        const searchUrl = this.generateSearchUrlClientSide(jobTitles, companySizes);
+                        this.displayUrl(searchUrl);
+                        this.showStatus(`${errorMessage} Generated search URL as fallback.`, 'warning');
+                        this.addLog('🔄 Fallback to URL-only generation', 'info');
+                    } else {
+                        this.showStatus(errorMessage, 'error');
+                    }
                 }
             }
 
             handleStreamEvent(eventType, data, allLeads, metadata) {
                 switch(eventType) {
                     case 'progress':
-                        this.updateProgress(`Step ${data.step}/${data.total}: ${data.message}`);
-                        this.addLog(`📋 ${data.message}`, 'progress');
+                        // Make progress messages generic
+                        let genericMessage = data.message;
+                        if (genericMessage.includes('Apollo')) {
+                            genericMessage = genericMessage.replace(/Apollo/g, 'database');
+                        }
+                        this.updateProgress(`Step ${data.step}/${data.total}: ${genericMessage}`);
+                        this.addLog(`📋 ${genericMessage}`, 'progress');
                         break;
                         
                     case 'scraped':
                         // Merge scraped metadata while preserving form data
                         Object.assign(metadata, data.metadata);
-                        this.updateProgress(`✅ Scraped ${data.count} leads from Apollo`);
-                        this.addLog(`🔍 Apollo scraping completed - ${data.count} leads found`, 'progress');
+                        this.updateProgress(`✅ Found ${data.count} leads from database`);
+                        this.addLog(`🔍 Lead search completed - ${data.count} leads found`, 'progress');
                         if (data.metadata?.duplicatesRemoved > 0) {
                             this.addLog(`🧹 Removed ${data.metadata.duplicatesRemoved} duplicate records`, 'info');
                         }
@@ -1028,9 +1089,9 @@
                 return true;
             }
 
-            displayUrl(apolloUrl) {
-                document.getElementById('apolloUrl').textContent = apolloUrl;
-                document.getElementById('openApolloBtn').href = apolloUrl;
+            displayUrl(searchUrl) {
+                document.getElementById('searchUrl').textContent = searchUrl;
+                document.getElementById('openSearchBtn').href = searchUrl;
                 
                 this.outputSection.classList.remove('hidden');
                 this.urlSection.classList.remove('hidden');
@@ -1145,7 +1206,7 @@
             }
 
             copyUrl() {
-                const url = document.getElementById('apolloUrl').textContent;
+                const url = document.getElementById('searchUrl').textContent;
                 navigator.clipboard.writeText(url).then(() => {
                     this.showStatus('URL copied to clipboard!', 'success');
                 }).catch(() => {
@@ -1221,7 +1282,7 @@
                 modalContent.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4);">
                         <h3>AI-Generated Outreach Content</h3>
-                        <button onclick="document.getElementById('outreachModal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background='var(--color-gray-100)'" onmouseout="this.style.background='none'">&times;</button>
+                        <button id="closeModalBtn" style="background: none; border: none; font-size: 24px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background 0.2s;">&times;</button>
                     </div>
                     ${leadsWithOutreach.map(lead => `
                         <div style="border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); padding: var(--space-4); margin-bottom: var(--space-4);">
@@ -1233,6 +1294,11 @@
 
                 modal.appendChild(modalContent);
                 document.body.appendChild(modal);
+                
+                // Add event listener for modal close button
+                document.getElementById('closeModalBtn').addEventListener('click', () => {
+                    modal.remove();
+                });
             }
 
             showProgress(message) {
@@ -1243,8 +1309,13 @@
                 this.generateBtn.disabled = true;
                 this.generateUrlBtn.disabled = true;
                 
-                // Clear previous logs
+                // Clear previous results and logs for fresh start
+                this.progressSteps.innerHTML = '';
                 this.logsContainer.innerHTML = '';
+                this.currentLeads = [];
+                this.displayLeads([], {}); // Clear previous results table
+                this.leadsSection.classList.add('hidden'); // Hide results until new data comes
+                
                 this.addLog('🚀 Starting lead generation workflow...', 'info');
             }
 

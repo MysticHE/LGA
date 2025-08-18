@@ -18,8 +18,9 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+            scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers temporarily
             imgSrc: ["'self'", "data:", "https:"],
-            connectSrc: ["'self'"]
+            connectSrc: ["'self'", "https://api.apify.com", "https://api.openai.com"]
         }
     }
 }));

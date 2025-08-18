@@ -246,6 +246,12 @@ router.post('/export-excel', async (req, res) => {
 
 // Streaming lead generation workflow with chunked responses  
 router.post('/complete-workflow-stream', async (req, res) => {
+    // Add request logging for debugging
+    console.log('🔍 Streaming workflow requested:', {
+        timestamp: new Date().toISOString(),
+        ip: req.ip,
+        userAgent: req.get('User-Agent')?.substring(0, 50) + '...'
+    });
     try {
         const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true, chunkSize = 100 } = req.body;
 
