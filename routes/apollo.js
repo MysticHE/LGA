@@ -106,12 +106,7 @@ router.post('/scrape-leads', async (req, res) => {
 
         console.log(`🔍 Starting Apollo scrape for ${recordLimit} records...`);
 
-        // Determine timeout based on record count (more records = longer timeout)
-        const baseTimeout = 120000; // 2 minutes base
-        const additionalTimeout = Math.max(0, (recordLimit - 100) * 500); // Add 0.5s per record over 100
-        const finalTimeout = Math.min(baseTimeout + additionalTimeout, 600000); // Max 10 minutes
-        
-        console.log(`⏱️ Using ${finalTimeout/1000}s timeout for ${recordLimit} records`);
+        console.log(`⏱️ No timeout limit - scraper will run until completion for ${recordLimit} records`);
 
         let apifyResponse;
         let retryCount = 0;
@@ -133,7 +128,7 @@ router.post('/scrape-leads', async (req, res) => {
                             'Accept': 'application/json',
                             'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`
                         },
-                        timeout: finalTimeout
+                        timeout: 0 // No timeout - let it run until completion
                     }
                 ).catch(error => {
                     // Remove sensitive data from error logs
@@ -153,7 +148,7 @@ router.post('/scrape-leads', async (req, res) => {
                 if (retryCount > maxRetries) {
                     // All retries exhausted
                     if (error.code === 'ECONNABORTED') {
-                        throw new Error(`Apollo scraping took too long (>${finalTimeout/1000}s). Try reducing the number of records (current: ${recordLimit}) or try again later.`);
+                        throw new Error(`Apollo scraping was interrupted. Please try again with fewer records (current: ${recordLimit}) or check your network connection.`);
                     } else {
                         throw new Error(`Apify scraper failed after ${maxRetries + 1} attempts: ${error.message}`);
                     }

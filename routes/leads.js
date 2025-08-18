@@ -295,13 +295,15 @@ router.post('/complete-workflow', async (req, res) => {
 
         // Step 2: Scrape leads from Apollo
         console.log('🔍 Step 2: Scraping leads from Apollo...');
+        console.log(`⏱️ No timeout limit - will wait for scraper to complete (${maxRecords} records)`);
+        
         let scrapeData;
         try {
             const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
                 apolloUrl,
                 maxRecords
             }, {
-                timeout: 180000 // 3 minutes for scraping
+                timeout: 0 // No timeout - wait for completion
             });
             scrapeData = scrapeResponse.data;
         } catch (axiosError) {
@@ -336,12 +338,13 @@ router.post('/complete-workflow', async (req, res) => {
         // Step 3: Generate outreach content (optional)
         if (generateOutreach && openai && leads.length > 0) {
             console.log(`🤖 Step 3: Generating AI outreach for ${leads.length} leads...`);
+            console.log(`⏱️ No timeout limit - will generate outreach until completion (${leads.length} leads)`);
             
             try {
                 const outreachResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/leads/generate-outreach`, {
                     leads
                 }, {
-                    timeout: 300000 // 5 minutes for outreach generation
+                    timeout: 0 // No timeout - wait for completion
                 });
 
                 if (outreachResponse.data) {
