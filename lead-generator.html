@@ -754,53 +754,73 @@
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="101-200">
-                            <input type="checkbox" class="multiselect-checkbox" id="size-101-200">
-                            <label class="multiselect-label" for="size-101-200">101-200 employees</label>
+                            <div class="option-chip" onclick="toggleOption(this)">
+                                <input type="checkbox" class="multiselect-checkbox" id="size-101-200">
+                                <label class="multiselect-label" for="size-101-200">101-200</label>
+                            </div>
                         </div>
                         <div class="multiselect-option" data-value="201-500">
-                            <input type="checkbox" class="multiselect-checkbox" id="size-201-500">
-                            <label class="multiselect-label" for="size-201-500">201-500 employees</label>
+                            <div class="option-chip" onclick="toggleOption(this)">
+                                <input type="checkbox" class="multiselect-checkbox" id="size-201-500">
+                                <label class="multiselect-label" for="size-201-500">201-500</label>
+                            </div>
                         </div>
                         <div class="multiselect-option" data-value="501-1000">
-                            <input type="checkbox" class="multiselect-checkbox" id="size-501-1000">
-                            <label class="multiselect-label" for="size-501-1000">501-1000 employees</label>
+                            <div class="option-chip" onclick="toggleOption(this)">
+                                <input type="checkbox" class="multiselect-checkbox" id="size-501-1000">
+                                <label class="multiselect-label" for="size-501-1000">501-1K</label>
+                            </div>
                         </div>
                         <div class="multiselect-option" data-value="1001-2000">
-                            <input type="checkbox" class="multiselect-checkbox" id="size-1001-2000">
-                            <label class="multiselect-label" for="size-1001-2000">1001-2000 employees</label>
+                            <div class="option-chip" onclick="toggleOption(this)">
+                                <input type="checkbox" class="multiselect-checkbox" id="size-1001-2000">
+                                <label class="multiselect-label" for="size-1001-2000">1K-2K</label>
+                            </div>
                         </div>
                         <div class="multiselect-option" data-value="2001-5000">
-                            <input type="checkbox" class="multiselect-checkbox" id="size-2001-5000">
-                            <label class="multiselect-label" for="size-2001-5000">2001-5000 employees</label>
+                            <div class="option-chip" onclick="toggleOption(this)">
+                                <input type="checkbox" class="multiselect-checkbox" id="size-2001-5000">
+                                <label class="multiselect-label" for="size-2001-5000">2K-5K</label>
+                            </div>
                         </div>
                         <div class="multiselect-option" data-value="5001-10000">
-                            <input type="checkbox" class="multiselect-checkbox" id="size-5001-10000">
-                            <label class="multiselect-label" for="size-5001-10000">5001-10000 employees</label>
+                            <div class="option-chip" onclick="toggleOption(this)">
+                                <input type="checkbox" class="multiselect-checkbox" id="size-5001-10000">
+                                <label class="multiselect-label" for="size-5001-10000">5K-10K</label>
+                            </div>
                         </div>
                         <div class="multiselect-option" data-value="10001+">
-                            <input type="checkbox" class="multiselect-checkbox" id="size-10001">
-                            <label class="multiselect-label" for="size-10001">10001+ employees</label>
+                            <div class="option-chip" onclick="toggleOption(this)">
+                                <input type="checkbox" class="multiselect-checkbox" id="size-10001">
+                                <label class="multiselect-label" for="size-10001">10K+</label>
+                            </div>
                         </div>
                     </div>
                     <div class="selection-preview" id="companySizePreview">
-                        <em style="color: var(--color-gray-400);">Click checkboxes above to select company sizes...</em>
+                        <em style="color: var(--color-gray-400);">Select company sizes above...</em>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">
-                        <span class="emoji">⚙️</span>
-                        <span>Processing Options</span>
-                    </label>
-                    <div style="display: flex; gap: var(--space-4); margin-bottom: var(--space-3); flex-wrap: wrap;">
-                        <label style="display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); padding: var(--space-2); border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); background: var(--color-gray-50);">
-                            <input type="checkbox" id="generateOutreach" checked style="accent-color: var(--color-primary-500);">
-                            🤖 Generate AI Outreach Content
+                    <div class="filter-card">
+                        <label class="form-label">
+                            <span class="emoji">⚙️</span>
+                            <span>Processing Options</span>
                         </label>
-                        <div style="display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); padding: var(--space-2); border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-md); background: var(--color-gray-50);">
-                            <label for="maxRecords">📊 Max Leads:</label>
-                            <input type="number" id="maxRecords" value="500" min="10" max="2000" style="width: 80px; padding: 4px var(--space-2); border: 1px solid var(--color-gray-300); border-radius: 4px; font-size: var(--font-size-sm);">
-                            <small style="color: var(--color-gray-500);">(0 = unlimited)</small>
+                        <div class="processing-options">
+                            <div class="processing-row">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="generateOutreach" checked style="accent-color: var(--color-primary-500);">
+                                    <label for="generateOutreach">🤖 Generate AI Outreach</label>
+                                </div>
+                            </div>
+                            <div class="processing-row">
+                                <div class="number-input-group">
+                                    <label for="maxRecords">📊 Max Leads:</label>
+                                    <input type="number" id="maxRecords" value="500" min="10" max="2000">
+                                    <small style="color: var(--color-gray-500);">(0 = unlimited)</small>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
