@@ -920,7 +920,14 @@
                 // Update stats
                 const stats = document.getElementById('leadsStats');
                 const outreachCount = leads.filter(lead => lead.outreach_generated).length;
-                const totalFound = metadata.totalFound || leads.length;
+                
+                // Enhanced statistics from scrapeMetadata
+                const totalAvailable = metadata.scrapeMetadata?.totalAvailable || metadata.totalFound || leads.length;
+                const rawScraped = metadata.scrapeMetadata?.rawScraped || leads.length;
+                const duplicatesRemoved = metadata.scrapeMetadata?.duplicatesRemoved || 0;
+                const finalCount = metadata.scrapeMetadata?.finalCount || leads.length;
+                const limitReached = metadata.scrapeMetadata?.limitReached || false;
+                const deduplicationRate = metadata.scrapeMetadata?.deduplicationStats?.deduplicationRate || '0%';
                 
                 // Show applied filters
                 const filtersDisplay = `
@@ -936,15 +943,56 @@
                     </div>
                 `;
                 
+                // Enhanced statistics display
+                const limitDisplay = metadata.maxRecords === 0 || metadata.maxRecords === 'unlimited' ? 'No Limit' : `${metadata.maxRecords} records`;
+                const limitStatus = limitReached ? 
+                    `<div style="color: var(--color-amber-600);"><strong>⚠️ Limit Reached:</strong> ${limitDisplay}</div>` : 
+                    `<div><strong>Record Limit:</strong> ${limitDisplay}</div>`;
+                
+                // Duplicate removal stats
+                const duplicationDisplay = duplicatesRemoved > 0 ? 
+                    `<div style="color: var(--color-green-600);"><strong>🧹 Duplicates Removed:</strong> ${duplicatesRemoved} (${deduplicationRate})</div>` : 
+                    '';
+                
                 stats.innerHTML = filtersDisplay + `
-                    <div style="display: flex; gap: var(--space-6); flex-wrap: wrap;">
-                        <div><strong>Total Found:</strong> ${totalFound}</div>
-                        <div><strong>Processed:</strong> ${leads.length}</div>
-                        <div><strong>With Email:</strong> ${leads.filter(l => l.email).length}</div>
-                        <div><strong>With LinkedIn:</strong> ${leads.filter(l => l.linkedin_url).length}</div>
-                        ${metadata.outreachGenerated ? `<div><strong>AI Outreach:</strong> ${outreachCount}</div>` : ''}
-                        <div><strong>Limit:</strong> ${metadata.maxRecords === 0 || metadata.maxRecords === 'unlimited' ? 'None' : metadata.maxRecords}</div>
+                    <!-- Main Statistics -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4);">
+                        <div style="padding: var(--space-3); background: var(--color-blue-50); border-radius: var(--border-radius-md); border-left: 4px solid var(--color-blue-500);">
+                            <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--color-blue-700);">${totalAvailable.toLocaleString()}</div>
+                            <div style="font-size: var(--font-size-sm); color: var(--color-blue-600);">Total Available</div>
+                        </div>
+                        <div style="padding: var(--space-3); background: var(--color-green-50); border-radius: var(--border-radius-md); border-left: 4px solid var(--color-green-500);">
+                            <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--color-green-700);">${finalCount.toLocaleString()}</div>
+                            <div style="font-size: var(--font-size-sm); color: var(--color-green-600);">Final Results</div>
+                        </div>
+                        <div style="padding: var(--space-3); background: var(--color-purple-50); border-radius: var(--border-radius-md); border-left: 4px solid var(--color-purple-500);">
+                            <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--color-purple-700);">${leads.filter(l => l.email).length}</div>
+                            <div style="font-size: var(--font-size-sm); color: var(--color-purple-600);">With Email</div>
+                        </div>
+                        <div style="padding: var(--space-3); background: var(--color-indigo-50); border-radius: var(--border-radius-md); border-left: 4px solid var(--color-indigo-500);">
+                            <div style="font-size: var(--font-size-2xl); font-weight: 700; color: var(--color-indigo-700);">${leads.filter(l => l.linkedin_url).length}</div>
+                            <div style="font-size: var(--font-size-sm); color: var(--color-indigo-600);">With LinkedIn</div>
+                        </div>
                     </div>
+                    
+                    <!-- Processing Details -->
+                    <div style="display: flex; gap: var(--space-6); flex-wrap: wrap; font-size: var(--font-size-sm); color: var(--color-gray-600);">
+                        ${limitStatus}
+                        ${duplicatesRemoved > 0 ? `<div><strong>Raw Scraped:</strong> ${rawScraped.toLocaleString()}</div>` : ''}
+                        ${duplicationDisplay}
+                        ${metadata.outreachGenerated ? `<div><strong>AI Outreach:</strong> ${outreachCount}</div>` : ''}
+                    </div>
+                    
+                    ${totalAvailable > finalCount ? `
+                        <div style="margin-top: var(--space-3); padding: var(--space-3); background: var(--color-amber-50); border: 1px solid var(--color-amber-200); border-radius: var(--border-radius-md);">
+                            <div style="color: var(--color-amber-800); font-weight: 600;">
+                                📊 <strong>${(totalAvailable - finalCount).toLocaleString()} more leads available!</strong>
+                            </div>
+                            <div style="color: var(--color-amber-700); font-size: var(--font-size-sm); margin-top: var(--space-1);">
+                                Increase your record limit or run multiple searches to capture all results.
+                            </div>
+                        </div>
+                    ` : ''}
                 `;
 
                 // Update table

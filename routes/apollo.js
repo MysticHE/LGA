@@ -166,12 +166,54 @@ router.post('/scrape-leads', async (req, res) => {
             }
         }
 
-        const leads = apifyResponse.data || [];
+        const rawData = apifyResponse.data || [];
         
-        console.log(`✅ Successfully scraped ${leads.length} leads`);
+        console.log(`✅ Successfully scraped ${rawData.length} leads`);
+
+        // Extract total count from Apify response metadata if available
+        let totalAvailable = rawData.length;
+        let limitReached = false;
+        
+        if (apifyResponse.headers && apifyResponse.headers['x-apify-total-results']) {
+            totalAvailable = parseInt(apifyResponse.headers['x-apify-total-results']);
+            limitReached = totalAvailable > rawData.length;
+        }
+
+        // Duplicate prevention: Remove duplicates based on email and LinkedIn URL
+        const uniqueLeads = [];
+        const seen = new Set();
+        
+        rawData.forEach(lead => {
+            // Create unique identifier: email + linkedin_url (fallback to name + company)
+            const email = (lead.email || '').toLowerCase().trim();
+            const linkedin = (lead.linkedin_url || '').toLowerCase().trim();
+            const name = (lead.name || '').toLowerCase().trim();
+            const company = (lead.organization_name || '').toLowerCase().trim();
+            
+            let identifier;
+            if (email && email !== '') {
+                identifier = email; // Email is most unique
+            } else if (linkedin && linkedin !== '') {
+                identifier = linkedin; // LinkedIn URL second most unique
+            } else {
+                identifier = `${name}|${company}`; // Fallback to name+company
+            }
+            
+            if (!seen.has(identifier)) {
+                seen.add(identifier);
+                uniqueLeads.push(lead);
+            } else {
+                console.log(`🔄 Removed duplicate: ${lead.name} (${identifier})`);
+            }
+        });
+
+        const duplicatesRemoved = rawData.length - uniqueLeads.length;
+        if (duplicatesRemoved > 0) {
+            console.log(`🧹 Removed ${duplicatesRemoved} duplicate records`);
+        }
 
         // Transform leads to match n8n workflow structure
-        const transformedLeads = leads.map(lead => ({
+        const transformedLeads = uniqueLeads.map(lead => ({
             name: lead.name || '',
             title: lead.title || '',
             organization_name: lead.organization_name || '',
@@ -192,7 +234,18 @@ router.post('/scrape-leads', async (req, res) => {
             metadata: {
                 apolloUrl,
                 scrapedAt: new Date().toISOString(),
-                maxRecords: recordLimit
+                maxRecords: recordLimit,
+                totalAvailable: totalAvailable,
+                rawScraped: rawData.length,
+                duplicatesRemoved: duplicatesRemoved,
+                finalCount: transformedLeads.length,
+                limitReached: limitReached,
+                deduplicationStats: {
+                    input: rawData.length,
+                    duplicates: duplicatesRemoved,
+                    unique: transformedLeads.length,
+                    deduplicationRate: rawData.length > 0 ? ((duplicatesRemoved / rawData.length) * 100).toFixed(1) + '%' : '0%'
+                }
             }
         });
 
