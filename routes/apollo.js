@@ -106,22 +106,65 @@ router.post('/scrape-leads', async (req, res) => {
 
         console.log(`🔍 Starting Apollo scrape for ${recordLimit} records...`);
 
-        // Call Apify Apollo scraper (same as n8n workflow)
-        const apifyResponse = await axios.post(
-            'https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/run-sync-get-dataset-items',
-            {
-                cleanOutput: true,
-                totalRecords: recordLimit,
-                url: apolloUrl
-            },
-            {
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`
-                },
-                timeout: 120000 // 2 minute timeout
+        // Determine timeout based on record count (more records = longer timeout)
+        const baseTimeout = 120000; // 2 minutes base
+        const additionalTimeout = Math.max(0, (recordLimit - 100) * 500); // Add 0.5s per record over 100
+        const finalTimeout = Math.min(baseTimeout + additionalTimeout, 600000); // Max 10 minutes
+        
+        console.log(`⏱️ Using ${finalTimeout/1000}s timeout for ${recordLimit} records`);
+
+        let apifyResponse;
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (retryCount <= maxRetries) {
+            try {
+                console.log(`🎯 Attempt ${retryCount + 1}/${maxRetries + 1} - Calling Apify scraper...`);
+                
+                apifyResponse = await axios.post(
+                    'https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/run-sync-get-dataset-items',
+                    {
+                        cleanOutput: true,
+                        totalRecords: recordLimit,
+                        url: apolloUrl
+                    },
+                    {
+                        headers: {
+                            'Accept': 'application/json',
+                            'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`
+                        },
+                        timeout: finalTimeout
+                    }
+                ).catch(error => {
+                    // Remove sensitive data from error logs
+                    if (error.config && error.config.headers && error.config.headers.Authorization) {
+                        error.config.headers.Authorization = 'Bearer [REDACTED]';
+                    }
+                    throw error;
+                });
+                
+                console.log('✅ Apify scraper completed successfully');
+                break; // Success, exit retry loop
+                
+            } catch (error) {
+                retryCount++;
+                console.error(`❌ Attempt ${retryCount}/${maxRetries + 1} failed:`, error.code || error.message);
+                
+                if (retryCount > maxRetries) {
+                    // All retries exhausted
+                    if (error.code === 'ECONNABORTED') {
+                        throw new Error(`Apollo scraping took too long (>${finalTimeout/1000}s). Try reducing the number of records (current: ${recordLimit}) or try again later.`);
+                    } else {
+                        throw new Error(`Apify scraper failed after ${maxRetries + 1} attempts: ${error.message}`);
+                    }
+                } else {
+                    // Wait before retry (exponential backoff)
+                    const waitTime = Math.pow(2, retryCount - 1) * 5000; // 5s, 10s delays
+                    console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                }
             }
-        );
+        }
 
         const leads = apifyResponse.data || [];
         
