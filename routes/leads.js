@@ -396,6 +396,19 @@ router.post('/complete-workflow', async (req, res) => {
 
         console.log(`🎉 Workflow completed successfully with ${finalLeads.length} leads`);
 
+        // Ensure scrapeMetadata is serializable by creating a clean copy
+        const cleanScrapeMetadata = scrapeMetadata ? {
+            apolloUrl: scrapeMetadata.apolloUrl,
+            scrapedAt: scrapeMetadata.scrapedAt,
+            maxRecords: scrapeMetadata.maxRecords,
+            totalAvailable: scrapeMetadata.totalAvailable,
+            rawScraped: scrapeMetadata.rawScraped,
+            duplicatesRemoved: scrapeMetadata.duplicatesRemoved,
+            finalCount: scrapeMetadata.finalCount,
+            limitReached: scrapeMetadata.limitReached,
+            deduplicationStats: scrapeMetadata.deduplicationStats
+        } : null;
+
         res.json({
             success: true,
             count: finalLeads.length,
@@ -407,8 +420,8 @@ router.post('/complete-workflow', async (req, res) => {
                 maxRecords: maxRecords || 'unlimited',
                 totalFound: leads.length, // This is what Apify actually found
                 scraped: finalLeads.length,
-                outreachGenerated: generateOutreach && openai,
-                scrapeMetadata,
+                outreachGenerated: generateOutreach && !!openai,
+                scrapeMetadata: cleanScrapeMetadata,
                 completedAt: new Date().toISOString()
             }
         });
