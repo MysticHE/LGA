@@ -14,6 +14,7 @@
             --font-weight-semibold: 600;
             --font-weight-bold: 700;
             
+            --font-size-xs: 11px;
             --font-size-sm: 12px;
             --font-size-base: 14px;
             --font-size-md: 16px;
@@ -41,8 +42,36 @@
             --color-success: #10b981;
             --color-error: #ef4444;
             --color-warning: #f59e0b;
+            
+            --color-blue-50: #eff6ff;
+            --color-blue-200: #bfdbfe;
+            --color-blue-400: #60a5fa;
+            --color-blue-500: #3b82f6;
+            --color-blue-600: #2563eb;
+            --color-blue-700: #1d4ed8;
+            
+            --color-green-200: #bbf7d0;
+            --color-green-500: #10b981;
+            --color-green-600: #059669;
+            
+            --color-purple-50: #faf5ff;
+            --color-purple-500: #8b5cf6;
+            --color-purple-600: #7c3aed;
+            --color-purple-700: #6d28d9;
+            
+            --color-indigo-50: #eef2ff;
+            --color-indigo-500: #6366f1;
+            --color-indigo-600: #4f46e5;
+            --color-indigo-700: #4338ca;
+            
+            --color-amber-50: #fffbeb;
+            --color-amber-200: #fde68a;
+            --color-amber-600: #d97706;
+            --color-amber-700: #b45309;
+            --color-amber-800: #92400e;
 
             /* Spacing */
+            --space-1: 4px;
             --space-2: 8px;
             --space-3: 12px;
             --space-4: 16px;
@@ -53,6 +82,7 @@
             --border-radius-md: 6px;
             --border-radius-lg: 8px;
             --border-radius-xl: 12px;
+            --border-radius-full: 50px;
 
             /* Shadows */
             --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
@@ -535,6 +565,24 @@
             100% { transform: rotate(360deg); }
         }
 
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        @keyframes slideDown {
+            from { 
+                opacity: 0; 
+                transform: translateY(-10px); 
+                max-height: 0;
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0); 
+                max-height: 300px;
+            }
+        }
+
         /* Table styles */
         #leadsTable tbody tr:hover {
             background: var(--color-gray-50);
@@ -589,8 +637,248 @@
             background: linear-gradient(135deg, var(--color-blue-50) 0%, var(--color-white) 100%);
             border: 1px solid var(--color-blue-200);
             border-radius: var(--border-radius-lg);
-            padding: var(--space-3);
+            padding: var(--space-4);
+            margin-bottom: var(--space-4);
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+        }
+
+        /* Enhanced Progress Styles */
+        .progress-header {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
             margin-bottom: var(--space-3);
+            padding-bottom: var(--space-3);
+            border-bottom: 1px solid var(--color-blue-200);
+        }
+
+        .progress-icon {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--color-blue-300);
+            border-top: 3px solid var(--color-blue-600);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .progress-title {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-blue-700);
+            margin: 0;
+        }
+
+        .progress-subtitle {
+            font-size: var(--font-size-sm);
+            color: var(--color-blue-600);
+            margin: 0;
+        }
+
+        .progress-steps {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2);
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: var(--border-radius-md);
+            transition: all 0.3s ease;
+            animation: slideDown 0.5s ease;
+        }
+
+        .progress-step.active {
+            background: rgba(59, 130, 246, 0.1);
+            border-left: 3px solid var(--color-blue-500);
+            animation: pulse 2s infinite;
+        }
+
+        .step-icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--color-green-500);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .step-icon.active {
+            background: var(--color-blue-500);
+            animation: pulse 1.5s infinite;
+        }
+
+        .step-text {
+            font-size: var(--font-size-sm);
+            color: var(--color-gray-700);
+            flex: 1;
+        }
+
+        /* Enhanced Logs Section */
+        .logs-section {
+            background: linear-gradient(135deg, var(--color-gray-900) 0%, var(--color-gray-800) 100%);
+            border-radius: var(--border-radius-lg);
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            margin-top: var(--space-4);
+        }
+
+        .logs-header {
+            background: linear-gradient(135deg, var(--color-gray-800) 0%, var(--color-gray-700) 100%);
+            padding: var(--space-4);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--color-gray-600);
+        }
+
+        .logs-title {
+            color: var(--color-white);
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-semibold);
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            margin: 0;
+        }
+
+        .logs-controls {
+            display: flex;
+            gap: var(--space-2);
+        }
+
+        .logs-toggle {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--color-white);
+            padding: var(--space-1) var(--space-2);
+            border-radius: var(--border-radius-md);
+            cursor: pointer;
+            font-size: var(--font-size-sm);
+            transition: all 0.2s ease;
+            min-width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logs-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .logs-container {
+            background: var(--color-gray-900);
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: var(--font-size-sm);
+            line-height: 1.6;
+            padding: var(--space-4);
+            transition: all 0.3s ease;
+        }
+
+        .logs-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .logs-container::-webkit-scrollbar-track {
+            background: var(--color-gray-800);
+        }
+
+        .logs-container::-webkit-scrollbar-thumb {
+            background: var(--color-gray-600);
+            border-radius: 4px;
+        }
+
+        .logs-container::-webkit-scrollbar-thumb:hover {
+            background: var(--color-gray-500);
+        }
+
+        .log-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--space-2);
+            margin-bottom: var(--space-1);
+            padding: var(--space-1) 0;
+            border-left: 3px solid transparent;
+            padding-left: var(--space-2);
+            transition: all 0.2s ease;
+            animation: slideDown 0.3s ease;
+        }
+
+        .log-entry:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-left-color: var(--color-blue-500);
+        }
+
+        .log-timestamp {
+            color: var(--color-gray-400);
+            font-size: var(--font-size-xs);
+            min-width: 65px;
+            flex-shrink: 0;
+        }
+
+        .log-icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .log-icon.info { background: var(--color-blue-500); }
+        .log-icon.progress { background: var(--color-green-500); }
+        .log-icon.error { background: var(--color-error); }
+        .log-icon.warning { background: var(--color-warning); }
+        .log-icon.processing { background: var(--color-blue-400); }
+
+        .log-message {
+            color: var(--color-gray-100);
+            flex: 1;
+            word-wrap: break-word;
+        }
+
+        .log-message.info { color: var(--color-blue-200); }
+        .log-message.progress { color: var(--color-green-200); }
+        .log-message.error { color: #fca5a5; }
+        .log-message.warning { color: #fde68a; }
+        .log-message.processing { color: var(--color-blue-200); }
+
+        /* Status Message Improvements */
+        .status-enhanced {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .status-enhanced::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
         }
 
         /* Force side-by-side layout - ALWAYS APPLIED */
@@ -989,29 +1277,37 @@
                 </div>
             </div>
             
-            <!-- Progress Indicator -->
+            <!-- Enhanced Progress Indicator -->
             <div id="progressSection" class="hidden">
                 <div class="progress-section">
-                    <div style="display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3);">
-                        <div class="spinner" style="width: 20px; height: 20px; border: 2px solid var(--color-blue-300); border-top: 2px solid var(--color-blue-600); border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                        <span id="progressText" style="color: var(--color-blue-700); font-weight: var(--font-weight-medium);">Processing...</span>
+                    <div class="progress-header">
+                        <div class="progress-icon"></div>
+                        <div>
+                            <h3 class="progress-title" id="progressText">Processing...</h3>
+                            <p class="progress-subtitle">Generating leads for your criteria</p>
+                        </div>
                     </div>
-                    <div id="progressSteps" style="color: var(--color-blue-600);"></div>
+                    <div class="progress-steps" id="progressSteps"></div>
                 </div>
             </div>
             
-            <!-- Processing Logs -->
+            <!-- Enhanced Processing Logs -->
             <div id="processingLogs" class="hidden">
                 <div class="logs-section">
                     <div class="logs-header">
-                        <h4>🔍 Processing Logs</h4>
-                        <div>
+                        <h4 class="logs-title">
+                            <span>🔍</span>
+                            <span>Processing Logs</span>
+                            <span id="logCount" style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 12px; font-size: var(--font-size-xs);">0</span>
+                        </h4>
+                        <div class="logs-controls">
                             <button id="toggleLogsBtn" class="logs-toggle" title="Expand/Collapse">⏷</button>
+                            <button id="clearLogsBtn" class="logs-toggle" title="Clear Logs">🗑</button>
                             <button id="closeLogsBtn" class="logs-toggle" title="Close">✕</button>
                         </div>
                     </div>
-                    <div id="logsContainer" style="max-height: 250px; overflow-y: auto; font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; font-size: 12px; color: var(--color-gray-300); line-height: 1.5; padding: var(--space-4);">
-                        <!-- Logs will appear here -->
+                    <div id="logsContainer" class="logs-container">
+                        <!-- Enhanced logs will appear here -->
                     </div>
                 </div>
             </div>
@@ -1076,16 +1372,23 @@
                 this.downloadExcelBtn.addEventListener('click', () => this.downloadExcel());
                 this.viewOutreachBtn.addEventListener('click', () => this.viewOutreachContent());
                 
-                // Add event listeners for log controls
+                // Enhanced event listeners for log controls
                 document.getElementById('closeLogsBtn').addEventListener('click', () => {
                     this.processingLogs.classList.add('hidden');
+                });
+                
+                document.getElementById('clearLogsBtn').addEventListener('click', () => {
+                    this.logsContainer.innerHTML = '';
+                    this.updateLogCount(0);
                 });
                 
                 document.getElementById('toggleLogsBtn').addEventListener('click', () => {
                     const container = this.logsContainer;
                     const button = document.getElementById('toggleLogsBtn');
-                    if (container.style.maxHeight === '0px' || container.style.display === 'none') {
-                        container.style.maxHeight = '250px';
+                    const isCollapsed = container.style.maxHeight === '0px' || container.style.display === 'none';
+                    
+                    if (isCollapsed) {
+                        container.style.maxHeight = '300px';
                         container.style.display = 'block';
                         button.textContent = '⏷';
                         button.title = 'Collapse';
@@ -1694,6 +1997,7 @@
                 // Clear previous results and logs for fresh start
                 this.progressSteps.innerHTML = '';
                 this.logsContainer.innerHTML = '';
+                this.updateLogCount(0);
                 this.currentLeads = [];
                 this.displayLeads([], {}); // Clear previous results table
                 this.leadsSection.classList.add('hidden'); // Hide results until new data comes
@@ -1702,7 +2006,23 @@
             }
 
             updateProgress(step) {
-                this.progressSteps.innerHTML += `<div style="font-size: var(--font-size-sm); color: var(--color-gray-600); margin-top: var(--space-1);">✓ ${step}</div>`;
+                const stepElement = document.createElement('div');
+                stepElement.className = 'progress-step active';
+                stepElement.innerHTML = `
+                    <div class="step-icon active">⟳</div>
+                    <div class="step-text">${step}</div>
+                `;
+                this.progressSteps.appendChild(stepElement);
+                
+                // Remove active state from previous steps
+                const previousSteps = this.progressSteps.querySelectorAll('.progress-step:not(:last-child)');
+                previousSteps.forEach(prevStep => {
+                    prevStep.classList.remove('active');
+                    const icon = prevStep.querySelector('.step-icon');
+                    icon.classList.remove('active');
+                    icon.textContent = '✓';
+                });
+                
                 this.addLog(step, 'progress');
             }
 
@@ -1722,28 +2042,39 @@
                     second: '2-digit' 
                 });
                 
-                const colors = {
-                    info: '#64748b',      // gray
-                    progress: '#10b981',  // green  
-                    error: '#ef4444',     // red
-                    warning: '#f59e0b',   // yellow
-                    processing: '#3b82f6' // blue
+                const icons = {
+                    info: 'ℹ',
+                    progress: '✓',
+                    error: '✕',
+                    warning: '⚠',
+                    processing: '⟳'
                 };
                 
                 const logEntry = document.createElement('div');
-                logEntry.style.marginBottom = '2px';
+                logEntry.className = 'log-entry';
                 logEntry.innerHTML = `
-                    <span style="color: #6b7280;">${timestamp}</span> 
-                    <span style="color: ${colors[type] || colors.info};">●</span> 
-                    <span style="color: ${colors[type] || colors.info};">${message}</span>
+                    <span class="log-timestamp">${timestamp}</span>
+                    <div class="log-icon ${type}">${icons[type] || icons.info}</div>
+                    <div class="log-message ${type}">${message}</div>
                 `;
                 
                 this.logsContainer.appendChild(logEntry);
                 this.logsContainer.scrollTop = this.logsContainer.scrollHeight;
+                
+                // Update log count
+                this.updateLogCount(this.logsContainer.children.length);
+            }
+
+            updateLogCount(count) {
+                const logCountElement = document.getElementById('logCount');
+                if (logCountElement) {
+                    logCountElement.textContent = count;
+                }
             }
 
             showStatus(message, type) {
-                this.statusMessage.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+                const statusClass = type === 'info' ? 'status-enhanced status-info' : `status-message status-${type}`;
+                this.statusMessage.innerHTML = `<div class="${statusClass}">${message}</div>`;
                 setTimeout(() => {
                     this.statusMessage.innerHTML = '';
                 }, 5000);
