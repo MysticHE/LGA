@@ -509,12 +509,15 @@ async function processApolloJob(apolloJobId) {
         let retryCount = 0;
         const maxRetries = 2;
 
+        // Start Apify run asynchronously (no 5-minute timeout limit)
+        let apifyRunId;
+        
         while (retryCount <= maxRetries) {
             try {
-                console.log(`🎯 Apollo job ${apolloJobId}: Attempt ${retryCount + 1}/${maxRetries + 1} - Calling Apify scraper...`);
+                console.log(`🎯 Apollo job ${apolloJobId}: Attempt ${retryCount + 1}/${maxRetries + 1} - Starting Apify run...`);
                 
-                apifyResponse = await axios.post(
-                    'https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/run-sync-get-dataset-items',
+                const runResponse = await axios.post(
+                    'https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/runs',
                     {
                         cleanOutput: true,
                         totalRecords: recordLimit,
@@ -524,11 +527,10 @@ async function processApolloJob(apolloJobId) {
                         headers: {
                             'Accept': 'application/json',
                             'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
-                            'Connection': 'keep-alive',
+                            'Content-Type': 'application/json',
                             'User-Agent': 'LGA-Lead-Generator/1.0'
                         },
-                        timeout: 0, // No timeout - let Apify run until completion
-                        maxRedirects: 5,
+                        timeout: 30000, // 30 second timeout for starting run
                         validateStatus: function (status) {
                             return status < 500;
                         }
@@ -540,8 +542,8 @@ async function processApolloJob(apolloJobId) {
                     throw error;
                 });
                 
-                // Don't log success yet - need to validate response first
-                console.log(`📡 Apollo job ${apolloJobId}: Apify API call completed, validating response...`);
+                apifyRunId = runResponse.data.data.id;
+                console.log(`✅ Apollo job ${apolloJobId}: Apify run started: ${apifyRunId}`);
                 break; // Success, exit retry loop
                 
             } catch (error) {
@@ -549,7 +551,7 @@ async function processApolloJob(apolloJobId) {
                 console.error(`❌ Apollo job ${apolloJobId}: Attempt ${retryCount}/${maxRetries + 1} failed:`, error.code || error.message);
                 
                 if (retryCount > maxRetries) {
-                    throw new Error(`Apollo scraping failed after ${maxRetries + 1} attempts: ${error.message}`);
+                    throw new Error(`Failed to start Apify run after ${maxRetries + 1} attempts: ${error.message}`);
                 } else {
                     const waitTime = Math.pow(2, retryCount - 1) * 10000; // 10s, 20s delays
                     console.log(`⏳ Apollo job ${apolloJobId}: Waiting ${waitTime/1000}s before retry...`);
@@ -557,6 +559,10 @@ async function processApolloJob(apolloJobId) {
                 }
             }
         }
+        
+        // Poll Apify run status until completion
+        console.log(`🔄 Apollo job ${apolloJobId}: Polling Apify run ${apifyRunId} status...`);
+        apifyResponse = await pollApifyRun(apolloJobId, apifyRunId);
 
         // Process and validate Apify response
         let rawData = [];
@@ -683,6 +689,77 @@ async function processApolloJob(apolloJobId) {
         job.error = error.message;
         job.completedAt = new Date().toISOString();
     }
+}
+
+// Poll Apify run until completion
+async function pollApifyRun(apolloJobId, apifyRunId) {
+    let pollCount = 0;
+    const maxPolls = 360; // 30 minutes max (5 second intervals)
+    
+    while (pollCount < maxPolls) {
+        try {
+            pollCount++;
+            
+            // Check Apify run status
+            const statusResponse = await axios.get(
+                `https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/runs/${apifyRunId}`,
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                        'User-Agent': 'LGA-Lead-Generator/1.0'
+                    },
+                    timeout: 10000
+                }
+            );
+            
+            const runData = statusResponse.data.data;
+            const status = runData.status;
+            
+            console.log(`🔄 Apollo job ${apolloJobId}: Apify run ${apifyRunId} status: ${status} (poll ${pollCount})`);
+            
+            if (status === 'SUCCEEDED') {
+                // Get dataset items
+                console.log(`🎯 Apollo job ${apolloJobId}: Apify run completed, retrieving dataset...`);
+                
+                const datasetResponse = await axios.get(
+                    `https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/runs/${apifyRunId}/dataset/items`,
+                    {
+                        headers: {
+                            'Accept': 'application/json',
+                            'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                            'User-Agent': 'LGA-Lead-Generator/1.0'
+                        },
+                        timeout: 60000 // 1 minute timeout for dataset retrieval
+                    }
+                );
+                
+                console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved successfully`);
+                return { data: datasetResponse.data };
+                
+            } else if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
+                const failureReason = runData.statusMessage || 'Unknown failure';
+                throw new Error(`Apify run ${status.toLowerCase()}: ${failureReason}`);
+            }
+            
+            // Continue polling for RUNNING, READY, etc.
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+        } catch (error) {
+            console.error(`❌ Apollo job ${apolloJobId}: Apify polling error:`, error.message);
+            
+            // For API errors, retry a few times
+            if (pollCount < 5) {
+                console.log(`⚠️ Apollo job ${apolloJobId}: Retrying Apify status check in 10 seconds...`);
+                await new Promise(resolve => setTimeout(resolve, 10000));
+                continue;
+            } else {
+                throw new Error(`Apify run polling failed: ${error.message}`);
+            }
+        }
+    }
+    
+    throw new Error('Apify run exceeded maximum wait time (30 minutes)');
 }
 
 // Get Apollo job status
