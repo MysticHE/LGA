@@ -252,6 +252,8 @@ router.post('/complete-workflow-stream', async (req, res) => {
         ip: req.ip,
         userAgent: req.get('User-Agent')?.substring(0, 50) + '...'
     });
+    let heartbeatInterval;
+    
     try {
         const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true, chunkSize = 100 } = req.body;
 
@@ -262,17 +264,27 @@ router.post('/complete-workflow-stream', async (req, res) => {
             'Connection': 'keep-alive',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Allow-Methods': 'POST'
+            'Access-Control-Allow-Methods': 'POST',
+            'X-Accel-Buffering': 'no' // Disable nginx buffering
         });
 
         function sendEvent(type, data) {
             const payload = JSON.stringify(data);
             res.write(`event: ${type}\ndata: ${payload}\n\n`);
         }
+        
+        // Send heartbeat to keep connection alive
+        function sendHeartbeat() {
+            res.write(`: heartbeat ${Date.now()}\n\n`);
+        }
+        
+        // Start heartbeat every 30 seconds
+        heartbeatInterval = setInterval(sendHeartbeat, 30000);
 
         // Handle client disconnect
         req.on('close', () => {
             console.log('Client disconnected from stream');
+            clearInterval(heartbeatInterval);
         });
 
         console.log('🚀 Starting streaming lead generation workflow...');
@@ -287,27 +299,72 @@ router.post('/complete-workflow-stream', async (req, res) => {
         
         sendEvent('progress', { step: 3, message: 'Scraping leads from Apollo...', total: 4 });
         
-        // Step 2: Scrape all leads first, then stream process them
-        const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
-            apolloUrl, maxRecords
-        }, { timeout: 0 });
+        // Step 2: Start Apollo scraping in background and stream progress
+        sendEvent('progress', { step: 3, message: 'Starting Apollo scraper...', total: 4 });
         
-        const scrapeData = scrapeResponse.data;
-        const { metadata: scrapeMetadata } = scrapeData;
-        console.log(`✅ Successfully scraped ${scrapeData.count} leads`);
+        let scrapeData = null;
+        let scrapeMetadata = {};
         
-        sendEvent('scraped', { 
-            count: scrapeData.count, 
-            metadata: scrapeMetadata,
-            apolloUrl 
-        });
-
-        if (scrapeData.count === 0) {
-            sendEvent('complete', { 
-                success: true, 
-                count: 0, 
-                message: 'No leads found' 
+        try {
+            // Start scraping with periodic progress updates
+            const startTime = Date.now();
+            let progressInterval;
+            
+            // Send progress updates every 15 seconds while scraping
+            const sendProgressUpdate = () => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+                
+                sendEvent('progress', { 
+                    step: 3, 
+                    message: `Apollo still scraping... (${timeStr} elapsed)`, 
+                    total: 4,
+                    elapsed: elapsed
+                });
+            };
+            
+            // Start progress interval
+            progressInterval = setInterval(sendProgressUpdate, 15000);
+            
+            // Make the Apollo request
+            const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
+                apolloUrl, maxRecords
+            }, { timeout: 0 });
+            
+            // Clear progress interval
+            clearInterval(progressInterval);
+            
+            scrapeData = scrapeResponse.data;
+            scrapeMetadata = scrapeData.metadata || {};
+            
+            console.log(`✅ Successfully scraped ${scrapeData.count} leads`);
+            
+            sendEvent('scraped', { 
+                count: scrapeData.count, 
+                metadata: scrapeMetadata,
+                apolloUrl 
             });
+
+            if (scrapeData.count === 0) {
+                sendEvent('complete', { 
+                    success: true, 
+                    count: 0, 
+                    message: 'No leads found' 
+                });
+                res.end();
+                return;
+            }
+            
+        } catch (error) {
+            console.error('Apollo scraping failed:', error);
+            sendEvent('error', { 
+                error: 'Apollo Scraping Failed', 
+                message: error.message || 'Failed to scrape leads from Apollo',
+                details: error.response?.data || error.code
+            });
+            clearInterval(heartbeatInterval);
             res.end();
             return;
         }
@@ -434,6 +491,8 @@ router.post('/complete-workflow-stream', async (req, res) => {
             }
         });
 
+        // Clean up intervals
+        clearInterval(heartbeatInterval);
         res.end();
 
     } catch (error) {
@@ -442,6 +501,7 @@ router.post('/complete-workflow-stream', async (req, res) => {
             error: 'Workflow Error',
             message: error.message
         })}\n\n`);
+        clearInterval(heartbeatInterval);
         res.end();
     }
 });
