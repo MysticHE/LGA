@@ -406,6 +406,13 @@
             box-shadow: none;
             padding: 0;
             margin-top: 0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .output-section.hidden {
+            display: none !important;
         }
 
         .output-header {
@@ -605,6 +612,11 @@
             flex-shrink: 0;
         }
 
+        .panel-header.compact {
+            margin-bottom: var(--space-2);
+            padding-bottom: var(--space-2);
+        }
+
         .panel-title {
             font-size: var(--font-size-lg);
             font-weight: var(--font-weight-bold);
@@ -625,6 +637,10 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
+        }
+
+        .results-empty-state.hidden {
+            display: none !important;
         }
 
         .results-empty-state .icon {
@@ -1772,8 +1788,12 @@
                 this.urlSection.classList.remove('hidden');
                 this.leadsSection.classList.add('hidden');
                 
-                // Update results panel header
-                document.getElementById('resultsTitle').textContent = '🔗 Search URL Generated';
+                // Make header compact when showing results
+                const panelHeader = document.querySelector('.panel-header');
+                panelHeader.classList.add('compact');
+                
+                // Update results panel header - keep it simple
+                document.getElementById('resultsTitle').textContent = '📊 Results & Logs';
                 document.getElementById('resultsDescription').textContent = 'Your search URL is ready';
             }
 
@@ -1784,9 +1804,13 @@
                 this.leadsSection.classList.remove('hidden');
                 this.urlSection.classList.add('hidden');
                 
-                // Update results panel header
-                document.getElementById('resultsTitle').textContent = `🎉 ${leads.length} Leads Generated`;
-                document.getElementById('resultsDescription').textContent = 'Lead generation completed successfully';
+                // Make header compact when showing results
+                const panelHeader = document.querySelector('.panel-header');
+                panelHeader.classList.add('compact');
+                
+                // Update results panel header - keep it simple without lead count
+                document.getElementById('resultsTitle').textContent = `📊 Results & Logs`;
+                document.getElementById('resultsDescription').textContent = 'Your generated leads';
                 
                 // Update stats
                 const stats = document.getElementById('leadsStats');
