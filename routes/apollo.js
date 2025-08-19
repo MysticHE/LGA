@@ -66,6 +66,229 @@ router.post('/generate-url', async (req, res) => {
     }
 });
 
+// Apollo lead scraping endpoint with streaming support
+router.post('/scrape-leads-stream', async (req, res) => {
+    try {
+        const { apolloUrl, maxRecords = 500, stream = false } = req.body;
+
+        // Validation
+        if (!apolloUrl) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Apollo URL is required'
+            });
+        }
+
+        if (!apolloUrl.includes('apollo.io')) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Invalid Apollo URL'
+            });
+        }
+
+        // Check if Apify API token is configured
+        if (!process.env.APIFY_API_TOKEN) {
+            return res.status(500).json({
+                error: 'Configuration Error',
+                message: 'Apify API token not configured'
+            });
+        }
+
+        // Handle unlimited vs limited records
+        const maxLimit = parseInt(process.env.MAX_LEADS_PER_REQUEST) || 2000;
+        let recordLimit;
+        
+        if (maxRecords === 0) {
+            recordLimit = maxLimit;
+        } else {
+            recordLimit = Math.min(parseInt(maxRecords) || 500, maxLimit);
+        }
+
+        console.log(`🔍 Starting Apollo scrape for ${recordLimit} records (streaming: ${stream})...`);
+
+        // If streaming requested, set up SSE
+        if (stream) {
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*'
+            });
+        }
+
+        function sendEvent(type, data) {
+            if (stream) {
+                res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+            }
+        }
+
+        // First, scrape ALL data from Apify (this works fine)
+        console.log(`⏱️ Scraping all ${recordLimit} records from Apollo...`);
+        if (stream) sendEvent('progress', { message: 'Scraping from Apollo...', stage: 'scraping' });
+
+        let apifyResponse;
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (retryCount <= maxRetries) {
+            try {
+                console.log(`🎯 Attempt ${retryCount + 1}/${maxRetries + 1} - Calling Apify scraper...`);
+                
+                apifyResponse = await axios.post(
+                    'https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/run-sync-get-dataset-items',
+                    {
+                        cleanOutput: true,
+                        totalRecords: recordLimit,
+                        url: apolloUrl
+                    },
+                    {
+                        headers: {
+                            'Accept': 'application/json',
+                            'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                            'Connection': 'keep-alive',
+                            'User-Agent': 'LGA-Lead-Generator/1.0'
+                        },
+                        timeout: 0,
+                        maxRedirects: 5,
+                        validateStatus: function (status) {
+                            return status < 500;
+                        }
+                    }
+                ).catch(error => {
+                    if (error.config && error.config.headers && error.config.headers.Authorization) {
+                        error.config.headers.Authorization = 'Bearer [REDACTED]';
+                    }
+                    throw error;
+                });
+                
+                console.log('✅ Apify scraper completed successfully');
+                break;
+                
+            } catch (error) {
+                retryCount++;
+                console.error(`❌ Attempt ${retryCount}/${maxRetries + 1} failed:`, error.code || error.message);
+                
+                if (retryCount > maxRetries) {
+                    if (stream) {
+                        sendEvent('error', { error: 'Scraping failed', message: error.message });
+                        return res.end();
+                    }
+                    throw error;
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
+
+        const rawData = apifyResponse.data || [];
+        console.log(`✅ Successfully scraped ${rawData.length} leads`);
+
+        // Process duplicates
+        const uniqueLeads = [];
+        const seen = new Set();
+        
+        rawData.forEach(lead => {
+            const email = (lead.email || '').toLowerCase().trim();
+            const linkedin = (lead.linkedin_url || '').toLowerCase().trim();
+            const name = (lead.name || '').toLowerCase().trim();
+            const company = (lead.organization_name || '').toLowerCase().trim();
+            
+            let identifier;
+            if (email && email !== '') {
+                identifier = email;
+            } else if (linkedin && linkedin !== '') {
+                identifier = linkedin;
+            } else {
+                identifier = `${name}|${company}`;
+            }
+            
+            if (!seen.has(identifier)) {
+                seen.add(identifier);
+                uniqueLeads.push(lead);
+            }
+        });
+
+        // Transform all leads
+        const transformedLeads = uniqueLeads.map(lead => ({
+            name: lead.name || '',
+            title: lead.title || '',
+            organization_name: lead.organization_name || '',
+            organization_website_url: lead.organization_website_url || '',
+            estimated_num_employees: lead.estimated_num_employees || '',
+            email: lead.email || '',
+            email_verified: lead.email ? 'Y' : 'N',
+            linkedin_url: lead.linkedin_url || '',
+            industry: lead.industry || '',
+            country: lead.country || 'Singapore',
+            conversion_status: 'Pending'
+        }));
+
+        if (stream) {
+            // Stream the data in chunks of 100
+            const CHUNK_SIZE = 100;
+            const totalChunks = Math.ceil(transformedLeads.length / CHUNK_SIZE);
+            
+            sendEvent('scraped_complete', { 
+                totalRecords: transformedLeads.length,
+                willStreamInChunks: totalChunks 
+            });
+
+            for (let i = 0; i < transformedLeads.length; i += CHUNK_SIZE) {
+                const chunk = transformedLeads.slice(i, i + CHUNK_SIZE);
+                const chunkNumber = Math.floor(i / CHUNK_SIZE) + 1;
+
+                sendEvent('chunk', {
+                    chunkNumber,
+                    totalChunks,
+                    leads: chunk,
+                    processed: Math.min(i + CHUNK_SIZE, transformedLeads.length),
+                    total: transformedLeads.length
+                });
+
+                // Small delay between chunks
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            sendEvent('complete', {
+                success: true,
+                totalProcessed: transformedLeads.length
+            });
+            
+            res.end();
+        } else {
+            // Regular response (for backward compatibility)
+            res.json({
+                success: true,
+                count: transformedLeads.length,
+                leads: transformedLeads,
+                metadata: {
+                    apolloUrl,
+                    scrapedAt: new Date().toISOString(),
+                    maxRecords: recordLimit,
+                    finalCount: transformedLeads.length
+                }
+            });
+        }
+
+    } catch (error) {
+        console.error('Apollo scraping error:', error);
+        
+        if (req.body.stream) {
+            res.write(`event: error\ndata: ${JSON.stringify({
+                error: 'Scraping Error',
+                message: 'Failed to scrape leads from Apollo'
+            })}\n\n`);
+            res.end();
+        } else {
+            res.status(500).json({
+                error: 'Scraping Error',
+                message: 'Failed to scrape leads from Apollo',
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    }
+});
+
 // Apollo lead scraping endpoint
 router.post('/scrape-leads', async (req, res) => {
     try {

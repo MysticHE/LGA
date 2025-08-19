@@ -1333,6 +1333,7 @@
                             <span id="logsIcon">🔍</span>
                             <span>Processing Logs</span>
                             <span id="logCount" style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 12px; font-size: var(--font-size-xs);">0</span>
+                            <span id="loadingTimer" class="hidden" style="background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 12px; font-size: var(--font-size-xs); margin-left: 8px; color: rgba(255,255,255,0.9);">00:00</span>
                             <div id="logsLoader" class="logs-loader hidden" style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin-left: auto;"></div>
                         </h4>
                         <div class="logs-controls">
@@ -1401,6 +1402,10 @@
                 this.companySizePreview = document.getElementById('companySizePreview');
                 
                 this.currentLeads = null;
+                
+                // Timer properties
+                this.startTime = null;
+                this.timerInterval = null;
                 
                 this.bindEvents();
                 this.updatePreviews(); // Initialize previews
@@ -1779,11 +1784,17 @@
                         break;
                         
                     case 'complete':
+                        // Calculate total time taken
+                        const totalTime = this.startTime ? Math.floor((Date.now() - this.startTime) / 1000) : 0;
+                        const minutes = Math.floor(totalTime / 60);
+                        const seconds = totalTime % 60;
+                        const timeString = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+                        
                         // Merge final metadata and display
                         Object.assign(metadata, data.metadata);
                         this.displayLeads(allLeads, metadata);
-                        this.addLog(`🎉 Workflow completed successfully - ${data.count} leads generated`, 'progress');
-                        this.showStatus(`🎉 Successfully loaded ${data.count} leads!`, 'success');
+                        this.addLog(`🎉 Workflow completed successfully - ${data.count} leads generated in ${timeString}`, 'progress');
+                        this.showStatus(`🎉 Successfully loaded ${data.count} leads in ${timeString}!`, 'success');
                         break;
                         
                     case 'error':
@@ -2087,14 +2098,62 @@
             showLoadingState(isLoading) {
                 const logsIcon = document.getElementById('logsIcon');
                 const logsLoader = document.getElementById('logsLoader');
+                const loadingTimer = document.getElementById('loadingTimer');
                 
                 if (isLoading) {
                     logsIcon.textContent = '⟳'; // Spinning icon
                     logsLoader.classList.remove('hidden');
+                    
+                    // Start timer
+                    this.startTimer();
+                    loadingTimer.classList.remove('hidden');
                 } else {
                     logsIcon.textContent = '🔍'; // Search icon
                     logsLoader.classList.add('hidden');
+                    
+                    // Stop timer
+                    this.stopTimer();
+                    loadingTimer.classList.add('hidden');
                 }
+            }
+
+            startTimer() {
+                this.startTime = Date.now();
+                const loadingTimer = document.getElementById('loadingTimer');
+                
+                // Clear any existing interval
+                if (this.timerInterval) {
+                    clearInterval(this.timerInterval);
+                }
+                
+                // Update timer every second
+                this.timerInterval = setInterval(() => {
+                    const elapsed = Date.now() - this.startTime;
+                    const seconds = Math.floor(elapsed / 1000);
+                    const minutes = Math.floor(seconds / 60);
+                    const remainingSeconds = seconds % 60;
+                    
+                    const timeString = `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+                    loadingTimer.textContent = timeString;
+                }, 1000);
+                
+                // Set initial time
+                loadingTimer.textContent = '00:00';
+            }
+
+            stopTimer() {
+                if (this.timerInterval) {
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
+                }
+                
+                // Show final time for a few seconds
+                const loadingTimer = document.getElementById('loadingTimer');
+                const finalTime = loadingTimer.textContent;
+                
+                setTimeout(() => {
+                    loadingTimer.textContent = '00:00';
+                }, 3000); // Show final time for 3 seconds
             }
             
             addLog(message, type = 'info') {
