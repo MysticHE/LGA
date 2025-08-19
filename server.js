@@ -103,6 +103,7 @@ app.listen(PORT, () => {
     console.log(`🚀 Lead Generation Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 Access: http://localhost:${PORT}`);
+    console.log(`✅ Server ready - v1.1.0`);
     
     // Check for required environment variables
     const requiredEnvVars = ['APIFY_API_TOKEN', 'OPENAI_API_KEY'];
