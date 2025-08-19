@@ -7,9 +7,28 @@
       "mcp__sequential-thinking__sequentialthinking",
       "Bash(git rm:*)",
       "Bash(git push:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "mcp__playwright__browser_navigate",
+      "Bash(git commit:*)",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_evaluate",
+      "Bash(python:*)",
+      "Bash(grep:*)",
+      "Bash(npm install)",
+      "Bash(npm start)",
+      "Bash(curl:*)",
+      "Bash(rm:*)",
+      "Bash(tasklist:*)",
+      "Bash(find:*)",
+      "Bash(node:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\c\\Users\\keyqu"
+    ]
   }
 }

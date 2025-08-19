@@ -244,138 +244,145 @@ router.post('/export-excel', async (req, res) => {
     }
 });
 
-// Streaming lead generation workflow with chunked responses  
-router.post('/complete-workflow-stream', async (req, res) => {
-    // Add request logging for debugging
-    console.log('🔍 Streaming workflow requested:', {
-        timestamp: new Date().toISOString(),
-        ip: req.ip,
-        userAgent: req.get('User-Agent')?.substring(0, 50) + '...'
-    });
-    let heartbeatInterval;
-    
+// Initialize job storage (in production, use Redis or database)
+global.backgroundJobs = global.backgroundJobs || new Map();
+
+// Background job processing to avoid 5-minute timeout limit
+router.post('/start-workflow-job', async (req, res) => {
     try {
         const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true, chunkSize = 100 } = req.body;
 
-        // Set SSE headers for streaming
-        res.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Allow-Methods': 'POST',
-            'X-Accel-Buffering': 'no' // Disable nginx buffering
-        });
-
-        function sendEvent(type, data) {
-            const payload = JSON.stringify(data);
-            res.write(`event: ${type}\ndata: ${payload}\n\n`);
-        }
+        // Generate unique job ID
+        const jobId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
         
-        // Send heartbeat to keep connection alive
-        function sendHeartbeat() {
-            res.write(`: heartbeat ${Date.now()}\n\n`);
-        }
+        // Initialize job status
+        const jobStatus = {
+            id: jobId,
+            status: 'started',
+            progress: { step: 1, message: 'Starting workflow...', total: 4 },
+            startTime: new Date().toISOString(),
+            params: { jobTitles, companySizes, maxRecords, generateOutreach, chunkSize },
+            result: null,
+            error: null,
+            completedAt: null
+        };
         
-        // Start heartbeat every 30 seconds
-        heartbeatInterval = setInterval(sendHeartbeat, 30000);
+        // Store job status
+        global.backgroundJobs.set(jobId, jobStatus);
+        
+        // Clean up old jobs after 2 hours
+        setTimeout(() => {
+            global.backgroundJobs.delete(jobId);
+        }, 2 * 60 * 60 * 1000);
 
-        // Handle client disconnect
-        req.on('close', () => {
-            console.log('Client disconnected from stream');
-            clearInterval(heartbeatInterval);
+        console.log(`🚀 Starting background job ${jobId}...`);
+        
+        // Return job ID immediately to avoid timeout
+        res.json({
+            success: true,
+            jobId: jobId,
+            message: 'Workflow started in background. Use /job-status to check progress.'
         });
+        
+        // Run the actual workflow in background
+        processWorkflowJob(jobId, req.protocol, req.get('host')).catch(error => {
+            console.error(`Background job ${jobId} failed:`, error);
+            const job = global.backgroundJobs.get(jobId);
+            if (job) {
+                job.status = 'failed';
+                job.error = error.message;
+                job.completedAt = new Date().toISOString();
+            }
+        });
+        
+    } catch (error) {
+        console.error('Job creation error:', error);
+        res.status(500).json({
+            error: 'Job Creation Error',
+            message: 'Failed to start background job'
+        });
+    }
+});
 
-        console.log('🚀 Starting streaming lead generation workflow...');
-        sendEvent('progress', { step: 1, message: 'Starting workflow...', total: 4 });
+// Background job processor
+async function processWorkflowJob(jobId, protocol, host) {
+    const job = global.backgroundJobs.get(jobId);
+    if (!job) return;
+    
+    try {
+        const { jobTitles, companySizes, maxRecords, generateOutreach, chunkSize } = job.params;
         
         // Step 1: Generate Apollo URL
-        sendEvent('progress', { step: 2, message: 'Generating Apollo URL...', total: 4 });
-        const apolloResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/generate-url`, {
+        job.progress = { step: 2, message: 'Generating Apollo URL...', total: 4 };
+        job.status = 'generating_url';
+        
+        const apolloResponse = await axios.post(`${protocol}://${host}/api/apollo/generate-url`, {
             jobTitles, companySizes
         });
         const { apolloUrl } = apolloResponse.data;
         
-        sendEvent('progress', { step: 3, message: 'Scraping leads from Apollo...', total: 4 });
-        
-        // Step 2: Start Apollo scraping in background and stream progress
-        sendEvent('progress', { step: 3, message: 'Starting Apollo scraper...', total: 4 });
+        // Step 2: Start Apollo scraping
+        job.progress = { step: 3, message: 'Scraping leads from Apollo...', total: 4 };
+        job.status = 'scraping';
         
         let scrapeData = null;
         let scrapeMetadata = {};
+        const startTime = Date.now();
         
-        try {
-            // Start scraping with periodic progress updates
-            const startTime = Date.now();
-            let progressInterval;
+        // Update progress every 30 seconds during scraping
+        const progressInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
             
-            // Send progress updates every 15 seconds while scraping
-            const sendProgressUpdate = () => {
-                const elapsed = Math.floor((Date.now() - startTime) / 1000);
-                const minutes = Math.floor(elapsed / 60);
-                const seconds = elapsed % 60;
-                const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-                
-                sendEvent('progress', { 
+            const currentJob = global.backgroundJobs.get(jobId);
+            if (currentJob && currentJob.status === 'scraping') {
+                currentJob.progress = { 
                     step: 3, 
-                    message: `Apollo still scraping... (${timeStr} elapsed)`, 
+                    message: `Apollo scraping in progress... (${timeStr} elapsed)`, 
                     total: 4,
                     elapsed: elapsed
-                });
-            };
-            
-            // Start progress interval
-            progressInterval = setInterval(sendProgressUpdate, 15000);
-            
-            // Make the Apollo request
-            const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
+                };
+            }
+        }, 30000);
+        
+        try {
+            const scrapeResponse = await axios.post(`${protocol}://${host}/api/apollo/scrape-leads`, {
                 apolloUrl, maxRecords
             }, { timeout: 0 });
             
-            // Clear progress interval
             clearInterval(progressInterval);
-            
             scrapeData = scrapeResponse.data;
             scrapeMetadata = scrapeData.metadata || {};
             
-            console.log(`✅ Successfully scraped ${scrapeData.count} leads`);
+            console.log(`✅ Job ${jobId}: Successfully scraped ${scrapeData.count} leads`);
             
-            sendEvent('scraped', { 
-                count: scrapeData.count, 
-                metadata: scrapeMetadata,
-                apolloUrl 
-            });
-
             if (scrapeData.count === 0) {
-                sendEvent('complete', { 
+                job.status = 'completed';
+                job.result = { 
                     success: true, 
                     count: 0, 
-                    message: 'No leads found' 
-                });
-                res.end();
+                    message: 'No leads found',
+                    apolloUrl
+                };
+                job.completedAt = new Date().toISOString();
                 return;
             }
             
         } catch (error) {
-            console.error('Apollo scraping failed:', error);
-            sendEvent('error', { 
-                error: 'Apollo Scraping Failed', 
-                message: error.message || 'Failed to scrape leads from Apollo',
-                details: error.response?.data || error.code
-            });
-            clearInterval(heartbeatInterval);
-            res.end();
-            return;
+            clearInterval(progressInterval);
+            throw new Error(`Apollo scraping failed: ${error.message}`);
         }
 
         // Step 3: Process leads in chunks
-        sendEvent('progress', { step: 4, message: `Processing ${scrapeData.count} leads in batches...`, total: 4 });
+        job.progress = { step: 4, message: `Processing ${scrapeData.count} leads in batches...`, total: 4 };
+        job.status = 'processing';
         
         let processedLeads = [];
         const totalChunks = Math.ceil(scrapeData.count / chunkSize);
         
-        // Handle both direct leads (small datasets) and sessionId (large datasets)
+        // Handle both direct leads and sessionId approaches
         if (scrapeData.leads) {
             // Small dataset - leads returned directly
             const leads = scrapeData.leads;
@@ -383,16 +390,17 @@ router.post('/complete-workflow-stream', async (req, res) => {
                 const chunk = leads.slice(i, i + chunkSize);
                 const chunkNumber = Math.floor(i / chunkSize) + 1;
                 
-                const finalChunk = await processChunk(chunk, chunkNumber, totalChunks, generateOutreach);
-                processedLeads.push(...finalChunk);
-                
-                sendEvent('chunk_complete', {
+                // Update progress
+                job.progress = {
+                    step: 4,
+                    message: `Processing chunk ${chunkNumber}/${totalChunks}...`,
+                    total: 4,
                     chunk: chunkNumber,
-                    total: totalChunks,
-                    leads: finalChunk,
-                    processed: processedLeads.length,
-                    remaining: leads.length - processedLeads.length
-                });
+                    totalChunks: totalChunks
+                };
+                
+                const finalChunk = await processChunk(chunk, generateOutreach, protocol, host);
+                processedLeads.push(...finalChunk);
 
                 if (i + chunkSize < leads.length) {
                     await new Promise(resolve => setTimeout(resolve, 500));
@@ -404,80 +412,41 @@ router.post('/complete-workflow-stream', async (req, res) => {
             const chunkLimit = chunkSize;
             
             for (let chunkNumber = 1; chunkNumber <= totalChunks; chunkNumber++) {
-                sendEvent('chunk_start', { 
-                    chunk: chunkNumber, 
-                    total: totalChunks, 
-                    size: chunkLimit 
-                });
+                // Update progress
+                job.progress = {
+                    step: 4,
+                    message: `Processing chunk ${chunkNumber}/${totalChunks}...`,
+                    total: 4,
+                    chunk: chunkNumber,
+                    totalChunks: totalChunks
+                };
 
-                try {
-                    // Get chunk from Apollo
-                    const chunkResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/get-leads-chunk`, {
-                        sessionId: scrapeData.sessionId,
-                        offset: offset,
-                        limit: chunkLimit
-                    }, { timeout: 0 });
+                // Get chunk from Apollo
+                const chunkResponse = await axios.post(`${protocol}://${host}/api/apollo/get-leads-chunk`, {
+                    sessionId: scrapeData.sessionId,
+                    offset: offset,
+                    limit: chunkLimit
+                }, { timeout: 0 });
 
-                    const chunk = chunkResponse.data.leads;
-                    const finalChunk = await processChunk(chunk, chunkNumber, totalChunks, generateOutreach);
-                    processedLeads.push(...finalChunk);
+                const chunk = chunkResponse.data.leads;
+                const finalChunk = await processChunk(chunk, generateOutreach, protocol, host);
+                processedLeads.push(...finalChunk);
 
-                    sendEvent('chunk_complete', {
-                        chunk: chunkNumber,
-                        total: totalChunks,
-                        leads: finalChunk,
-                        processed: processedLeads.length,
-                        remaining: scrapeData.count - processedLeads.length
-                    });
-
-                    offset += chunkLimit;
-                    
-                    // Only add delay if there are more chunks
-                    if (!chunkResponse.data.hasMore) break;
-                    if (chunkNumber < totalChunks) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                } catch (error) {
-                    console.error(`Error retrieving chunk ${chunkNumber}:`, error);
-                    sendEvent('error', { error: 'Chunk retrieval failed', message: error.message });
-                    res.end();
-                    return;
+                offset += chunkLimit;
+                
+                if (!chunkResponse.data.hasMore) break;
+                if (chunkNumber < totalChunks) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
             }
         }
 
-        // Helper function to process each chunk
-        async function processChunk(chunk, chunkNumber, totalChunks, generateOutreach) {
-            sendEvent('chunk_start', { 
-                chunk: chunkNumber, 
-                total: totalChunks, 
-                size: chunk.length 
-            });
-
-            let finalChunk = chunk;
-
-            // Generate outreach for this chunk if enabled
-            if (generateOutreach && openai) {
-                try {
-                    const outreachResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/leads/generate-outreach`, {
-                        leads: chunk
-                    }, { timeout: 0 });
-                    
-                    if (outreachResponse.data && outreachResponse.data.leads) {
-                        finalChunk = outreachResponse.data.leads;
-                    }
-                } catch (error) {
-                    console.warn(`⚠️ Outreach generation failed for chunk ${chunkNumber}:`, error.message);
-                }
-            }
-
-            return finalChunk;
-        }
-
-        // Send final completion event
-        sendEvent('complete', {
+        // Job completed successfully
+        job.status = 'completed';
+        job.result = {
             success: true,
             count: processedLeads.length,
+            leads: processedLeads,
             metadata: {
                 apolloUrl,
                 jobTitles,
@@ -489,24 +458,163 @@ router.post('/complete-workflow-stream', async (req, res) => {
                 scrapeMetadata,
                 completedAt: new Date().toISOString()
             }
+        };
+        job.completedAt = new Date().toISOString();
+        
+        console.log(`✅ Background job ${jobId} completed successfully with ${processedLeads.length} leads`);
+        
+    } catch (error) {
+        console.error(`❌ Background job ${jobId} failed:`, error);
+        job.status = 'failed';
+        job.error = error.message;
+        job.completedAt = new Date().toISOString();
+    }
+}
+
+// Helper function to process chunks in background job
+async function processChunk(chunk, generateOutreach, protocol, host) {
+    let finalChunk = chunk;
+
+    // Generate outreach for this chunk if enabled
+    if (generateOutreach && openai) {
+        try {
+            const outreachResponse = await axios.post(`${protocol}://${host}/api/leads/generate-outreach`, {
+                leads: chunk
+            }, { timeout: 0 });
+            
+            if (outreachResponse.data && outreachResponse.data.leads) {
+                finalChunk = outreachResponse.data.leads;
+            }
+        } catch (error) {
+            console.warn(`⚠️ Outreach generation failed for chunk:`, error.message);
+        }
+    }
+
+    return finalChunk;
+}
+
+// Get job status for polling
+router.get('/job-status/:jobId', async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        
+        if (!jobId) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Job ID is required'
+            });
+        }
+
+        global.backgroundJobs = global.backgroundJobs || new Map();
+        const job = global.backgroundJobs.get(jobId);
+        
+        if (!job) {
+            return res.status(404).json({
+                error: 'Job Not Found',
+                message: 'Job not found or expired'
+            });
+        }
+
+        // Return current job status
+        res.json({
+            success: true,
+            jobId: jobId,
+            status: job.status,
+            progress: job.progress,
+            startTime: job.startTime,
+            completedAt: job.completedAt,
+            result: job.result,
+            error: job.error,
+            isComplete: ['completed', 'failed'].includes(job.status)
         });
 
-        // Clean up intervals
-        clearInterval(heartbeatInterval);
-        res.end();
-
     } catch (error) {
-        console.error('Streaming workflow error:', error);
-        res.write(`event: error\ndata: ${JSON.stringify({
-            error: 'Workflow Error',
-            message: error.message
-        })}\n\n`);
-        clearInterval(heartbeatInterval);
-        res.end();
+        console.error('Job status check error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to check job status'
+        });
     }
 });
 
+// Get job result (leads data) - separate endpoint to handle large payloads
+router.get('/job-result/:jobId', async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        
+        if (!jobId) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Job ID is required'
+            });
+        }
 
+        global.backgroundJobs = global.backgroundJobs || new Map();
+        const job = global.backgroundJobs.get(jobId);
+        
+        if (!job) {
+            return res.status(404).json({
+                error: 'Job Not Found',
+                message: 'Job not found or expired'
+            });
+        }
+
+        if (job.status !== 'completed') {
+            return res.status(400).json({
+                error: 'Job Not Complete',
+                message: `Job is still ${job.status}. Check job-status first.`
+            });
+        }
+
+        // Return the full result with leads data
+        res.json({
+            success: true,
+            jobId: jobId,
+            ...job.result
+        });
+
+    } catch (error) {
+        console.error('Job result retrieval error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to retrieve job result'
+        });
+    }
+});
+
+// List all active jobs (for debugging)
+router.get('/jobs', async (req, res) => {
+    try {
+        global.backgroundJobs = global.backgroundJobs || new Map();
+        
+        const jobs = Array.from(global.backgroundJobs.entries()).map(([id, job]) => ({
+            jobId: id,
+            status: job.status,
+            startTime: job.startTime,
+            completedAt: job.completedAt,
+            progress: job.progress,
+            hasError: !!job.error,
+            params: {
+                jobTitles: job.params.jobTitles,
+                companySizes: job.params.companySizes,
+                maxRecords: job.params.maxRecords
+            }
+        }));
+
+        res.json({
+            success: true,
+            totalJobs: jobs.length,
+            jobs: jobs
+        });
+
+    } catch (error) {
+        console.error('Jobs list error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to list jobs'
+        });
+    }
+});
 
 // Test endpoint for OpenAI integration
 router.get('/test', async (req, res) => {

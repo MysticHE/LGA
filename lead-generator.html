@@ -1578,157 +1578,187 @@
             }
 
             async handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, maxRecords) {
-                let allLeads = [];
-                let metadata = {
-                    jobTitles: jobTitles,
-                    companySizes: companySizes,
-                    maxRecords: maxRecords
-                };
-                
                 try {
-                    this.showProgress('Starting streaming lead generation...');
+                    this.showProgress('Starting background job...');
                     this.currentLeads = []; // Clear previous results
                     this.displayLeads([], {}); // Clear display
                     
-                    // Start streaming request with retry logic
-                    let response;
-                    let retryCount = 0;
-                    const maxRetries = 3;
-                    
-                    while (retryCount <= maxRetries) {
-                        try {
-                            response = await fetch('/api/leads/complete-workflow-stream', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    jobTitles,
-                                    companySizes,
-                                    generateOutreach,
-                                    maxRecords,
-                                    chunkSize: 100
-                                })
-                            });
+                    // Start background job
+                    const response = await fetch('/api/leads/start-workflow-job', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jobTitles,
+                            companySizes,
+                            generateOutreach,
+                            maxRecords,
+                            chunkSize: 100
+                        })
+                    });
 
-                            if (response.ok) {
-                                break; // Success, exit retry loop
-                            }
-                            
-                            if (response.status === 429) {
-                                retryCount++;
-                                if (retryCount <= maxRetries) {
-                                    const waitTime = Math.pow(2, retryCount - 1) * 5000; // 5s, 10s, 20s
-                                    this.addLog(`⚠️ Rate limit hit, waiting ${waitTime/1000}s before retry ${retryCount}/${maxRetries}...`, 'warning');
-                                    await new Promise(resolve => setTimeout(resolve, waitTime));
-                                    continue;
-                                }
-                            }
-                            
-                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                            
-                        } catch (error) {
-                            if (retryCount >= maxRetries) {
-                                throw error;
-                            }
-                            retryCount++;
-                            const waitTime = 3000;
-                            this.addLog(`❌ Request failed, retrying in ${waitTime/1000}s (${retryCount}/${maxRetries})...`, 'warning');
-                            await new Promise(resolve => setTimeout(resolve, waitTime));
-                        }
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.message || `HTTP ${response.status}: ${response.statusText}`);
                     }
+                    
+                    const result = await response.json();
+                    const jobId = result.jobId;
+                    
+                    this.addLog(`✅ Background job started: ${jobId}`, 'success');
+                    this.addLog('📡 Polling for progress updates...', 'info');
+                    
+                    // Start polling for job status
+                    await this.pollJobStatus(jobId);
+                    
+                } catch (error) {
+                    this.hideProgress();
+                    console.error('Job creation error:', error);
+                    
+                    let errorMessage = 'Unknown error occurred';
+                    
+                    if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
+                        errorMessage = '⚠️ Rate limit exceeded. Please wait a few minutes before trying again.';
+                    } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                        errorMessage = '🔌 Network connection failed. Please check your internet connection.';
+                    } else if (error.message.includes('500')) {
+                        errorMessage = '🔧 Server error. Please try again in a few minutes.';
+                    } else {
+                        errorMessage = `❌ ${error.message}`;
+                    }
+                    
+                    this.addLog(`❌ Error: ${errorMessage}`, 'error');
+                    this.showStatus(errorMessage, 'error');
+                    
+                    // Offer URL generation fallback
+                    const searchUrl = this.generateSearchUrlClientSide(jobTitles, companySizes);
+                    this.addLog(`🔧 Alternative: Use this Apollo URL manually: ${searchUrl}`, 'info');
+                    document.getElementById('searchUrl').textContent = searchUrl;
+                }
+            }
 
-                    // Process streaming response
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buffer = '';
-
-                    const processStream = async () => {
-                        try {
-                            let currentEventType = '';
-                            
-                            while (true) {
-                                const { value, done } = await reader.read();
-                                if (done) break;
-
-                                buffer += decoder.decode(value, { stream: true });
-                                
-                                // Process complete events
-                                const events = buffer.split('\n\n');
-                                buffer = events.pop() || ''; // Keep incomplete event in buffer
-
-                                for (const eventBlock of events) {
-                                    if (!eventBlock.trim()) continue;
-                                    
-                                    const lines = eventBlock.split('\n');
-                                    let eventType = '';
-                                    let data = null;
-                                    
-                                    for (const line of lines) {
-                                        if (line.startsWith('event:')) {
-                                            eventType = line.substring(6).trim();
-                                        } else if (line.startsWith('data:')) {
-                                            try {
-                                                data = JSON.parse(line.substring(5).trim());
-                                            } catch (e) {
-                                                console.error('Failed to parse data:', line);
-                                            }
-                                        }
-                                    }
-                                    
-                                    if (eventType && data) {
-                                        this.handleStreamEvent(eventType, data, allLeads, metadata);
-                                    }
-                                }
-                            }
-                        } catch (error) {
-                            console.error('Stream processing error:', error);
-                            this.showStatus('Error processing stream', 'error');
+            async pollJobStatus(jobId) {
+                const maxWaitTime = 30 * 60 * 1000; // 30 minutes max
+                const startTime = Date.now();
+                let lastProgress = null;
+                
+                const poll = async () => {
+                    try {
+                        // Check if we've exceeded max wait time
+                        if (Date.now() - startTime > maxWaitTime) {
+                            throw new Error('Job exceeded maximum wait time (30 minutes)');
                         }
-                    };
+                        
+                        const response = await fetch(`/api/leads/job-status/${jobId}`);
+                        
+                        if (!response.ok) {
+                            if (response.status === 404) {
+                                throw new Error('Job not found or expired');
+                            }
+                            throw new Error(`Failed to check job status: ${response.status}`);
+                        }
+                        
+                        const status = await response.json();
+                        
+                        // Update progress if changed
+                        if (!lastProgress || JSON.stringify(status.progress) !== JSON.stringify(lastProgress)) {
+                            this.updateJobProgress(status);
+                            lastProgress = status.progress;
+                        }
+                        
+                        if (status.isComplete) {
+                            if (status.status === 'completed') {
+                                await this.handleJobCompletion(jobId);
+                            } else if (status.status === 'failed') {
+                                throw new Error(status.error || 'Job failed');
+                            }
+                            return; // Stop polling
+                        }
+                        
+                        // Continue polling every 3 seconds
+                        setTimeout(poll, 3000);
+                        
+                    } catch (error) {
+                        this.hideProgress();
+                        console.error('Polling error:', error);
+                        this.addLog(`❌ Job failed: ${error.message}`, 'error');
+                        this.showStatus(`Job failed: ${error.message}`, 'error');
+                    }
+                };
+                
+                // Start polling
+                poll();
+            }
 
-                    let eventType = '';
-                    await processStream();
+            updateJobProgress(status) {
+                const progress = status.progress;
+                
+                // Update timer
+                if (status.startTime) {
+                    const elapsed = Date.now() - new Date(status.startTime).getTime();
+                    const seconds = Math.floor(elapsed / 1000);
+                    const minutes = Math.floor(seconds / 60);
+                    const remainingSeconds = seconds % 60;
+                    const timeString = `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+                    
+                    const loadingTimer = document.getElementById('loadingTimer');
+                    if (loadingTimer) {
+                        loadingTimer.textContent = timeString;
+                    }
+                }
+                
+                // Add progress log
+                let message = progress.message;
+                if (progress.chunk && progress.totalChunks) {
+                    message += ` (${progress.chunk}/${progress.totalChunks})`;
+                }
+                if (progress.elapsed) {
+                    const minutes = Math.floor(progress.elapsed / 60);
+                    const seconds = progress.elapsed % 60;
+                    const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+                    message += ` - ${timeStr} elapsed`;
+                }
+                
+                this.addLog(`🔄 ${message}`, 'info');
+            }
+
+            async handleJobCompletion(jobId) {
+                try {
+                    // Get the final result with leads data
+                    const response = await fetch(`/api/leads/job-result/${jobId}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed to retrieve job result: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
                     
                     this.hideProgress();
                     
-                    if (allLeads.length === 0) {
+                    if (!result.leads || result.leads.length === 0) {
                         this.showStatus('No leads found for the specified criteria. Try adjusting your filters.', 'info');
                         return;
                     }
                     
-                    const successMsg = `🎉 Successfully loaded ${allLeads.length} leads!`;
+                    // Store and display results
+                    this.currentLeads = result.leads;
+                    this.displayLeads(result.leads, result.metadata);
+                    
+                    const successMsg = `🎉 Successfully loaded ${result.leads.length} leads!`;
+                    this.addLog(successMsg, 'success');
                     this.showStatus(successMsg, 'success');
+                    
+                    // Show completion time
+                    const loadingTimer = document.getElementById('loadingTimer');
+                    if (loadingTimer) {
+                        const finalTime = loadingTimer.textContent;
+                        this.addLog(`⏱️ Total processing time: ${finalTime}`, 'info');
+                    }
                     
                 } catch (error) {
                     this.hideProgress();
-                    console.error('Streaming error:', error);
-                    
-                    let errorMessage = 'Unknown error occurred';
-                    let shouldFallback = true;
-                    
-                    if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
-                        errorMessage = '⚠️ Rate limit exceeded. Please wait a few minutes before trying again.';
-                        this.addLog('❌ Rate limit exceeded after retries', 'error');
-                        shouldFallback = false;
-                    } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                        errorMessage = '🔌 Network connection failed. Please check your internet connection.';
-                        this.addLog('❌ Network connection failed', 'error');
-                    } else if (error.message.includes('500')) {
-                        errorMessage = '🔧 Server error. Please try again in a few minutes.';
-                        this.addLog('❌ Server error encountered', 'error');
-                    } else {
-                        errorMessage = `❌ ${error.message}`;
-                        this.addLog(`❌ Streaming error: ${error.message}`, 'error');
-                    }
-                    
-                    if (shouldFallback) {
-                        // Fallback to URL-only generation
-                        const searchUrl = this.generateSearchUrlClientSide(jobTitles, companySizes);
-                        this.displayUrl(searchUrl);
-                        this.showStatus(`${errorMessage} Generated search URL as fallback.`, 'warning');
-                        this.addLog('🔄 Fallback to URL-only generation', 'info');
-                    } else {
-                        this.showStatus(errorMessage, 'error');
-                    }
+                    console.error('Job completion error:', error);
+                    this.addLog(`❌ Failed to retrieve results: ${error.message}`, 'error');
+                    this.showStatus(`Failed to retrieve results: ${error.message}`, 'error');
                 }
             }
 

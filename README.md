@@ -113,7 +113,10 @@ LGA/
 ### Lead Processing
 - `POST /api/leads/generate-outreach` - Generate AI outreach content
 - `POST /api/leads/export-excel` - Export leads to Excel
-- `POST /api/leads/complete-workflow-stream` - Full streaming workflow with real-time progress
+- `POST /api/leads/start-workflow-job` - Start background workflow job (avoids timeout issues)
+- `GET /api/leads/job-status/:jobId` - Check background job status
+- `GET /api/leads/job-result/:jobId` - Get completed job results
+- `GET /api/leads/jobs` - List all active jobs (debugging)
 - `GET /api/leads/test` - Test OpenAI connection
 
 ### Health & Status
@@ -192,6 +195,12 @@ MAX_LEADS_PER_REQUEST=500
 4. **"No leads found"**
    - Try different job title/company size combinations
    - Check Apollo.io URL manually
+
+5. **Timeout Issues (500+ leads)**
+   - The system now uses background jobs to avoid infrastructure timeouts
+   - Large datasets are processed asynchronously with polling updates  
+   - Jobs can run for up to 30 minutes without browser timeout
+   - Check job progress with real-time status updates
 
 ### Debug Mode
 ```bash
