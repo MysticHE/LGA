@@ -146,6 +146,8 @@ router.post('/scrape-leads', async (req, res) => {
                 });
                 
                 console.log('✅ Apify scraper completed successfully');
+                console.log('📊 Apify response type:', typeof apifyResponse.data);
+                console.log('📊 Apify response length/keys:', Array.isArray(apifyResponse.data) ? apifyResponse.data.length : Object.keys(apifyResponse.data || {}).slice(0, 5));
                 break; // Success, exit retry loop
                 
             } catch (error) {
@@ -184,7 +186,28 @@ router.post('/scrape-leads', async (req, res) => {
             }
         }
 
-        const rawData = apifyResponse.data || [];
+        // Validate and extract data from Apify response
+        let rawData = [];
+        
+        if (apifyResponse.data) {
+            if (Array.isArray(apifyResponse.data)) {
+                rawData = apifyResponse.data;
+            } else if (typeof apifyResponse.data === 'object') {
+                // Check if it's an error response
+                if (apifyResponse.data.error) {
+                    console.error('❌ Apify API error:', apifyResponse.data);
+                    throw new Error(`Apify API error: ${apifyResponse.data.error}`);
+                }
+                // Try to find data in nested structure
+                rawData = apifyResponse.data.items || apifyResponse.data.data || apifyResponse.data.results || [];
+            }
+        }
+        
+        // Ensure rawData is an array
+        if (!Array.isArray(rawData)) {
+            console.error('❌ Invalid Apify response format:', typeof rawData, rawData);
+            throw new Error(`Invalid response format from Apify: expected array, got ${typeof rawData}`);
+        }
         
         console.log(`✅ Successfully scraped ${rawData.length} leads`);
 
