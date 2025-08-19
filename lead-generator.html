@@ -1640,6 +1640,8 @@
                 const maxWaitTime = 30 * 60 * 1000; // 30 minutes max
                 const startTime = Date.now();
                 let lastProgress = null;
+                let pollInterval = 5000; // Start with 5 seconds
+                let retryCount = 0;
                 
                 const poll = async () => {
                     try {
@@ -1654,8 +1656,19 @@
                             if (response.status === 404) {
                                 throw new Error('Job not found or expired');
                             }
+                            if (response.status === 429) {
+                                // Handle rate limit with exponential backoff
+                                retryCount++;
+                                const backoffTime = Math.min(Math.pow(2, retryCount) * 1000, 30000); // Max 30s
+                                this.addLog(`⚠️ Rate limit hit, waiting ${backoffTime/1000}s before retry...`, 'warning');
+                                setTimeout(poll, backoffTime);
+                                return;
+                            }
                             throw new Error(`Failed to check job status: ${response.status}`);
                         }
+                        
+                        // Reset retry count on successful request
+                        retryCount = 0;
                         
                         const status = await response.json();
                         
@@ -1674,8 +1687,17 @@
                             return; // Stop polling
                         }
                         
-                        // Continue polling every 3 seconds
-                        setTimeout(poll, 3000);
+                        // Adaptive polling interval based on job status
+                        if (status.status === 'scraping') {
+                            pollInterval = 8000; // Slower polling during scraping
+                        } else if (status.status === 'processing') {
+                            pollInterval = 5000; // Normal polling during processing
+                        } else {
+                            pollInterval = 3000; // Faster polling for quick stages
+                        }
+                        
+                        // Continue polling
+                        setTimeout(poll, pollInterval);
                         
                     } catch (error) {
                         this.hideProgress();

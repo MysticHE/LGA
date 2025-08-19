@@ -11,6 +11,11 @@ const rateLimiter = new RateLimiterMemory({
 // Rate limiting middleware
 const rateLimiterMiddleware = async (req, res, next) => {
     try {
+        // Exempt job status polling endpoints from rate limiting
+        if (req.path.includes('/job-status/') || req.path.includes('/job-result/')) {
+            return next();
+        }
+        
         // Use IP address as the key
         const key = req.ip || req.connection.remoteAddress;
         
