@@ -287,115 +287,123 @@ router.post('/complete-workflow-stream', async (req, res) => {
         
         sendEvent('progress', { step: 3, message: 'Scraping leads from Apollo...', total: 4 });
         
-        // Step 2: Use full streaming from Apollo scraper
-        let allLeads = [];
-        let scrapeMetadata = {};
+        // Step 2: Scrape all leads first, then stream process them
+        const scrapeResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads`, {
+            apolloUrl, maxRecords
+        }, { timeout: 0 });
         
-        // Create a streaming request to Apollo scraper
-        const scrapeRequest = axios.post(`${req.protocol}://${req.get('host')}/api/apollo/scrape-leads-stream`, {
-            apolloUrl, maxRecords, stream: true
-        }, { 
-            timeout: 0,
-            responseType: 'stream'
+        const scrapeData = scrapeResponse.data;
+        const { metadata: scrapeMetadata } = scrapeData;
+        console.log(`✅ Successfully scraped ${scrapeData.count} leads`);
+        
+        sendEvent('scraped', { 
+            count: scrapeData.count, 
+            metadata: scrapeMetadata,
+            apolloUrl 
         });
 
-        let totalLeadsExpected = 0;
-        let chunksReceived = 0;
-
-        // Handle the streaming response from Apollo
-        scrapeRequest.then(response => {
-            let buffer = '';
-            
-            response.data.on('data', (chunk) => {
-                buffer += chunk.toString();
-                
-                // Process complete SSE messages
-                const messages = buffer.split('\n\n');
-                buffer = messages.pop(); // Keep incomplete message in buffer
-                
-                for (const message of messages) {
-                    const lines = message.split('\n');
-                    let eventType = '';
-                    let data = null;
-                    
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            eventType = line.slice(7);
-                        } else if (line.startsWith('data: ')) {
-                            try {
-                                data = JSON.parse(line.slice(6));
-                            } catch (e) {
-                                console.warn('Failed to parse SSE data:', line);
-                                continue;
-                            }
-                        }
-                    }
-                    
-                    if (eventType && data) {
-                        if (eventType === 'scraped_complete') {
-                            totalLeadsExpected = data.totalRecords;
-                            sendEvent('scraped', { 
-                                count: totalLeadsExpected, 
-                                metadata: scrapeMetadata,
-                                apolloUrl 
-                            });
-                        }
-                        else if (eventType === 'chunk') {
-                            chunksReceived++;
-                            allLeads.push(...data.leads);
-                            
-                            // Process this chunk (apply outreach if needed)
-                            processChunkWithOutreach(data.leads, data.chunkNumber, data.totalChunks);
-                        }
-                        else if (eventType === 'complete') {
-                            console.log(`✅ Successfully received all ${allLeads.length} leads via streaming`);
-                            finalizeWorkflow();
-                        }
-                        else if (eventType === 'error') {
-                            sendEvent('error', data);
-                            res.end();
-                        }
-                    }
-                }
+        if (scrapeData.count === 0) {
+            sendEvent('complete', { 
+                success: true, 
+                count: 0, 
+                message: 'No leads found' 
             });
-
-            response.data.on('end', () => {
-                if (allLeads.length === 0) {
-                    sendEvent('complete', { 
-                        success: true, 
-                        count: 0, 
-                        message: 'No leads found' 
-                    });
-                    res.end();
-                }
-            });
-
-            response.data.on('error', (error) => {
-                console.error('Stream error:', error);
-                sendEvent('error', { error: 'Stream failed', message: error.message });
-                res.end();
-            });
-        }).catch(error => {
-            console.error('Apollo streaming failed:', error);
-            sendEvent('error', { error: 'Scraping failed', message: error.message });
             res.end();
-        });
+            return;
+        }
 
-        // Function to process each chunk as it comes in
-        async function processChunkWithOutreach(leads, chunkNumber, totalChunks) {
+        // Step 3: Process leads in chunks
+        sendEvent('progress', { step: 4, message: `Processing ${scrapeData.count} leads in batches...`, total: 4 });
+        
+        let processedLeads = [];
+        const totalChunks = Math.ceil(scrapeData.count / chunkSize);
+        
+        // Handle both direct leads (small datasets) and sessionId (large datasets)
+        if (scrapeData.leads) {
+            // Small dataset - leads returned directly
+            const leads = scrapeData.leads;
+            for (let i = 0; i < leads.length; i += chunkSize) {
+                const chunk = leads.slice(i, i + chunkSize);
+                const chunkNumber = Math.floor(i / chunkSize) + 1;
+                
+                const finalChunk = await processChunk(chunk, chunkNumber, totalChunks, generateOutreach);
+                processedLeads.push(...finalChunk);
+                
+                sendEvent('chunk_complete', {
+                    chunk: chunkNumber,
+                    total: totalChunks,
+                    leads: finalChunk,
+                    processed: processedLeads.length,
+                    remaining: leads.length - processedLeads.length
+                });
+
+                if (i + chunkSize < leads.length) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+        } else if (scrapeData.sessionId) {
+            // Large dataset - retrieve in chunks using sessionId
+            let offset = 0;
+            const chunkLimit = chunkSize;
+            
+            for (let chunkNumber = 1; chunkNumber <= totalChunks; chunkNumber++) {
+                sendEvent('chunk_start', { 
+                    chunk: chunkNumber, 
+                    total: totalChunks, 
+                    size: chunkLimit 
+                });
+
+                try {
+                    // Get chunk from Apollo
+                    const chunkResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/apollo/get-leads-chunk`, {
+                        sessionId: scrapeData.sessionId,
+                        offset: offset,
+                        limit: chunkLimit
+                    }, { timeout: 0 });
+
+                    const chunk = chunkResponse.data.leads;
+                    const finalChunk = await processChunk(chunk, chunkNumber, totalChunks, generateOutreach);
+                    processedLeads.push(...finalChunk);
+
+                    sendEvent('chunk_complete', {
+                        chunk: chunkNumber,
+                        total: totalChunks,
+                        leads: finalChunk,
+                        processed: processedLeads.length,
+                        remaining: scrapeData.count - processedLeads.length
+                    });
+
+                    offset += chunkLimit;
+                    
+                    // Only add delay if there are more chunks
+                    if (!chunkResponse.data.hasMore) break;
+                    if (chunkNumber < totalChunks) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                } catch (error) {
+                    console.error(`Error retrieving chunk ${chunkNumber}:`, error);
+                    sendEvent('error', { error: 'Chunk retrieval failed', message: error.message });
+                    res.end();
+                    return;
+                }
+            }
+        }
+
+        // Helper function to process each chunk
+        async function processChunk(chunk, chunkNumber, totalChunks, generateOutreach) {
             sendEvent('chunk_start', { 
                 chunk: chunkNumber, 
                 total: totalChunks, 
-                size: leads.length 
+                size: chunk.length 
             });
 
-            let finalChunk = leads;
+            let finalChunk = chunk;
 
             // Generate outreach for this chunk if enabled
             if (generateOutreach && openai) {
                 try {
                     const outreachResponse = await axios.post(`${req.protocol}://${req.get('host')}/api/leads/generate-outreach`, {
-                        leads: leads
+                        leads: chunk
                     }, { timeout: 0 });
                     
                     if (outreachResponse.data && outreachResponse.data.leads) {
@@ -406,38 +414,8 @@ router.post('/complete-workflow-stream', async (req, res) => {
                 }
             }
 
-            // Send this processed chunk to frontend
-            sendEvent('chunk_complete', {
-                chunk: chunkNumber,
-                total: totalChunks,
-                leads: finalChunk,
-                processed: chunkNumber * chunkSize,
-                remaining: Math.max(0, totalLeadsExpected - (chunkNumber * chunkSize))
-            });
+            return finalChunk;
         }
-
-        // Function to finalize the workflow
-        function finalizeWorkflow() {
-            sendEvent('complete', {
-                success: true,
-                count: allLeads.length,
-                metadata: {
-                    apolloUrl,
-                    jobTitles,
-                    companySizes,
-                    maxRecords,
-                    totalFound: allLeads.length,
-                    processed: allLeads.length,
-                    outreachGenerated: generateOutreach && !!openai,
-                    scrapeMetadata,
-                    completedAt: new Date().toISOString()
-                }
-            });
-            res.end();
-        }
-
-        // Don't continue with the old chunking logic - it's handled in streaming now
-        return;
 
         // Send final completion event
         sendEvent('complete', {

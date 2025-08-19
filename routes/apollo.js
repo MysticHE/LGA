@@ -467,27 +467,63 @@ router.post('/scrape-leads', async (req, res) => {
             conversion_status: 'Pending'
         }));
 
-        res.json({
-            success: true,
-            count: transformedLeads.length,
-            leads: transformedLeads,
-            metadata: {
-                apolloUrl,
-                scrapedAt: new Date().toISOString(),
-                maxRecords: recordLimit,
-                totalAvailable: totalAvailable,
-                rawScraped: rawData.length,
-                duplicatesRemoved: duplicatesRemoved,
-                finalCount: transformedLeads.length,
-                limitReached: limitReached,
-                deduplicationStats: {
-                    input: rawData.length,
-                    duplicates: duplicatesRemoved,
-                    unique: transformedLeads.length,
-                    deduplicationRate: rawData.length > 0 ? ((duplicatesRemoved / rawData.length) * 100).toFixed(1) + '%' : '0%'
+        // For large datasets, don't return all leads in the response to avoid memory issues
+        if (transformedLeads.length > 250) {
+            // Store leads temporarily (in a real app, you'd use Redis or database)
+            global.tempLeads = global.tempLeads || new Map();
+            const sessionId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+            global.tempLeads.set(sessionId, transformedLeads);
+            
+            // Clean up old sessions after 30 minutes
+            setTimeout(() => {
+                global.tempLeads.delete(sessionId);
+            }, 30 * 60 * 1000);
+
+            res.json({
+                success: true,
+                count: transformedLeads.length,
+                sessionId: sessionId, // Use this to retrieve leads in chunks
+                metadata: {
+                    apolloUrl,
+                    scrapedAt: new Date().toISOString(),
+                    maxRecords: recordLimit,
+                    totalAvailable: totalAvailable,
+                    rawScraped: rawData.length,
+                    duplicatesRemoved: duplicatesRemoved,
+                    finalCount: transformedLeads.length,
+                    limitReached: limitReached,
+                    deduplicationStats: {
+                        input: rawData.length,
+                        duplicates: duplicatesRemoved,
+                        unique: transformedLeads.length,
+                        deduplicationRate: rawData.length > 0 ? ((duplicatesRemoved / rawData.length) * 100).toFixed(1) + '%' : '0%'
+                    }
                 }
-            }
-        });
+            });
+        } else {
+            // For smaller datasets, return leads directly
+            res.json({
+                success: true,
+                count: transformedLeads.length,
+                leads: transformedLeads,
+                metadata: {
+                    apolloUrl,
+                    scrapedAt: new Date().toISOString(),
+                    maxRecords: recordLimit,
+                    totalAvailable: totalAvailable,
+                    rawScraped: rawData.length,
+                    duplicatesRemoved: duplicatesRemoved,
+                    finalCount: transformedLeads.length,
+                    limitReached: limitReached,
+                    deduplicationStats: {
+                        input: rawData.length,
+                        duplicates: duplicatesRemoved,
+                        unique: transformedLeads.length,
+                        deduplicationRate: rawData.length > 0 ? ((duplicatesRemoved / rawData.length) * 100).toFixed(1) + '%' : '0%'
+                    }
+                }
+            });
+        }
 
     } catch (error) {
         console.error('Apollo scraping error:', error);
@@ -518,6 +554,48 @@ router.post('/scrape-leads', async (req, res) => {
             error: 'Scraping Error',
             message: 'Failed to scrape leads from Apollo',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get leads in chunks for large datasets
+router.post('/get-leads-chunk', async (req, res) => {
+    try {
+        const { sessionId, offset = 0, limit = 100 } = req.body;
+        
+        if (!sessionId) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Session ID is required'
+            });
+        }
+
+        global.tempLeads = global.tempLeads || new Map();
+        const allLeads = global.tempLeads.get(sessionId);
+        
+        if (!allLeads) {
+            return res.status(404).json({
+                error: 'Session Not Found',
+                message: 'Session expired or invalid'
+            });
+        }
+
+        const chunk = allLeads.slice(offset, offset + limit);
+        
+        res.json({
+            success: true,
+            leads: chunk,
+            hasMore: offset + limit < allLeads.length,
+            total: allLeads.length,
+            offset: offset,
+            limit: limit
+        });
+
+    } catch (error) {
+        console.error('Get leads chunk error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to retrieve leads chunk'
         });
     }
 });
