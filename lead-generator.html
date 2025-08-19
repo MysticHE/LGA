@@ -485,9 +485,17 @@
             border-color: var(--color-success);
         }
 
-        .btn-success:hover {
+        .btn-success:hover:not(:disabled) {
             background: #059669;
             border-color: #059669;
+        }
+
+        .btn-success:disabled {
+            background: var(--color-gray-400);
+            border-color: var(--color-gray-400);
+            color: var(--color-gray-600);
+            cursor: not-allowed;
+            opacity: 0.6;
         }
 
         .status-message {
@@ -768,6 +776,15 @@
             align-items: center;
             gap: var(--space-2);
             margin: 0;
+            width: 100%;
+        }
+
+        .logs-loader {
+            flex-shrink: 0;
+        }
+
+        .logs-loader.hidden {
+            display: none !important;
         }
 
         .logs-controls {
@@ -1298,7 +1315,7 @@
                 </div>
 
                 <div class="action-buttons" style="margin-top: var(--space-4);">
-                    <button type="button" class="btn btn-success" id="downloadExcelBtn">
+                    <button type="button" class="btn btn-success" id="downloadExcelBtn" disabled>
                         📊 Download Excel File
                     </button>
                     <button type="button" class="btn" id="viewOutreachBtn" style="display: none;">
@@ -1313,9 +1330,10 @@
                 <div class="logs-section">
                     <div class="logs-header">
                         <h4 class="logs-title">
-                            <span>🔍</span>
+                            <span id="logsIcon">🔍</span>
                             <span>Processing Logs</span>
                             <span id="logCount" style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 12px; font-size: var(--font-size-xs);">0</span>
+                            <div id="logsLoader" class="logs-loader hidden" style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin-left: auto;"></div>
                         </h4>
                         <div class="logs-controls">
                             <button id="toggleLogsBtn" class="logs-toggle" title="Expand/Collapse">⏷</button>
@@ -1906,6 +1924,9 @@
                     </tr>
                 `).join('');
 
+                // Enable download button when leads are loaded
+                this.downloadExcelBtn.disabled = false;
+                
                 // Show/hide outreach button
                 if (metadata.outreachGenerated && outreachCount > 0) {
                     this.viewOutreachBtn.style.display = 'inline-flex';
@@ -2013,6 +2034,10 @@
                 this.outputSection.classList.remove('hidden');
                 this.generateBtn.disabled = true;
                 this.generateUrlBtn.disabled = true;
+                this.downloadExcelBtn.disabled = true; // Disable download button
+                
+                // Show loading icon and update icon
+                this.showLoadingState(true);
                 
                 // Clear previous results and logs for fresh start
                 this.logsContainer.innerHTML = '';
@@ -2034,6 +2059,27 @@
                 // User can manually close them
                 this.generateBtn.disabled = false;
                 this.generateUrlBtn.disabled = false;
+                
+                // Hide loading state
+                this.showLoadingState(false);
+                
+                // Enable download button only if we have leads
+                if (this.currentLeads && this.currentLeads.length > 0) {
+                    this.downloadExcelBtn.disabled = false;
+                }
+            }
+
+            showLoadingState(isLoading) {
+                const logsIcon = document.getElementById('logsIcon');
+                const logsLoader = document.getElementById('logsLoader');
+                
+                if (isLoading) {
+                    logsIcon.textContent = '⟳'; // Spinning icon
+                    logsLoader.classList.remove('hidden');
+                } else {
+                    logsIcon.textContent = '🔍'; // Search icon
+                    logsLoader.classList.add('hidden');
+                }
             }
             
             addLog(message, type = 'info') {
