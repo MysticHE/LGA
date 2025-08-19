@@ -76,12 +76,7 @@
         .container {
             max-width: 1600px;
             margin: 0 auto;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--space-6);
-            align-items: start;
-            min-height: 100vh;
-            padding: var(--space-6);
+            /* Grid layout will be set by media queries */
         }
 
         .filters-panel {
@@ -90,8 +85,6 @@
             border-radius: var(--border-radius-xl);
             box-shadow: var(--shadow-lg);
             padding: var(--space-6);
-            height: calc(100vh - 72px);
-            max-height: calc(100vh - 72px);
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -103,7 +96,6 @@
             border-radius: var(--border-radius-xl);
             box-shadow: var(--shadow-lg);
             padding: var(--space-6);
-            height: calc(100vh - 72px);
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -167,7 +159,7 @@
             flex: 1;
             overflow-y: auto;
             padding-right: var(--space-2);
-            min-height: 0;
+            min-height: 300px;
             display: flex;
             flex-direction: column;
         }
@@ -601,10 +593,43 @@
             margin-bottom: var(--space-3);
         }
 
+        /* Force side-by-side layout - ALWAYS APPLIED */
+        body {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        .container {
+            display: flex !important;
+            flex-direction: row !important;
+            gap: 24px !important;
+            min-height: 100vh !important;
+            padding: 24px !important;
+            margin: 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            box-sizing: border-box !important;
+        }
+        
+        .filters-panel {
+            flex: 0 0 calc(50% - 12px) !important;
+            height: calc(100vh - 48px) !important;
+            max-height: calc(100vh - 48px) !important;
+            overflow-y: auto !important;
+        }
+        
+        .results-panel {
+            flex: 0 0 calc(50% - 12px) !important;
+            height: calc(100vh - 48px) !important;
+            max-height: calc(100vh - 48px) !important;
+            overflow-y: auto !important;
+        }
+        
         /* Responsive */
-        @media (max-width: 1024px) {
+        @media (max-width: 768px) {
             .container {
-                grid-template-columns: 1fr;
+                display: flex;
+                flex-direction: column;
                 gap: var(--space-4);
                 padding: var(--space-3);
                 min-height: auto;
@@ -617,7 +642,7 @@
             }
         }
         
-        @media (min-width: 1025px) and (max-width: 1400px) {
+        @media (min-width: 769px) and (max-width: 1400px) {
             .container {
                 max-width: 100%;
                 padding: var(--space-4);
@@ -625,6 +650,7 @@
             
             .filters-panel, .results-panel {
                 height: calc(100vh - 56px);
+                max-height: calc(100vh - 56px);
             }
         }
         
@@ -865,6 +891,7 @@
                     <div class="selection-preview" id="companySizePreview">
                         <em style="color: var(--color-gray-400);">Select company sizes above...</em>
                     </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -883,7 +910,7 @@
                             <div class="processing-row">
                                 <div class="number-input-group">
                                     <label for="maxRecords">📊 Max Leads:</label>
-                                    <input type="number" id="maxRecords" value="500" min="10" max="2000">
+                                    <input type="number" id="maxRecords" value="500" min="0" max="2000">
                                     <small style="color: var(--color-gray-500);">(0 = unlimited)</small>
                                 </div>
                             </div>
