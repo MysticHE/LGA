@@ -106,13 +106,14 @@ LGA/
 
 ### Apollo Integration
 - `POST /api/apollo/generate-url` - Generate Apollo search URL
-- `POST /api/apollo/scrape-leads` - Scrape leads from Apollo
+- `POST /api/apollo/scrape-leads` - Scrape leads from Apollo (handles large datasets with session-based chunking)
+- `POST /api/apollo/get-leads-chunk` - Get leads in chunks for large datasets
 - `GET /api/apollo/test` - Test Apify connection
 
 ### Lead Processing
 - `POST /api/leads/generate-outreach` - Generate AI outreach content
 - `POST /api/leads/export-excel` - Export leads to Excel
-- `POST /api/leads/complete-workflow` - Full end-to-end workflow
+- `POST /api/leads/complete-workflow-stream` - Full streaming workflow with real-time progress
 - `GET /api/leads/test` - Test OpenAI connection
 
 ### Health & Status
