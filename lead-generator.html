@@ -1089,56 +1089,56 @@
                         </label>
                         <div class="custom-multiselect" id="jobTitlesMultiselect">
                         <div class="multiselect-option" data-value="Owner">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-owner">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-owner" name="jobTitle">
                                 <label class="multiselect-label" for="job-owner">Owner</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="Founder">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-founder">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-founder" name="jobTitle">
                                 <label class="multiselect-label" for="job-founder">Founder</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="C suite">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-csuite">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-csuite" name="jobTitle">
                                 <label class="multiselect-label" for="job-csuite">C suite</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="Partner">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-partner">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-partner" name="jobTitle">
                                 <label class="multiselect-label" for="job-partner">Partner</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="Vp">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-vp">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-vp" name="jobTitle">
                                 <label class="multiselect-label" for="job-vp">VP</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="Head">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-head">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-head" name="jobTitle">
                                 <label class="multiselect-label" for="job-head">Head</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="Director">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-director">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-director" name="jobTitle">
                                 <label class="multiselect-label" for="job-director">Director</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="Manager">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-manager">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-manager" name="jobTitle">
                                 <label class="multiselect-label" for="job-manager">Manager</label>
                             </div>
                         </div>
                         <div class="multiselect-option" data-value="Senior">
-                            <div class="option-chip" onclick="toggleOption(this)">
-                                <input type="checkbox" class="multiselect-checkbox" id="job-senior">
+                            <div class="option-chip" onclick="toggleJobTitleOption(this)">
+                                <input type="radio" class="multiselect-checkbox" id="job-senior" name="jobTitle">
                                 <label class="multiselect-label" for="job-senior">Senior</label>
                             </div>
                         </div>
@@ -1354,6 +1354,15 @@
 
     <script>
         // Global function for chip toggle
+        // Global function for job title option clicking (single selection)
+        function toggleJobTitleOption(chipElement) {
+            const radio = chipElement.querySelector('input[type="radio"]');
+            radio.checked = true;
+            
+            // Trigger change event for the lead generator to update previews
+            radio.dispatchEvent(new Event('change'));
+        }
+
         function toggleOption(chipElement) {
             const checkbox = chipElement.querySelector('input[type="checkbox"]');
             checkbox.checked = !checkbox.checked;
@@ -1437,11 +1446,11 @@
             }
 
             bindMultiselectEvents() {
-                // Job titles multiselect
-                const jobCheckboxes = this.jobTitlesMultiselect.querySelectorAll('input[type="checkbox"]');
-                jobCheckboxes.forEach(checkbox => {
-                    checkbox.addEventListener('change', () => {
-                        this.updateMultiselectOption(checkbox.closest('.multiselect-option'));
+                // Job titles single select (radio buttons)
+                const jobRadios = this.jobTitlesMultiselect.querySelectorAll('input[type="radio"]');
+                jobRadios.forEach(radio => {
+                    radio.addEventListener('change', () => {
+                        this.updateJobTitleSelection();
                         this.updatePreviews();
                     });
                 });
@@ -1456,6 +1465,21 @@
                 });
             }
 
+            updateJobTitleSelection() {
+                // Update visual state for all job title options
+                const allOptions = this.jobTitlesMultiselect.querySelectorAll('.multiselect-option');
+                allOptions.forEach(option => {
+                    const radio = option.querySelector('input[type="radio"]');
+                    const chip = option.querySelector('.option-chip');
+                    
+                    if (radio.checked) {
+                        chip.classList.add('selected');
+                    } else {
+                        chip.classList.remove('selected');
+                    }
+                });
+            }
+
             updateMultiselectOption(option) {
                 const checkbox = option.querySelector('input[type="checkbox"]');
                 const chip = option.querySelector('.option-chip');
@@ -1467,12 +1491,12 @@
             }
 
             updatePreviews() {
-                // Update job titles preview
-                const selectedTitles = this.getSelectedValues(this.jobTitlesMultiselect);
-                if (selectedTitles.length > 0) {
-                    this.jobTitlesPreview.innerHTML = `${selectedTitles.length} job title${selectedTitles.length > 1 ? 's' : ''} selected`;
+                // Update job titles preview (single selection)
+                const selectedRadio = this.jobTitlesMultiselect.querySelector('input[type="radio"]:checked');
+                if (selectedRadio) {
+                    this.jobTitlesPreview.innerHTML = `Selected: ${selectedRadio.closest('.multiselect-option').dataset.value}`;
                 } else {
-                    this.jobTitlesPreview.innerHTML = '<em style="color: var(--color-gray-400);">Select job titles above...</em>';
+                    this.jobTitlesPreview.innerHTML = '<em style="color: var(--color-gray-400);">Select a job title above...</em>';
                 }
 
                 // Update company sizes preview
@@ -1770,7 +1794,10 @@
             }
 
             getFormData() {
-                const jobTitles = this.getSelectedValues(this.jobTitlesMultiselect);
+                // Get single job title selection
+                const selectedJobTitle = this.jobTitlesMultiselect.querySelector('input[type="radio"]:checked');
+                const jobTitles = selectedJobTitle ? [selectedJobTitle.closest('.multiselect-option').dataset.value] : [];
+                
                 const companySizes = this.getSelectedValues(this.companySizeMultiselect);
                 const generateOutreach = document.getElementById('generateOutreach').checked;
                 const maxRecords = parseInt(document.getElementById('maxRecords').value) || 0;
@@ -1780,7 +1807,7 @@
 
             validateFormData(jobTitles, companySizes) {
                 if (jobTitles.length === 0) {
-                    this.showStatus('Please select at least one job title.', 'error');
+                    this.showStatus('Please select a job title.', 'error');
                     return false;
                 }
                 if (companySizes.length === 0) {
@@ -1844,6 +1871,9 @@
                 const jobTitles = metadata.jobTitles || [];
                 const companySizes = metadata.companySizes || [];
                 
+                // Enhanced statistics display
+                const limitDisplay = metadata.maxRecords === 0 || metadata.maxRecords === 'unlimited' ? 'No Limit' : `${metadata.maxRecords} records`;
+                
                 const filtersDisplay = jobTitles.length > 0 || companySizes.length > 0 ? `
                     <div style="margin-bottom: var(--space-3); padding: var(--space-3); background: var(--color-gray-50); border-radius: var(--border-radius-md);">
                         <strong>Applied Filters:</strong>
@@ -1851,17 +1881,12 @@
                             <span style="font-size: var(--font-size-sm);">
                                 ${jobTitles.length > 0 ? `<strong>Job Titles:</strong> ${jobTitles.join(', ')} | ` : ''}
                                 ${companySizes.length > 0 ? `<strong>Company Sizes:</strong> ${companySizes.join(', ')} | ` : ''}
-                                <strong>Location:</strong> Singapore
+                                <strong>Location:</strong> Singapore | 
+                                <strong>Record Limit:</strong> ${limitDisplay}${metadata.outreachGenerated ? ` | <strong>AI Outreach:</strong> ${outreachCount}` : ''}
                             </span>
                         </div>
                     </div>
                 ` : '';
-                
-                // Enhanced statistics display
-                const limitDisplay = metadata.maxRecords === 0 || metadata.maxRecords === 'unlimited' ? 'No Limit' : `${metadata.maxRecords} records`;
-                const limitStatus = limitReached ? 
-                    `<div style="color: var(--color-amber-600);"><strong>⚠️ Limit Reached:</strong> ${limitDisplay}</div>` : 
-                    `<div><strong>Record Limit:</strong> ${limitDisplay}</div>`;
                 
                 // Duplicate removal stats
                 const duplicationDisplay = duplicatesRemoved > 0 ? 
@@ -1890,12 +1915,12 @@
                     </div>
                     
                     <!-- Processing Details -->
-                    <div style="display: flex; gap: var(--space-6); flex-wrap: wrap; font-size: var(--font-size-sm); color: var(--color-gray-600);">
-                        ${limitStatus}
-                        ${duplicatesRemoved > 0 ? `<div><strong>Raw Scraped:</strong> ${rawScraped.toLocaleString()}</div>` : ''}
-                        ${duplicationDisplay}
-                        ${metadata.outreachGenerated ? `<div><strong>AI Outreach:</strong> ${outreachCount}</div>` : ''}
-                    </div>
+                    ${duplicatesRemoved > 0 ? `
+                        <div style="display: flex; gap: var(--space-6); flex-wrap: wrap; font-size: var(--font-size-sm); color: var(--color-gray-600);">
+                            <div><strong>Raw Scraped:</strong> ${rawScraped.toLocaleString()}</div>
+                            ${duplicationDisplay}
+                        </div>
+                    ` : ''}
                     
                 `;
 
