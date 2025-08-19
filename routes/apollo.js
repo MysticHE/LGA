@@ -2,6 +2,9 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 
+// Initialize Apollo job storage (in production, use Redis or database)
+global.apolloJobs = global.apolloJobs || new Map();
+
 // Apollo URL generation endpoint
 router.post('/generate-url', async (req, res) => {
     try {
@@ -397,6 +400,333 @@ router.post('/get-leads-chunk', async (req, res) => {
         res.status(500).json({
             error: 'Server Error',
             message: 'Failed to retrieve leads chunk'
+        });
+    }
+});
+
+// Start Apollo scraping job asynchronously
+router.post('/start-scrape-job', async (req, res) => {
+    try {
+        const { apolloUrl, maxRecords = 500 } = req.body;
+
+        // Validation
+        if (!apolloUrl) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Apollo URL is required'
+            });
+        }
+
+        if (!apolloUrl.includes('apollo.io')) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Invalid Apollo URL'
+            });
+        }
+
+        // Check if Apify API token is configured
+        if (!process.env.APIFY_API_TOKEN) {
+            return res.status(500).json({
+                error: 'Configuration Error',
+                message: 'Apify API token not configured'
+            });
+        }
+
+        // Generate unique Apollo job ID
+        const apolloJobId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        
+        // Initialize Apollo job status
+        const apolloJobStatus = {
+            id: apolloJobId,
+            status: 'started',
+            startTime: new Date().toISOString(),
+            params: { apolloUrl, maxRecords },
+            result: null,
+            error: null,
+            completedAt: null
+        };
+        
+        // Store Apollo job status
+        global.apolloJobs.set(apolloJobId, apolloJobStatus);
+        
+        // Clean up old Apollo jobs after 2 hours
+        setTimeout(() => {
+            global.apolloJobs.delete(apolloJobId);
+        }, 2 * 60 * 60 * 1000);
+
+        console.log(`🚀 Starting Apollo job ${apolloJobId} for ${maxRecords} records...`);
+        
+        // Return Apollo job ID immediately
+        res.json({
+            success: true,
+            jobId: apolloJobId,
+            message: 'Apollo scraping started in background'
+        });
+        
+        // Run Apollo scraping in background
+        processApolloJob(apolloJobId).catch(error => {
+            console.error(`Apollo job ${apolloJobId} failed:`, error);
+            const job = global.apolloJobs.get(apolloJobId);
+            if (job) {
+                job.status = 'failed';
+                job.error = error.message;
+                job.completedAt = new Date().toISOString();
+            }
+        });
+        
+    } catch (error) {
+        console.error('Apollo job creation error:', error);
+        res.status(500).json({
+            error: 'Job Creation Error',
+            message: 'Failed to start Apollo scraping job'
+        });
+    }
+});
+
+// Background Apollo job processor
+async function processApolloJob(apolloJobId) {
+    const job = global.apolloJobs.get(apolloJobId);
+    if (!job) return;
+    
+    try {
+        const { apolloUrl, maxRecords } = job.params;
+        
+        job.status = 'scraping';
+        
+        // Handle unlimited vs limited records
+        const maxLimit = parseInt(process.env.MAX_LEADS_PER_REQUEST) || 2000;
+        let recordLimit;
+        
+        if (maxRecords === 0) {
+            recordLimit = maxLimit; // Use system max when unlimited requested
+        } else {
+            recordLimit = Math.min(parseInt(maxRecords) || 500, maxLimit);
+        }
+
+        console.log(`🔍 Apollo job ${apolloJobId}: Starting Apify scraper for ${recordLimit} records...`);
+
+        let apifyResponse;
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (retryCount <= maxRetries) {
+            try {
+                console.log(`🎯 Apollo job ${apolloJobId}: Attempt ${retryCount + 1}/${maxRetries + 1} - Calling Apify scraper...`);
+                
+                apifyResponse = await axios.post(
+                    'https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/run-sync-get-dataset-items',
+                    {
+                        cleanOutput: true,
+                        totalRecords: recordLimit,
+                        url: apolloUrl
+                    },
+                    {
+                        headers: {
+                            'Accept': 'application/json',
+                            'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                            'Connection': 'keep-alive',
+                            'User-Agent': 'LGA-Lead-Generator/1.0'
+                        },
+                        timeout: 0, // No timeout - let Apify run until completion
+                        maxRedirects: 5,
+                        validateStatus: function (status) {
+                            return status < 500;
+                        }
+                    }
+                ).catch(error => {
+                    if (error.config && error.config.headers && error.config.headers.Authorization) {
+                        error.config.headers.Authorization = 'Bearer [REDACTED]';
+                    }
+                    throw error;
+                });
+                
+                console.log(`✅ Apollo job ${apolloJobId}: Apify scraper completed successfully`);
+                break; // Success, exit retry loop
+                
+            } catch (error) {
+                retryCount++;
+                console.error(`❌ Apollo job ${apolloJobId}: Attempt ${retryCount}/${maxRetries + 1} failed:`, error.code || error.message);
+                
+                if (retryCount > maxRetries) {
+                    throw new Error(`Apollo scraping failed after ${maxRetries + 1} attempts: ${error.message}`);
+                } else {
+                    const waitTime = Math.pow(2, retryCount - 1) * 10000; // 10s, 20s delays
+                    console.log(`⏳ Apollo job ${apolloJobId}: Waiting ${waitTime/1000}s before retry...`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                }
+            }
+        }
+
+        // Process Apify response (same logic as before)
+        let rawData = [];
+        
+        if (apifyResponse.data) {
+            if (Array.isArray(apifyResponse.data)) {
+                rawData = apifyResponse.data;
+            } else if (typeof apifyResponse.data === 'object') {
+                if (apifyResponse.data.error) {
+                    throw new Error(`Apify API error: ${apifyResponse.data.error}`);
+                }
+                rawData = apifyResponse.data.items || apifyResponse.data.data || apifyResponse.data.results || [];
+            }
+        }
+        
+        if (!Array.isArray(rawData)) {
+            throw new Error(`Invalid response format from Apify: expected array, got ${typeof rawData}`);
+        }
+        
+        console.log(`✅ Apollo job ${apolloJobId}: Successfully scraped ${rawData.length} leads`);
+
+        // Duplicate prevention and transformation (same logic as before)
+        const uniqueLeads = [];
+        const seen = new Set();
+        
+        rawData.forEach(lead => {
+            const email = (lead.email || '').toLowerCase().trim();
+            const linkedin = (lead.linkedin_url || '').toLowerCase().trim();
+            const name = (lead.name || '').toLowerCase().trim();
+            const company = (lead.organization_name || '').toLowerCase().trim();
+            
+            let identifier;
+            if (email && email !== '') {
+                identifier = email;
+            } else if (linkedin && linkedin !== '') {
+                identifier = linkedin;
+            } else {
+                identifier = `${name}|${company}`;
+            }
+            
+            if (!seen.has(identifier)) {
+                seen.add(identifier);
+                uniqueLeads.push(lead);
+            }
+        });
+
+        const duplicatesRemoved = rawData.length - uniqueLeads.length;
+
+        // Transform leads
+        const transformedLeads = uniqueLeads.map(lead => ({
+            name: lead.name || '',
+            title: lead.title || '',
+            organization_name: lead.organization_name || '',
+            organization_website_url: lead.organization_website_url || '',
+            estimated_num_employees: lead.estimated_num_employees || '',
+            email: lead.email || '',
+            email_verified: lead.email ? 'Y' : 'N',
+            linkedin_url: lead.linkedin_url || '',
+            industry: lead.industry || '',
+            country: lead.country || 'Singapore',
+            conversion_status: 'Pending'
+        }));
+
+        // Job completed successfully
+        job.status = 'completed';
+        job.result = {
+            success: true,
+            count: transformedLeads.length,
+            leads: transformedLeads,
+            metadata: {
+                apolloUrl,
+                scrapedAt: new Date().toISOString(),
+                maxRecords: recordLimit,
+                rawScraped: rawData.length,
+                duplicatesRemoved: duplicatesRemoved,
+                finalCount: transformedLeads.length
+            }
+        };
+        job.completedAt = new Date().toISOString();
+        
+        console.log(`✅ Apollo job ${apolloJobId} completed successfully with ${transformedLeads.length} leads`);
+        
+    } catch (error) {
+        console.error(`❌ Apollo job ${apolloJobId} failed:`, error);
+        job.status = 'failed';
+        job.error = error.message;
+        job.completedAt = new Date().toISOString();
+    }
+}
+
+// Get Apollo job status
+router.get('/job-status/:jobId', async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        
+        if (!jobId) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Job ID is required'
+            });
+        }
+
+        global.apolloJobs = global.apolloJobs || new Map();
+        const job = global.apolloJobs.get(jobId);
+        
+        if (!job) {
+            return res.status(404).json({
+                error: 'Job Not Found',
+                message: 'Apollo job not found or expired'
+            });
+        }
+
+        res.json({
+            success: true,
+            jobId: jobId,
+            status: job.status,
+            startTime: job.startTime,
+            completedAt: job.completedAt,
+            error: job.error,
+            isComplete: ['completed', 'failed'].includes(job.status)
+        });
+
+    } catch (error) {
+        console.error('Apollo job status check error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to check Apollo job status'
+        });
+    }
+});
+
+// Get Apollo job result
+router.get('/job-result/:jobId', async (req, res) => {
+    try {
+        const { jobId } = req.params;
+        
+        if (!jobId) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Job ID is required'
+            });
+        }
+
+        global.apolloJobs = global.apolloJobs || new Map();
+        const job = global.apolloJobs.get(jobId);
+        
+        if (!job) {
+            return res.status(404).json({
+                error: 'Job Not Found',
+                message: 'Apollo job not found or expired'
+            });
+        }
+
+        if (job.status !== 'completed') {
+            return res.status(400).json({
+                error: 'Job Not Complete',
+                message: `Apollo job is still ${job.status}. Check job-status first.`
+            });
+        }
+
+        res.json({
+            success: true,
+            jobId: jobId,
+            ...job.result
+        });
+
+    } catch (error) {
+        console.error('Apollo job result retrieval error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to retrieve Apollo job result'
         });
     }
 });

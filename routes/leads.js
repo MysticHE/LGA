@@ -348,18 +348,18 @@ async function processWorkflowJob(jobId, protocol, host) {
         }, 30000);
         
         try {
-            // For large requests, use chunked scraping to avoid 5-minute timeout
-            if (maxRecords > 300 || maxRecords === 0) {
-                console.log(`🔄 Job ${jobId}: Using chunked scraping for ${maxRecords} records to avoid timeout`);
-                scrapeData = await performChunkedScraping(apolloUrl, maxRecords, protocol, host, jobId, progressInterval);
-            } else {
-                // Small requests can use direct scraping
-                console.log(`🔄 Job ${jobId}: Using direct scraping for ${maxRecords} records`);
-                const scrapeResponse = await axios.post(`${protocol}://${host}/api/apollo/scrape-leads`, {
-                    apolloUrl, maxRecords
-                }, { timeout: 0 });
-                scrapeData = scrapeResponse.data;
-            }
+            // Start Apollo scraping asynchronously 
+            console.log(`🔄 Job ${jobId}: Starting async Apollo scraping for ${maxRecords} records`);
+            
+            const apolloJobResponse = await axios.post(`${protocol}://${host}/api/apollo/start-scrape-job`, {
+                apolloUrl, maxRecords
+            });
+            
+            const apolloJobId = apolloJobResponse.data.jobId;
+            console.log(`✅ Job ${jobId}: Apollo job started: ${apolloJobId}`);
+            
+            // Poll Apollo job status
+            scrapeData = await pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval);
             
             clearInterval(progressInterval);
             scrapeMetadata = scrapeData.metadata || {};
@@ -501,20 +501,21 @@ async function processChunk(chunk, generateOutreach, protocol, host) {
     return finalChunk;
 }
 
-// Chunked Apollo scraping to avoid 5-minute timeout
-async function performChunkedScraping(apolloUrl, maxRecords, protocol, host, jobId, progressInterval) {
+// Poll Apollo job status until completion
+async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval) {
     const job = global.backgroundJobs.get(jobId);
-    const chunkSize = 250; // Scrape in batches of 250
-    const maxChunks = maxRecords === 0 ? 8 : Math.ceil(maxRecords / chunkSize); // Limit to ~2000 for unlimited
-    let allLeads = [];
-    let totalFound = 0;
-    let allMetadata = {};
+    let pollCount = 0;
+    const maxPolls = 360; // 30 minutes max (5 second intervals)
     
-    console.log(`🔄 Job ${jobId}: Starting chunked scraping - ${maxChunks} chunks of ${chunkSize} records each`);
-    
-    for (let chunkIndex = 0; chunkIndex < maxChunks; chunkIndex++) {
+    while (pollCount < maxPolls) {
         try {
-            // Update progress
+            pollCount++;
+            
+            // Check Apollo job status
+            const statusResponse = await axios.get(`${protocol}://${host}/api/apollo/job-status/${apolloJobId}`);
+            const apolloStatus = statusResponse.data;
+            
+            // Update main job progress
             if (job) {
                 const elapsed = Math.floor((Date.now() - new Date(job.startTime).getTime()) / 1000);
                 const minutes = Math.floor(elapsed / 60);
@@ -523,143 +524,50 @@ async function performChunkedScraping(apolloUrl, maxRecords, protocol, host, job
                 
                 job.progress = {
                     step: 3,
-                    message: `Apollo scraping chunk ${chunkIndex + 1}/${maxChunks}... (${timeStr} elapsed)`,
+                    message: `Apollo ${apolloStatus.status}... (${timeStr} elapsed)`,
                     total: 4,
                     elapsed: elapsed,
-                    chunk: chunkIndex + 1,
-                    totalChunks: maxChunks
+                    apolloJobId: apolloJobId,
+                    apolloStatus: apolloStatus.status
                 };
             }
             
-            console.log(`🔄 Job ${jobId}: Scraping chunk ${chunkIndex + 1}/${maxChunks} (${chunkSize} records)`);
+            console.log(`🔄 Job ${jobId}: Apollo job ${apolloJobId} status: ${apolloStatus.status} (poll ${pollCount})`);
             
-            // Calculate records for this chunk
-            const remainingRecords = maxRecords === 0 ? chunkSize : Math.min(chunkSize, maxRecords - allLeads.length);
-            if (remainingRecords <= 0) break;
-            
-            // Make Apollo request for this chunk
-            const scrapeResponse = await axios.post(`${protocol}://${host}/api/apollo/scrape-leads`, {
-                apolloUrl, 
-                maxRecords: remainingRecords
-            }, { 
-                timeout: 4 * 60 * 1000 // 4 minute timeout per chunk
-            });
-            
-            const chunkData = scrapeResponse.data;
-            
-            if (chunkData.leads && chunkData.leads.length > 0) {
-                allLeads.push(...chunkData.leads);
-                console.log(`✅ Job ${jobId}: Chunk ${chunkIndex + 1} completed - ${chunkData.leads.length} leads (${allLeads.length} total)`);
-                
-                // Merge metadata from first chunk
-                if (chunkIndex === 0) {
-                    allMetadata = chunkData.metadata || {};
-                }
-            } else if (chunkData.sessionId) {
-                // Handle large chunk with session storage
-                console.log(`📦 Job ${jobId}: Chunk ${chunkIndex + 1} using session storage (${chunkData.count} leads)`);
-                
-                // For chunked scraping, we need to retrieve the session data immediately
-                let offset = 0;
-                const limit = 100;
-                const totalChunkLeads = chunkData.count;
-                
-                while (offset < totalChunkLeads) {
-                    const sessionResponse = await axios.post(`${protocol}://${host}/api/apollo/get-leads-chunk`, {
-                        sessionId: chunkData.sessionId,
-                        offset: offset,
-                        limit: limit
-                    });
-                    
-                    if (sessionResponse.data.leads) {
-                        allLeads.push(...sessionResponse.data.leads);
-                    }
-                    
-                    offset += limit;
-                    if (!sessionResponse.data.hasMore) break;
-                }
-                
-                console.log(`✅ Job ${jobId}: Chunk ${chunkIndex + 1} retrieved ${totalChunkLeads} leads from session`);
-                
-                // Merge metadata from first chunk
-                if (chunkIndex === 0) {
-                    allMetadata = chunkData.metadata || {};
-                }
-            } else {
-                console.log(`⚠️ Job ${jobId}: Chunk ${chunkIndex + 1} returned no leads`);
-                if (chunkIndex === 0) {
-                    // If first chunk has no results, stop
-                    break;
+            if (apolloStatus.isComplete) {
+                if (apolloStatus.status === 'completed') {
+                    // Get Apollo results
+                    const resultResponse = await axios.get(`${protocol}://${host}/api/apollo/job-result/${apolloJobId}`);
+                    console.log(`✅ Job ${jobId}: Apollo job completed with ${resultResponse.data.count} leads`);
+                    return resultResponse.data;
+                } else if (apolloStatus.status === 'failed') {
+                    throw new Error(`Apollo job failed: ${apolloStatus.error || 'Unknown error'}`);
                 }
             }
             
-            // Add delay between chunks to avoid overwhelming the system
-            if (chunkIndex < maxChunks - 1) {
-                await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
-            }
-            
-            // Check if we have enough leads
-            if (maxRecords > 0 && allLeads.length >= maxRecords) {
-                console.log(`✅ Job ${jobId}: Reached target of ${maxRecords} leads, stopping chunked scraping`);
-                break;
-            }
+            // Wait 5 seconds before next poll
+            await new Promise(resolve => setTimeout(resolve, 5000));
             
         } catch (error) {
-            console.error(`❌ Job ${jobId}: Chunk ${chunkIndex + 1} failed:`, error.message);
+            console.error(`❌ Job ${jobId}: Apollo polling error:`, error.message);
             
-            // If first chunk fails, throw error
-            if (chunkIndex === 0) {
-                throw new Error(`First chunk failed: ${error.message}`);
+            // If it's a 404, the Apollo job might not exist
+            if (error.response?.status === 404) {
+                throw new Error('Apollo job not found - may have expired');
             }
             
-            // For subsequent chunks, log warning and continue
-            console.log(`⚠️ Job ${jobId}: Continuing with ${allLeads.length} leads from previous chunks`);
-            break;
+            // For other errors, retry a few times
+            if (pollCount < 5) {
+                console.log(`⚠️ Job ${jobId}: Retrying Apollo status check in 10 seconds...`);
+                await new Promise(resolve => setTimeout(resolve, 10000));
+                continue;
+            } else {
+                throw new Error(`Apollo job polling failed: ${error.message}`);
+            }
         }
     }
     
-    // Remove duplicates across all chunks
-    const uniqueLeads = [];
-    const seen = new Set();
-    
-    allLeads.forEach(lead => {
-        const email = (lead.email || '').toLowerCase().trim();
-        const linkedin = (lead.linkedin_url || '').toLowerCase().trim();
-        const name = (lead.name || '').toLowerCase().trim();
-        const company = (lead.organization_name || '').toLowerCase().trim();
-        
-        let identifier;
-        if (email && email !== '') {
-            identifier = email;
-        } else if (linkedin && linkedin !== '') {
-            identifier = linkedin;
-        } else {
-            identifier = `${name}|${company}`;
-        }
-        
-        if (!seen.has(identifier)) {
-            seen.add(identifier);
-            uniqueLeads.push(lead);
-        }
-    });
-    
-    const duplicatesRemoved = allLeads.length - uniqueLeads.length;
-    console.log(`✅ Job ${jobId}: Chunked scraping completed - ${uniqueLeads.length} unique leads (removed ${duplicatesRemoved} duplicates)`);
-    
-    // Return in same format as regular scraping
-    return {
-        success: true,
-        count: uniqueLeads.length,
-        leads: uniqueLeads,
-        metadata: {
-            ...allMetadata,
-            rawScraped: allLeads.length,
-            duplicatesRemoved: duplicatesRemoved,
-            finalCount: uniqueLeads.length,
-            chunkedScraping: true,
-            chunksProcessed: maxChunks
-        }
-    };
+    throw new Error('Apollo job exceeded maximum wait time (30 minutes)');
 }
 
 // Get job status for polling
