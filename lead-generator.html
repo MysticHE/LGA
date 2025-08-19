@@ -1897,16 +1897,6 @@
                         ${metadata.outreachGenerated ? `<div><strong>AI Outreach:</strong> ${outreachCount}</div>` : ''}
                     </div>
                     
-                    ${totalAvailable > finalCount ? `
-                        <div style="margin-top: var(--space-3); padding: var(--space-3); background: var(--color-amber-50); border: 1px solid var(--color-amber-200); border-radius: var(--border-radius-md);">
-                            <div style="color: var(--color-amber-800); font-weight: 600;">
-                                📊 <strong>${(totalAvailable - finalCount).toLocaleString()} more leads available!</strong>
-                            </div>
-                            <div style="color: var(--color-amber-700); font-size: var(--font-size-sm); margin-top: var(--space-1);">
-                                Increase your record limit or run multiple searches to capture all results.
-                            </div>
-                        </div>
-                    ` : ''}
                 `;
 
                 // Update table
