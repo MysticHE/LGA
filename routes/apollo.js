@@ -540,7 +540,8 @@ async function processApolloJob(apolloJobId) {
                     throw error;
                 });
                 
-                console.log(`✅ Apollo job ${apolloJobId}: Apify scraper completed successfully`);
+                // Don't log success yet - need to validate response first
+                console.log(`📡 Apollo job ${apolloJobId}: Apify API call completed, validating response...`);
                 break; // Success, exit retry loop
                 
             } catch (error) {
@@ -557,25 +558,63 @@ async function processApolloJob(apolloJobId) {
             }
         }
 
-        // Process Apify response (same logic as before)
+        // Process and validate Apify response
         let rawData = [];
         
-        if (apifyResponse.data) {
-            if (Array.isArray(apifyResponse.data)) {
-                rawData = apifyResponse.data;
-            } else if (typeof apifyResponse.data === 'object') {
-                if (apifyResponse.data.error) {
-                    throw new Error(`Apify API error: ${apifyResponse.data.error}`);
-                }
-                rawData = apifyResponse.data.items || apifyResponse.data.data || apifyResponse.data.results || [];
+        console.log(`🔍 Apollo job ${apolloJobId}: Analyzing Apify response...`);
+        console.log(`📊 Apollo job ${apolloJobId}: Response type: ${typeof apifyResponse.data}`);
+        
+        if (!apifyResponse.data) {
+            throw new Error('Apify API returned empty response');
+        }
+        
+        if (Array.isArray(apifyResponse.data)) {
+            rawData = apifyResponse.data;
+            console.log(`✅ Apollo job ${apolloJobId}: Got array with ${rawData.length} items`);
+        } else if (typeof apifyResponse.data === 'object') {
+            // Log the object structure for debugging
+            const keys = Object.keys(apifyResponse.data);
+            console.log(`📋 Apollo job ${apolloJobId}: Response object keys: ${keys.join(', ')}`);
+            
+            // Check for error in response
+            if (apifyResponse.data.error) {
+                const errorDetails = typeof apifyResponse.data.error === 'object' 
+                    ? JSON.stringify(apifyResponse.data.error, null, 2)
+                    : apifyResponse.data.error;
+                console.error(`❌ Apollo job ${apolloJobId}: Apify API error details:`, errorDetails);
+                throw new Error(`Apify API error: ${errorDetails}`);
             }
+            
+            // Try to extract data from nested structure
+            if (apifyResponse.data.items) {
+                rawData = apifyResponse.data.items;
+                console.log(`✅ Apollo job ${apolloJobId}: Found ${rawData.length} items in 'items' field`);
+            } else if (apifyResponse.data.data) {
+                rawData = apifyResponse.data.data;
+                console.log(`✅ Apollo job ${apolloJobId}: Found ${rawData.length} items in 'data' field`);
+            } else if (apifyResponse.data.results) {
+                rawData = apifyResponse.data.results;
+                console.log(`✅ Apollo job ${apolloJobId}: Found ${rawData.length} items in 'results' field`);
+            } else {
+                // Log full object for debugging
+                const responseStr = JSON.stringify(apifyResponse.data, null, 2);
+                console.error(`❌ Apollo job ${apolloJobId}: Unexpected response structure:`, responseStr.substring(0, 500) + '...');
+                throw new Error(`Apify API returned unexpected response structure. Keys: ${keys.join(', ')}`);
+            }
+        } else {
+            throw new Error(`Apify API returned unexpected data type: ${typeof apifyResponse.data}`);
         }
         
         if (!Array.isArray(rawData)) {
+            console.error(`❌ Apollo job ${apolloJobId}: rawData is not array: ${typeof rawData}`);
             throw new Error(`Invalid response format from Apify: expected array, got ${typeof rawData}`);
         }
         
-        console.log(`✅ Apollo job ${apolloJobId}: Successfully scraped ${rawData.length} leads`);
+        if (rawData.length === 0) {
+            console.log(`⚠️ Apollo job ${apolloJobId}: Apify returned empty results array`);
+        } else {
+            console.log(`✅ Apollo job ${apolloJobId}: Successfully validated ${rawData.length} leads from Apify`);
+        }
 
         // Duplicate prevention and transformation (same logic as before)
         const uniqueLeads = [];
