@@ -505,9 +505,8 @@ async function processChunk(chunk, generateOutreach, protocol, host) {
 async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval) {
     const job = global.backgroundJobs.get(jobId);
     let pollCount = 0;
-    const maxPolls = 360; // 30 minutes max (5 second intervals)
     
-    while (pollCount < maxPolls) {
+    while (true) {
         try {
             pollCount++;
             
@@ -566,8 +565,6 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
             }
         }
     }
-    
-    throw new Error('Web job exceeded maximum wait time (30 minutes)');
 }
 
 // Get job status for polling
