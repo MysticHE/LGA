@@ -719,23 +719,86 @@ async function pollApifyRun(apolloJobId, apifyRunId) {
             console.log(`🔄 Apollo job ${apolloJobId}: Apify run ${apifyRunId} status: ${status} (poll ${pollCount})`);
             
             if (status === 'SUCCEEDED') {
-                // Get dataset items
-                console.log(`🎯 Apollo job ${apolloJobId}: Apify run completed, retrieving dataset...`);
+                // Get dataset ID from run data
+                const datasetId = runData.defaultDatasetId;
+                console.log(`🎯 Apollo job ${apolloJobId}: Apify run completed, retrieving dataset: ${datasetId}`);
                 
-                const datasetResponse = await axios.get(
-                    `https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/runs/${apifyRunId}/dataset/items`,
-                    {
-                        headers: {
-                            'Accept': 'application/json',
-                            'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
-                            'User-Agent': 'LGA-Lead-Generator/1.0'
-                        },
-                        timeout: 60000 // 1 minute timeout for dataset retrieval
+                if (!datasetId) {
+                    throw new Error('No dataset ID found in completed Apify run');
+                }
+                
+                // Try multiple methods to get dataset items
+                let datasetResponse;
+                let datasetData = [];
+                
+                try {
+                    // Method 1: Direct dataset access
+                    console.log(`📡 Apollo job ${apolloJobId}: Trying direct dataset access...`);
+                    datasetResponse = await axios.get(
+                        `https://api.apify.com/v2/datasets/${datasetId}/items`,
+                        {
+                            headers: {
+                                'Accept': 'application/json',
+                                'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                                'User-Agent': 'LGA-Lead-Generator/1.0'
+                            },
+                            timeout: 60000
+                        }
+                    );
+                    datasetData = datasetResponse.data;
+                    console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via direct access: ${datasetData.length} items`);
+                    
+                } catch (datasetError) {
+                    console.log(`⚠️ Apollo job ${apolloJobId}: Direct dataset access failed: ${datasetError.message}`);
+                    
+                    try {
+                        // Method 2: Via run endpoint
+                        console.log(`📡 Apollo job ${apolloJobId}: Trying run-based dataset access...`);
+                        datasetResponse = await axios.get(
+                            `https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/runs/${apifyRunId}/dataset/items`,
+                            {
+                                headers: {
+                                    'Accept': 'application/json',
+                                    'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                                    'User-Agent': 'LGA-Lead-Generator/1.0'
+                                },
+                                timeout: 60000
+                            }
+                        );
+                        datasetData = datasetResponse.data;
+                        console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via run endpoint: ${datasetData.length} items`);
+                        
+                    } catch (runError) {
+                        console.log(`⚠️ Apollo job ${apolloJobId}: Run-based dataset access failed: ${runError.message}`);
+                        
+                        try {
+                            // Method 3: Alternative dataset format
+                            console.log(`📡 Apollo job ${apolloJobId}: Trying alternative dataset format...`);
+                            datasetResponse = await axios.get(
+                                `https://api.apify.com/v2/datasets/${datasetId}/items?format=json`,
+                                {
+                                    headers: {
+                                        'Accept': 'application/json',
+                                        'Authorization': `Bearer ${process.env.APIFY_API_TOKEN}`,
+                                        'User-Agent': 'LGA-Lead-Generator/1.0'
+                                    },
+                                    timeout: 60000
+                                }
+                            );
+                            datasetData = datasetResponse.data;
+                            console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via alternative format: ${datasetData.length} items`);
+                            
+                        } catch (altError) {
+                            console.error(`❌ Apollo job ${apolloJobId}: All dataset retrieval methods failed`);
+                            console.error(`❌ Direct: ${datasetError.message}`);
+                            console.error(`❌ Run-based: ${runError.message}`);  
+                            console.error(`❌ Alternative: ${altError.message}`);
+                            throw new Error(`Failed to retrieve dataset after trying all methods. Dataset ID: ${datasetId}`);
+                        }
                     }
-                );
+                }
                 
-                console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved successfully`);
-                return { data: datasetResponse.data };
+                return { data: datasetData };
                 
             } else if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
                 const failureReason = runData.statusMessage || 'Unknown failure';
