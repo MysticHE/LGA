@@ -690,6 +690,27 @@
             margin-bottom: 0;
         }
 
+        /* Inline helper text styles */
+        .form-label-with-helper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+
+        .inline-helper-text {
+            font-size: var(--font-size-xs);
+            color: var(--color-gray-500);
+            font-style: italic;
+            font-weight: var(--font-weight-normal);
+            margin-left: var(--space-2);
+        }
+
+        /* Hide the old selection preview elements */
+        .selection-preview {
+            display: none;
+        }
+
         .loading {
             opacity: 0.7;
             pointer-events: none;
@@ -1343,9 +1364,12 @@
             <form id="leadForm" class="form-content">
                 <div class="form-group">
                     <div class="filter-card">
-                        <label class="form-label required">
-                            <span class="emoji">👔</span>
-                            <span>Job Titles</span>
+                        <label class="form-label required form-label-with-helper">
+                            <div>
+                                <span class="emoji">👔</span>
+                                <span>Job Titles</span>
+                            </div>
+                            <span class="inline-helper-text">Select a job title above...</span>
                         </label>
                         <div class="custom-multiselect" id="jobTitlesMultiselect">
                         <div class="multiselect-option" data-value="Owner">
@@ -1411,9 +1435,12 @@
 
                 <div class="form-group">
                     <div class="filter-card">
-                        <label class="form-label required">
-                            <span class="emoji">🏢</span>
-                            <span>Company Size (Employees)</span>
+                        <label class="form-label required form-label-with-helper">
+                            <div>
+                                <span class="emoji">🏢</span>
+                                <span>Company Size (Employees)</span>
+                            </div>
+                            <span class="inline-helper-text">Select company sizes above...</span>
                         </label>
                         <div class="custom-multiselect" id="companySizeMultiselect">
                         <div class="multiselect-option" data-value="1-10">
@@ -1494,7 +1521,7 @@
                         <label class="form-label">
                             <span class="emoji">📄</span>
                             <span>Product Materials</span>
-                            <small style="color: var(--color-gray-500); font-weight: var(--font-weight-normal); margin-left: var(--space-2);">(Optional - Upload SME Insurance PDFs for enhanced emails)</small>
+                            <small style="color: var(--color-gray-500); font-weight: var(--font-weight-normal); margin-left: var(--space-2);">(Optional - Upload PDFs for enhanced AI-generated emails)</small>
                         </label>
                         <div class="product-materials-section">
                             <div class="upload-area" id="uploadArea" onclick="document.getElementById('pdfUpload').click()">
@@ -1515,13 +1542,6 @@
                                     <button type="button" class="btn-clear" onclick="clearAllMaterials()">Clear All</button>
                                 </div>
                                 <div id="materialsList" class="materials-list"></div>
-                            </div>
-                            
-                            <div class="processing-row" style="margin-top: var(--space-3);">
-                                <div class="checkbox-group">
-                                    <input type="checkbox" id="useProductMaterials" style="accent-color: var(--color-primary-500);">
-                                    <label for="useProductMaterials">🔥 Use uploaded materials in AI emails</label>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -1731,7 +1751,6 @@
                 this.uploadArea = document.getElementById('uploadArea');
                 this.uploadedMaterials = document.getElementById('uploadedMaterials');
                 this.materialsList = document.getElementById('materialsList');
-                this.useProductMaterials = document.getElementById('useProductMaterials');
                 
                 this.uploadedFiles = []; // Track uploaded files
                 
@@ -1739,8 +1758,7 @@
                 this.updatePreviews(); // Initialize previews
                 this.initializePDFUpload(); // Initialize PDF upload functionality
                 
-                // Initially disable the use materials checkbox
-                this.useProductMaterials.disabled = true;
+                // Materials will be automatically used when uploaded
             }
 
             bindEvents() {
@@ -1828,20 +1846,30 @@
             }
 
             updatePreviews() {
-                // Update job titles preview (single selection)
+                // Update job titles inline helper text
+                const jobTitleHelper = document.querySelector('.form-group:nth-child(1) .inline-helper-text');
                 const selectedRadio = this.jobTitlesMultiselect.querySelector('input[type="radio"]:checked');
-                if (selectedRadio) {
-                    this.jobTitlesPreview.innerHTML = `Selected: ${selectedRadio.closest('.multiselect-option').dataset.value}`;
-                } else {
-                    this.jobTitlesPreview.innerHTML = '<em style="color: var(--color-gray-400);">Select a job title above...</em>';
+                if (selectedRadio && jobTitleHelper) {
+                    jobTitleHelper.textContent = `Selected: ${selectedRadio.closest('.multiselect-option').dataset.value}`;
+                    jobTitleHelper.style.fontStyle = 'normal';
+                    jobTitleHelper.style.color = 'var(--color-primary-600)';
+                } else if (jobTitleHelper) {
+                    jobTitleHelper.textContent = 'Select a job title above...';
+                    jobTitleHelper.style.fontStyle = 'italic';
+                    jobTitleHelper.style.color = 'var(--color-gray-500)';
                 }
 
-                // Update company sizes preview
+                // Update company sizes inline helper text
+                const companySizeHelper = document.querySelector('.form-group:nth-child(2) .inline-helper-text');
                 const selectedSizes = this.getSelectedValues(this.companySizeMultiselect);
-                if (selectedSizes.length > 0) {
-                    this.companySizePreview.innerHTML = `${selectedSizes.length} company size${selectedSizes.length > 1 ? 's' : ''} selected`;
-                } else {
-                    this.companySizePreview.innerHTML = '<em style="color: var(--color-gray-400);">Select company sizes above...</em>';
+                if (selectedSizes.length > 0 && companySizeHelper) {
+                    companySizeHelper.textContent = `${selectedSizes.length} company size${selectedSizes.length > 1 ? 's' : ''} selected`;
+                    companySizeHelper.style.fontStyle = 'normal';
+                    companySizeHelper.style.color = 'var(--color-primary-600)';
+                } else if (companySizeHelper) {
+                    companySizeHelper.textContent = 'Select company sizes above...';
+                    companySizeHelper.style.fontStyle = 'italic';
+                    companySizeHelper.style.color = 'var(--color-gray-500)';
                 }
             }
 
@@ -2195,7 +2223,7 @@
                 
                 const companySizes = this.getSelectedValues(this.companySizeMultiselect);
                 const generateOutreach = document.getElementById('generateOutreach').checked;
-                const useProductMaterials = document.getElementById('useProductMaterials').checked;
+                const useProductMaterials = this.uploadedFiles.length > 0; // Auto-use materials if uploaded
                 const maxRecords = parseInt(document.getElementById('maxRecords').value) || 0;
                 
                 // Get exclusion filters
@@ -2671,10 +2699,7 @@
                         this.updateMaterialsList();
                         this.showStatus(`✅ Successfully uploaded ${data.materials.length} materials`, 'success');
                         
-                        // Enable the use materials checkbox
-                        if (this.uploadedFiles.length > 0) {
-                            this.useProductMaterials.disabled = false;
-                        }
+                        // Materials will be automatically used when uploaded
                     } else {
                         throw new Error(data.message || 'Upload failed');
                     }
@@ -2727,11 +2752,7 @@
                         this.updateMaterialsList();
                         this.showStatus('📄 Material removed', 'info');
 
-                        // Disable checkbox if no materials left
-                        if (this.uploadedFiles.length === 0) {
-                            this.useProductMaterials.disabled = true;
-                            this.useProductMaterials.checked = false;
-                        }
+                        // Materials automatically managed
                     } else {
                         throw new Error(data.message || 'Failed to remove material');
                     }
@@ -2754,8 +2775,6 @@
                     
                     this.uploadedFiles = [];
                     this.updateMaterialsList();
-                    this.useProductMaterials.disabled = true;
-                    this.useProductMaterials.checked = false;
                     this.showStatus('📄 All materials cleared', 'info');
                 } catch (error) {
                     console.error('Clear materials error:', error);
