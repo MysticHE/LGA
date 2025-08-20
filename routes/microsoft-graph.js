@@ -282,18 +282,12 @@ router.get('/test', async (req, res) => {
         const testResult = await req.graphAuth.testConnection();
         
         if (testResult.success) {
-            // Also test OneDrive access
-            const driveInfo = await req.graphClient.api('/me/drive').get();
-            
             res.json({
                 success: true,
                 message: 'Microsoft Graph connection successful',
                 user: testResult.user,
-                oneDrive: {
-                    name: driveInfo.name,
-                    owner: driveInfo.owner.user.displayName,
-                    quota: driveInfo.quota
-                }
+                accessType: 'Application',
+                permissions: 'Files.ReadWrite.All, Mail.Send, Mail.ReadWrite.All, User.Read.All'
             });
         } else {
             res.status(500).json({

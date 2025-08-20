@@ -14,6 +14,7 @@ class GraphAuthProvider {
         this.clientId = process.env.AZURE_CLIENT_ID;
         this.clientSecret = process.env.AZURE_CLIENT_SECRET;
         this.redirectUri = process.env.AZURE_REDIRECT_URI;
+        this.serviceAccountEmail = process.env.AZURE_SERVICE_ACCOUNT_EMAIL;
         
         this.client = null;
         this.authProvider = null;
@@ -28,6 +29,10 @@ class GraphAuthProvider {
         
         if (missing.length > 0) {
             throw new Error(`Missing required environment variables for Microsoft Graph: ${missing.join(', ')}`);
+        }
+
+        if (!this.serviceAccountEmail) {
+            console.log('⚠️ AZURE_SERVICE_ACCOUNT_EMAIL not set - will use organization admin for operations');
         }
         
         console.log('✅ Microsoft Graph configuration validated');
@@ -77,12 +82,38 @@ class GraphAuthProvider {
     async testConnection() {
         try {
             const client = this.getClient();
-            const response = await client.api('/me').get();
+            // Use application-level endpoint instead of /me
+            const response = await client.api('/users').top(1).get();
             console.log('✅ Microsoft Graph connection test successful');
-            return { success: true, user: response.displayName };
+            return { success: true, user: 'Application Access', users: response.value.length };
         } catch (error) {
             console.error('❌ Microsoft Graph connection test failed:', error.message);
             return { success: false, error: error.message };
+        }
+    }
+
+    // Get service account user ID for operations
+    async getServiceAccountUserId() {
+        if (!this.serviceAccountEmail) {
+            // If no specific service account, get the first admin user
+            try {
+                const users = await this.client.api('/users').filter("assignedLicenses/any(x:x/skuId ne null)").top(1).get();
+                if (users.value.length > 0) {
+                    return users.value[0].id;
+                }
+                throw new Error('No licensed users found in organization');
+            } catch (error) {
+                console.error('Failed to get service account user:', error.message);
+                throw error;
+            }
+        }
+        
+        try {
+            const user = await this.client.api(`/users/${this.serviceAccountEmail}`).get();
+            return user.id;
+        } catch (error) {
+            console.error(`Failed to get user ID for ${this.serviceAccountEmail}:`, error.message);
+            throw error;
         }
     }
 
