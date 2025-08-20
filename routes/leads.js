@@ -427,7 +427,16 @@ global.backgroundJobs = global.backgroundJobs || new Map();
 // Background job processing to avoid 5-minute timeout limit
 router.post('/start-workflow-job', async (req, res) => {
     try {
-        const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true, useProductMaterials = false, chunkSize = 100 } = req.body;
+        const { 
+            jobTitles, 
+            companySizes, 
+            maxRecords = 0, 
+            generateOutreach = true, 
+            useProductMaterials = false, 
+            chunkSize = 100,
+            excludeEmailDomains = [],
+            excludeIndustries = []
+        } = req.body;
 
         // Generate unique job ID
         const jobId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -438,7 +447,7 @@ router.post('/start-workflow-job', async (req, res) => {
             status: 'started',
             progress: { step: 1, message: 'Starting workflow...', total: 4 },
             startTime: new Date().toISOString(),
-            params: { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize },
+            params: { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries },
             result: null,
             error: null,
             completedAt: null
@@ -487,7 +496,7 @@ async function processWorkflowJob(jobId, protocol, host) {
     if (!job) return;
     
     try {
-        const { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize } = job.params;
+        const { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries } = job.params;
         
         // Step 1: Generate Web URL
         job.progress = { step: 2, message: 'Generating Web URL...', total: 4 };
@@ -584,7 +593,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                     totalChunks: totalChunks
                 };
                 
-                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, protocol, host);
+                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host);
                 processedLeads.push(...finalChunk);
 
                 if (i + chunkSize < leads.length) {
@@ -614,7 +623,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                 }, { timeout: 0 });
 
                 const chunk = chunkResponse.data.leads;
-                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, protocol, host);
+                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host);
                 processedLeads.push(...finalChunk);
 
                 offset += chunkLimit;
@@ -641,6 +650,9 @@ async function processWorkflowJob(jobId, protocol, host) {
                 processed: processedLeads.length,
                 outreachGenerated: generateOutreach && !!openai,
                 usedProductMaterials: useProductMaterials && generateOutreach,
+                excludedEmailDomains: excludeEmailDomains,
+                excludedIndustries: excludeIndustries,
+                filtersApplied: excludeEmailDomains.length > 0 || excludeIndustries.length > 0,
                 scrapeMetadata,
                 completedAt: new Date().toISOString()
             }
@@ -657,15 +669,54 @@ async function processWorkflowJob(jobId, protocol, host) {
     }
 }
 
-// Helper function to process chunks in background job
-async function processChunk(chunk, generateOutreach, useProductMaterials, protocol, host) {
-    let finalChunk = chunk;
+// Helper function to filter leads based on exclusion criteria
+function filterLeads(leads, excludeEmailDomains = [], excludeIndustries = []) {
+    if (!leads || leads.length === 0) return leads;
+    
+    const filteredLeads = leads.filter(lead => {
+        // Filter by email domain
+        if (excludeEmailDomains.length > 0 && lead.email) {
+            const emailDomain = lead.email.split('@')[1]?.toLowerCase();
+            if (emailDomain && excludeEmailDomains.some(domain => 
+                emailDomain === domain.toLowerCase() || emailDomain.endsWith('.' + domain.toLowerCase())
+            )) {
+                console.log(`📧 Filtered out lead ${lead.name} - excluded email domain: ${emailDomain}`);
+                return false;
+            }
+        }
+        
+        // Filter by industry
+        if (excludeIndustries.length > 0 && lead.industry) {
+            const leadIndustry = lead.industry.toLowerCase();
+            if (excludeIndustries.some(industry => 
+                leadIndustry.includes(industry.toLowerCase()) || industry.toLowerCase().includes(leadIndustry)
+            )) {
+                console.log(`🏭 Filtered out lead ${lead.name} - excluded industry: ${lead.industry}`);
+                return false;
+            }
+        }
+        
+        return true;
+    });
+    
+    const filteredCount = leads.length - filteredLeads.length;
+    if (filteredCount > 0) {
+        console.log(`🔍 Filtered out ${filteredCount} leads based on exclusion criteria`);
+    }
+    
+    return filteredLeads;
+}
 
-    // Generate outreach for this chunk if enabled
-    if (generateOutreach && openai) {
+// Helper function to process chunks in background job
+async function processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host) {
+    // Apply exclusion filters first
+    let finalChunk = filterLeads(chunk, excludeEmailDomains, excludeIndustries);
+
+    // Generate outreach for this chunk if enabled (only if we have leads after filtering)
+    if (generateOutreach && openai && finalChunk.length > 0) {
         try {
             const outreachResponse = await axios.post(`${protocol}://${host}/api/leads/generate-outreach`, {
-                leads: chunk,
+                leads: finalChunk,
                 useProductMaterials: useProductMaterials
             }, { timeout: 0 });
             

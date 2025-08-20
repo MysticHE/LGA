@@ -573,6 +573,52 @@
             font-size: var(--font-size-xs);
         }
 
+        .exclusion-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-1);
+            padding: var(--space-2);
+            background: var(--color-white);
+            border-radius: var(--border-radius-md);
+            border: 1px solid var(--color-gray-200);
+            font-size: var(--font-size-xs);
+        }
+
+        .exclusion-input-group label {
+            font-weight: var(--font-weight-medium);
+            color: var(--color-gray-700);
+            font-size: var(--font-size-sm);
+            display: flex;
+            align-items: center;
+            gap: var(--space-1);
+        }
+
+        .exclusion-input-group input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid var(--color-gray-300);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            transition: all 0.2s ease-in-out;
+        }
+
+        .exclusion-input-group input:focus {
+            outline: none;
+            border-color: var(--color-primary-500);
+            box-shadow: 0 0 0 2px rgba(255, 109, 90, 0.1);
+        }
+
+        .exclusion-input-group input::placeholder {
+            color: var(--color-gray-400);
+            font-style: italic;
+        }
+
+        .exclusion-input-group small {
+            font-size: var(--font-size-xs);
+            color: var(--color-gray-500);
+            margin-top: 2px;
+        }
+
         .loading {
             opacity: 0.7;
             pointer-events: none;
@@ -1430,6 +1476,22 @@
                                     <small style="color: var(--color-gray-500);">(0 = unlimited)</small>
                                 </div>
                             </div>
+                            
+                            <div class="processing-row">
+                                <div class="exclusion-input-group">
+                                    <label for="excludeEmailDomains">🚫 Exclude Email Domains:</label>
+                                    <input type="text" id="excludeEmailDomains" placeholder="gmail.com, yahoo.com, outlook.com">
+                                    <small style="color: var(--color-gray-500);">Separate domains with commas</small>
+                                </div>
+                            </div>
+                            
+                            <div class="processing-row">
+                                <div class="exclusion-input-group">
+                                    <label for="excludeIndustries">🏭 Exclude Industries:</label>
+                                    <input type="text" id="excludeIndustries" placeholder="Non-profit, Government, Education">
+                                    <small style="color: var(--color-gray-500);">Separate industries with commas</small>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2060,7 +2122,26 @@
                 const useProductMaterials = document.getElementById('useProductMaterials').checked;
                 const maxRecords = parseInt(document.getElementById('maxRecords').value) || 0;
                 
-                return { jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords };
+                // Get exclusion filters
+                const excludeEmailDomains = document.getElementById('excludeEmailDomains').value
+                    .split(',')
+                    .map(domain => domain.trim().toLowerCase())
+                    .filter(domain => domain.length > 0);
+                    
+                const excludeIndustries = document.getElementById('excludeIndustries').value
+                    .split(',')
+                    .map(industry => industry.trim())
+                    .filter(industry => industry.length > 0);
+                
+                return { 
+                    jobTitles, 
+                    companySizes, 
+                    generateOutreach, 
+                    useProductMaterials, 
+                    maxRecords, 
+                    excludeEmailDomains, 
+                    excludeIndustries 
+                };
             }
 
             validateFormData(jobTitles, companySizes) {
