@@ -551,7 +551,7 @@ async function processWorkflowJob(jobId, protocol, host) {
             console.log(`✅ Job ${jobId}: Web job started: ${apolloJobId}`);
             
             // Poll Apollo job status
-            scrapeData = await pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval);
+            scrapeData = await pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval, totalSteps);
             
             clearInterval(progressInterval);
             scrapeMetadata = scrapeData.metadata || {};
@@ -810,7 +810,7 @@ async function processChunk(chunk, generateOutreach, useProductMaterials, exclud
 }
 
 // Poll Apollo job status until completion
-async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval) {
+async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval, totalSteps) {
     const job = global.backgroundJobs.get(jobId);
     let pollCount = 0;
     
