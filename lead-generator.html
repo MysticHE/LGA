@@ -573,50 +573,90 @@
             font-size: var(--font-size-xs);
         }
 
+        .exclusion-filters-section {
+            margin-top: var(--space-2);
+        }
+
         .exclusion-input-group {
             display: flex;
             flex-direction: column;
-            gap: var(--space-1);
-            padding: var(--space-2);
-            background: var(--color-white);
-            border-radius: var(--border-radius-md);
-            border: 1px solid var(--color-gray-200);
-            font-size: var(--font-size-xs);
+            gap: var(--space-2);
+            margin-bottom: var(--space-3);
         }
 
         .exclusion-input-group label {
             font-weight: var(--font-weight-medium);
-            color: var(--color-gray-700);
+            color: var(--color-gray-800);
             font-size: var(--font-size-sm);
             display: flex;
             align-items: center;
             gap: var(--space-1);
+            margin-bottom: var(--space-1);
+        }
+
+        .exclusion-input-wrapper {
+            position: relative;
         }
 
         .exclusion-input-group input {
             width: 100%;
-            padding: 6px 8px;
-            border: 1px solid var(--color-gray-300);
-            border-radius: var(--border-radius-sm);
+            padding: 12px 16px;
+            border: 1.5px solid var(--color-gray-300);
+            border-radius: var(--border-radius-md);
             font-size: var(--font-size-sm);
             transition: all 0.2s ease-in-out;
+            background: var(--color-white);
+            color: var(--color-gray-800);
+            font-family: inherit;
         }
 
         .exclusion-input-group input:focus {
             outline: none;
             border-color: var(--color-primary-500);
-            box-shadow: 0 0 0 2px rgba(255, 109, 90, 0.1);
+            box-shadow: 0 0 0 3px rgba(255, 109, 90, 0.1);
+            background: var(--color-white);
         }
 
         .exclusion-input-group input::placeholder {
-            color: var(--color-gray-400);
-            font-style: italic;
+            color: var(--color-gray-500);
+            font-style: normal;
+            opacity: 0.7;
         }
 
-        .exclusion-input-group small {
+        .exclusion-help-text {
+            font-size: var(--font-size-xs);
+            color: var(--color-gray-600);
+            margin-top: var(--space-1);
+            padding-left: var(--space-1);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .exclusion-help-text::before {
+            content: "ℹ️";
+            font-size: 11px;
+            opacity: 0.7;
+        }
+
+        /* Enhanced styling for exclusion section */
+        .exclusion-section-divider {
+            border-top: 1px solid var(--color-gray-200);
+            margin: var(--space-4) 0 var(--space-3) 0;
+            position: relative;
+        }
+
+        .exclusion-section-divider::after {
+            content: "Exclusion Filters";
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--color-white);
+            padding: 0 var(--space-2);
             font-size: var(--font-size-xs);
             color: var(--color-gray-500);
-            margin-top: 2px;
+            font-weight: var(--font-weight-medium);
         }
 
         .loading {
@@ -1477,19 +1517,24 @@
                                 </div>
                             </div>
                             
-                            <div class="processing-row">
+                            
+                            <!-- Exclusion Filters Section -->
+                            <div class="exclusion-section-divider"></div>
+                            <div class="exclusion-filters-section">
                                 <div class="exclusion-input-group">
                                     <label for="excludeEmailDomains">🚫 Exclude Email Domains:</label>
-                                    <input type="text" id="excludeEmailDomains" placeholder="gmail.com, yahoo.com, outlook.com">
-                                    <small style="color: var(--color-gray-500);">Separate domains with commas</small>
+                                    <div class="exclusion-input-wrapper">
+                                        <input type="text" id="excludeEmailDomains" placeholder="gmail.com, yahoo.com, outlook.com">
+                                    </div>
+                                    <div class="exclusion-help-text">Separate domains with commas</div>
                                 </div>
-                            </div>
-                            
-                            <div class="processing-row">
+                                
                                 <div class="exclusion-input-group">
                                     <label for="excludeIndustries">🏭 Exclude Industries:</label>
-                                    <input type="text" id="excludeIndustries" placeholder="Non-profit, Government, Education">
-                                    <small style="color: var(--color-gray-500);">Separate industries with commas</small>
+                                    <div class="exclusion-input-wrapper">
+                                        <input type="text" id="excludeIndustries" placeholder="Non-profit, Government, Education">
+                                    </div>
+                                    <div class="exclusion-help-text">Separate industries with commas</div>
                                 </div>
                             </div>
                         </div>
