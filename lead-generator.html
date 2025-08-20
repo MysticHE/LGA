@@ -1930,14 +1930,14 @@
             async handleCompleteWorkflow(e) {
                 e.preventDefault();
                 
-                const { jobTitles, companySizes, generateOutreach, maxRecords } = this.getFormData();
+                const { jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords, excludeEmailDomains, excludeIndustries } = this.getFormData();
                 if (!this.validateFormData(jobTitles, companySizes)) return;
                 
                 // Use streaming for better UX
-                return this.handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, maxRecords);
+                return this.handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords, excludeEmailDomains, excludeIndustries);
             }
 
-            async handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, maxRecords) {
+            async handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords, excludeEmailDomains, excludeIndustries) {
                 try {
                     this.showProgress('Starting background job...');
                     this.currentLeads = []; // Clear previous results
