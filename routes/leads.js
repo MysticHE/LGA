@@ -312,8 +312,8 @@ async function processWorkflowJob(jobId, protocol, host) {
     try {
         const { jobTitles, companySizes, maxRecords, generateOutreach, chunkSize } = job.params;
         
-        // Step 1: Generate Apollo URL
-        job.progress = { step: 2, message: 'Generating Apollo URL...', total: 4 };
+        // Step 1: Generate Web URL
+        job.progress = { step: 2, message: 'Generating Web URL...', total: 4 };
         job.status = 'generating_url';
         
         const apolloResponse = await axios.post(`${protocol}://${host}/api/apollo/generate-url`, {
@@ -321,8 +321,8 @@ async function processWorkflowJob(jobId, protocol, host) {
         });
         const { apolloUrl } = apolloResponse.data;
         
-        // Step 2: Start Apollo scraping
-        job.progress = { step: 3, message: 'Scraping leads from Apollo...', total: 4 };
+        // Step 2: Start Web scraping
+        job.progress = { step: 3, message: 'Scraping leads from Web...', total: 4 };
         job.status = 'scraping';
         
         let scrapeData = null;
@@ -340,7 +340,7 @@ async function processWorkflowJob(jobId, protocol, host) {
             if (currentJob && currentJob.status === 'scraping') {
                 currentJob.progress = { 
                     step: 3, 
-                    message: `Apollo scraping in progress... (${timeStr} elapsed)`, 
+                    message: `Web scraping in progress... (${timeStr} elapsed)`, 
                     total: 4,
                     elapsed: elapsed
                 };
@@ -348,15 +348,15 @@ async function processWorkflowJob(jobId, protocol, host) {
         }, 30000);
         
         try {
-            // Start Apollo scraping asynchronously 
-            console.log(`🔄 Job ${jobId}: Starting async Apollo scraping for ${maxRecords} records`);
+            // Start Web scraping asynchronously 
+            console.log(`🔄 Job ${jobId}: Starting async Web scraping for ${maxRecords} records`);
             
             const apolloJobResponse = await axios.post(`${protocol}://${host}/api/apollo/start-scrape-job`, {
                 apolloUrl, maxRecords
             });
             
             const apolloJobId = apolloJobResponse.data.jobId;
-            console.log(`✅ Job ${jobId}: Apollo job started: ${apolloJobId}`);
+            console.log(`✅ Job ${jobId}: Web job started: ${apolloJobId}`);
             
             // Poll Apollo job status
             scrapeData = await pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval);
@@ -380,7 +380,7 @@ async function processWorkflowJob(jobId, protocol, host) {
             
         } catch (error) {
             clearInterval(progressInterval);
-            throw new Error(`Apollo scraping failed: ${error.message}`);
+            throw new Error(`Web scraping failed: ${error.message}`);
         }
 
         // Step 3: Process leads in chunks
@@ -524,7 +524,7 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
                 
                 job.progress = {
                     step: 3,
-                    message: `Apollo ${apolloStatus.status}... (${timeStr} elapsed)`,
+                    message: `Web ${apolloStatus.status}... (${timeStr} elapsed)`,
                     total: 4,
                     elapsed: elapsed,
                     apolloJobId: apolloJobId,
@@ -532,16 +532,16 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
                 };
             }
             
-            console.log(`🔄 Job ${jobId}: Apollo job ${apolloJobId} status: ${apolloStatus.status} (poll ${pollCount})`);
+            console.log(`🔄 Job ${jobId}: Web job ${apolloJobId} status: ${apolloStatus.status} (poll ${pollCount})`);
             
             if (apolloStatus.isComplete) {
                 if (apolloStatus.status === 'completed') {
                     // Get Apollo results
                     const resultResponse = await axios.get(`${protocol}://${host}/api/apollo/job-result/${apolloJobId}`);
-                    console.log(`✅ Job ${jobId}: Apollo job completed with ${resultResponse.data.count} leads`);
+                    console.log(`✅ Job ${jobId}: Web job completed with ${resultResponse.data.count} leads`);
                     return resultResponse.data;
                 } else if (apolloStatus.status === 'failed') {
-                    throw new Error(`Apollo job failed: ${apolloStatus.error || 'Unknown error'}`);
+                    throw new Error(`Web job failed: ${apolloStatus.error || 'Unknown error'}`);
                 }
             }
             
@@ -549,25 +549,25 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
             await new Promise(resolve => setTimeout(resolve, 5000));
             
         } catch (error) {
-            console.error(`❌ Job ${jobId}: Apollo polling error:`, error.message);
+            console.error(`❌ Job ${jobId}: Web polling error:`, error.message);
             
             // If it's a 404, the Apollo job might not exist
             if (error.response?.status === 404) {
-                throw new Error('Apollo job not found - may have expired');
+                throw new Error('Web job not found - may have expired');
             }
             
             // For other errors, retry a few times
             if (pollCount < 5) {
-                console.log(`⚠️ Job ${jobId}: Retrying Apollo status check in 10 seconds...`);
+                console.log(`⚠️ Job ${jobId}: Retrying Web status check in 10 seconds...`);
                 await new Promise(resolve => setTimeout(resolve, 10000));
                 continue;
             } else {
-                throw new Error(`Apollo job polling failed: ${error.message}`);
+                throw new Error(`Web job polling failed: ${error.message}`);
             }
         }
     }
     
-    throw new Error('Apollo job exceeded maximum wait time (30 minutes)');
+    throw new Error('Web job exceeded maximum wait time (30 minutes)');
 }
 
 // Get job status for polling

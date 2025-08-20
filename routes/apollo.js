@@ -98,14 +98,15 @@ router.post('/scrape-leads', async (req, res) => {
             });
         }
 
-        // Handle unlimited vs limited records
-        const maxLimit = parseInt(process.env.MAX_LEADS_PER_REQUEST) || 2000;
+        // Handle unlimited vs limited records  
         let recordLimit;
         
         if (maxRecords === 0) {
-            recordLimit = maxLimit; // Use system max when unlimited requested
+            recordLimit = 0; // Truly unlimited - let Apify scrape all available
         } else {
-            recordLimit = Math.min(parseInt(maxRecords) || 500, maxLimit);
+            // Optional safety limit (can be overridden with environment variable)
+            const safetyLimit = parseInt(process.env.MAX_LEADS_PER_REQUEST) || 10000;
+            recordLimit = Math.min(parseInt(maxRecords), safetyLimit);
         }
 
         console.log(`🔍 Starting Apollo scrape for ${recordLimit} records...`);
@@ -493,17 +494,19 @@ async function processApolloJob(apolloJobId) {
         
         job.status = 'scraping';
         
-        // Handle unlimited vs limited records
-        const maxLimit = parseInt(process.env.MAX_LEADS_PER_REQUEST) || 2000;
+        // Handle unlimited vs limited records  
         let recordLimit;
         
         if (maxRecords === 0) {
-            recordLimit = maxLimit; // Use system max when unlimited requested
+            recordLimit = 0; // Truly unlimited - let Apify scrape all available
         } else {
-            recordLimit = Math.min(parseInt(maxRecords) || 500, maxLimit);
+            // Optional safety limit (can be overridden with environment variable)
+            const safetyLimit = parseInt(process.env.MAX_LEADS_PER_REQUEST) || 10000;
+            recordLimit = Math.min(parseInt(maxRecords), safetyLimit);
         }
 
-        console.log(`🔍 Apollo job ${apolloJobId}: Starting Apify scraper for ${recordLimit} records...`);
+        const recordText = recordLimit === 0 ? 'unlimited records' : `${recordLimit} records`;
+        console.log(`🔍 Apollo job ${apolloJobId}: Starting Apify scraper for ${recordText}...`);
 
         let apifyResponse;
         let retryCount = 0;
@@ -516,13 +519,25 @@ async function processApolloJob(apolloJobId) {
             try {
                 console.log(`🎯 Apollo job ${apolloJobId}: Attempt ${retryCount + 1}/${maxRetries + 1} - Starting Apify run...`);
                 
+                // Prepare Apify input
+                const apifyInput = {
+                    cleanOutput: true,
+                    url: apolloUrl
+                };
+                
+                // Only set totalRecords if not unlimited
+                if (recordLimit > 0) {
+                    apifyInput.totalRecords = recordLimit;
+                }
+                
+                console.log(`🔍 Apollo job ${apolloJobId}: Apify input:`, { 
+                    ...apifyInput, 
+                    recordLimit: recordLimit === 0 ? 'unlimited' : recordLimit 
+                });
+                
                 const runResponse = await axios.post(
                     'https://api.apify.com/v2/acts/code_crafter~apollo-io-scraper/runs',
-                    {
-                        cleanOutput: true,
-                        totalRecords: recordLimit,
-                        url: apolloUrl
-                    },
+                    apifyInput,
                     {
                         headers: {
                             'Accept': 'application/json',

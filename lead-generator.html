@@ -1245,7 +1245,7 @@
                             <div class="processing-row">
                                 <div class="number-input-group">
                                     <label for="maxRecords">📊 Max Leads:</label>
-                                    <input type="number" id="maxRecords" value="500" min="0" max="2000">
+                                    <input type="number" id="maxRecords" value="0" min="0" max="10000">
                                     <small style="color: var(--color-gray-500);">(0 = unlimited)</small>
                                 </div>
                             </div>
@@ -1631,7 +1631,7 @@
                     
                     // Offer URL generation fallback
                     const searchUrl = this.generateSearchUrlClientSide(jobTitles, companySizes);
-                    this.addLog(`🔧 Alternative: Use this Apollo URL manually: ${searchUrl}`, 'info');
+                    this.addLog(`🔧 Alternative: Use this Web URL manually: ${searchUrl}`, 'info');
                     document.getElementById('searchUrl').textContent = searchUrl;
                 }
             }
@@ -1789,8 +1789,8 @@
                     case 'progress':
                         // Make progress messages generic
                         let genericMessage = data.message;
-                        if (genericMessage.includes('Apollo')) {
-                            genericMessage = genericMessage.replace(/Apollo/g, 'database');
+                        if (genericMessage.includes('Web')) {
+                            genericMessage = genericMessage.replace(/Web/g, 'database');
                         }
                         this.updateProgress(`Step ${data.step}/${data.total}: ${genericMessage}`);
                         this.addLog(`📋 ${genericMessage}`, 'progress');
