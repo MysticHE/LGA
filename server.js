@@ -6,6 +6,8 @@ require('dotenv').config();
 
 const apolloRoutes = require('./routes/apollo');
 const leadRoutes = require('./routes/leads');
+const microsoftGraphRoutes = require('./routes/microsoft-graph');
+const emailAutomationRoutes = require('./routes/email-automation');
 const { rateLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
@@ -20,7 +22,7 @@ app.use(helmet({
             scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
             scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers temporarily
             imgSrc: ["'self'", "data:", "https:"],
-            connectSrc: ["'self'", "https://api.apify.com", "https://api.openai.com"]
+            connectSrc: ["'self'", "https://api.apify.com", "https://api.openai.com", "https://graph.microsoft.com", "https://login.microsoftonline.com"]
         }
     }
 }));
@@ -46,6 +48,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // API Routes
 app.use('/api/apollo', apolloRoutes);
 app.use('/api/leads', leadRoutes);
+app.use('/api/microsoft-graph', microsoftGraphRoutes);
+app.use('/api/email', emailAutomationRoutes);
 
 // Serve the main application
 app.get('/', (req, res) => {
@@ -107,11 +111,20 @@ app.listen(PORT, () => {
     
     // Check for required environment variables
     const requiredEnvVars = ['APIFY_API_TOKEN', 'OPENAI_API_KEY'];
+    const optionalEnvVars = ['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET'];
     const missing = requiredEnvVars.filter(envVar => !process.env[envVar]);
+    const missingOptional = optionalEnvVars.filter(envVar => !process.env[envVar]);
     
     if (missing.length > 0) {
-        console.warn(`⚠️  Missing environment variables: ${missing.join(', ')}`);
+        console.warn(`⚠️  Missing required environment variables: ${missing.join(', ')}`);
         console.warn('📝 Please check your .env file');
+    }
+    
+    if (missingOptional.length > 0) {
+        console.warn(`ℹ️  Optional Microsoft Graph variables not set: ${missingOptional.join(', ')}`);
+        console.warn('📝 OneDrive and Email automation features will be disabled');
+    } else {
+        console.log('🔗 Microsoft Graph integration enabled');
     }
 });
 

@@ -1592,6 +1592,56 @@
                     </div>
                 </div>
 
+                <!-- Microsoft Graph Integration Section -->
+                <div class="form-group">
+                    <div class="filter-card">
+                        <label class="form-label">
+                            <span class="emoji">🔗</span>
+                            <span>Microsoft 365 Integration</span>
+                            <small style="color: var(--color-gray-500); font-weight: var(--font-weight-normal); margin-left: var(--space-2);">(Optional - OneDrive & Outlook integration)</small>
+                        </label>
+                        <div class="processing-options">
+                            <!-- OneDrive Save Option -->
+                            <div class="processing-row">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="saveToOneDrive" style="accent-color: var(--color-primary-500);">
+                                    <label for="saveToOneDrive">📊 Save to OneDrive Excel</label>
+                                    <small style="color: var(--color-gray-500); font-size: var(--font-size-xs); margin-left: var(--space-4);">Creates Excel file in OneDrive with tracking columns</small>
+                                </div>
+                            </div>
+                            
+                            <!-- Email Campaign Section -->
+                            <div class="processing-row">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="sendEmailCampaign" style="accent-color: var(--color-primary-500);">
+                                    <label for="sendEmailCampaign">📧 Send Email Campaign</label>
+                                    <small style="color: var(--color-gray-500); font-size: var(--font-size-xs); margin-left: var(--space-4);">Automated email sending with read tracking</small>
+                                </div>
+                            </div>
+                            
+                            <!-- Email Campaign Details (hidden by default) -->
+                            <div class="email-campaign-details" id="emailCampaignDetails" style="display: none; margin-left: var(--space-4); margin-top: var(--space-3); padding: var(--space-3); background: var(--color-gray-50); border-radius: var(--border-radius-sm);">
+                                <div style="display: flex; flex-direction: column; gap: var(--space-3);">
+                                    <div>
+                                        <label for="emailSubject" style="font-weight: var(--font-weight-medium); color: var(--color-gray-700);">Email Subject:</label>
+                                        <input type="text" id="emailSubject" placeholder="Professional introduction from {name}" style="width: 100%; margin-top: var(--space-1); padding: var(--space-2); border: 1px solid var(--color-gray-300); border-radius: var(--border-radius-sm);">
+                                        <small style="color: var(--color-gray-500);">Use {name} and {company} for personalization</small>
+                                    </div>
+                                    <div>
+                                        <label for="emailTemplate" style="font-weight: var(--font-weight-medium); color: var(--color-gray-700);">Email Template:</label>
+                                        <textarea id="emailTemplate" rows="6" placeholder="Hello {name},&#10;&#10;I hope this email finds you well. I noticed your role as {title} at {company} and wanted to reach out...&#10;&#10;Best regards" style="width: 100%; margin-top: var(--space-1); padding: var(--space-2); border: 1px solid var(--color-gray-300); border-radius: var(--border-radius-sm); font-family: var(--font-family);"></textarea>
+                                        <small style="color: var(--color-gray-500);">Use {name}, {company}, {title}, {industry} for personalization. HTML supported.</small>
+                                    </div>
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="trackEmailReads" checked style="accent-color: var(--color-primary-500);">
+                                        <label for="trackEmailReads">📈 Track Email Opens & Replies</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </form>
             
             <div class="form-actions">
@@ -1777,6 +1827,15 @@
                     this.logsContainer.innerHTML = '';
                     this.updateLogCount(0);
                 });
+
+                // Microsoft Graph Integration event listeners
+                document.getElementById('sendEmailCampaign').addEventListener('change', (e) => {
+                    this.toggleEmailCampaignDetails(e.target.checked);
+                });
+
+                // Add validation for email campaign fields
+                document.getElementById('emailSubject').addEventListener('input', () => this.validateEmailCampaign());
+                document.getElementById('emailTemplate').addEventListener('input', () => this.validateEmailCampaign());
                 
                 document.getElementById('toggleLogsBtn').addEventListener('click', () => {
                     const container = this.logsContainer;
@@ -1930,15 +1989,34 @@
             async handleCompleteWorkflow(e) {
                 e.preventDefault();
                 
-                const { jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords, excludeEmailDomains, excludeIndustries } = this.getFormData();
-                if (!this.validateFormData(jobTitles, companySizes)) return;
+                const formData = this.getFormData();
+                if (!this.validateFormData(formData.jobTitles, formData.companySizes)) return;
+                
+                // Validate Microsoft Graph integration if enabled
+                if (formData.sendEmailCampaign && !this.validateEmailCampaign()) {
+                    this.showStatus('Please fill in email subject and template for email campaign', 'error');
+                    return;
+                }
                 
                 // Use streaming for better UX
-                return this.handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords, excludeEmailDomains, excludeIndustries);
+                return this.handleStreamingWorkflow(formData);
             }
 
-            async handleStreamingWorkflow(jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords, excludeEmailDomains, excludeIndustries) {
+            async handleStreamingWorkflow(formData) {
                 try {
+                    // Test Microsoft Graph connection if integration is enabled
+                    if (formData.saveToOneDrive || formData.sendEmailCampaign) {
+                        const graphConnected = await this.testMicrosoftGraphConnection();
+                        if (!graphConnected) {
+                            const proceed = confirm('Microsoft Graph integration is not available. Continue without OneDrive/Email features?');
+                            if (!proceed) return;
+                            
+                            // Disable integrations if user chooses to continue
+                            formData.saveToOneDrive = false;
+                            formData.sendEmailCampaign = false;
+                        }
+                    }
+                    
                     this.showProgress('Starting background job...');
                     this.currentLeads = []; // Clear previous results
                     this.displayLeads([], {}); // Clear display
@@ -1948,14 +2026,19 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            jobTitles,
-                            companySizes,
-                            generateOutreach,
-                            useProductMaterials,
-                            maxRecords,
+                            jobTitles: formData.jobTitles,
+                            companySizes: formData.companySizes,
+                            generateOutreach: formData.generateOutreach,
+                            useProductMaterials: formData.useProductMaterials,
+                            maxRecords: formData.maxRecords,
                             chunkSize: 100,
-                            excludeEmailDomains,
-                            excludeIndustries
+                            excludeEmailDomains: formData.excludeEmailDomains,
+                            excludeIndustries: formData.excludeIndustries,
+                            saveToOneDrive: formData.saveToOneDrive,
+                            sendEmailCampaign: formData.sendEmailCampaign,
+                            emailTemplate: formData.emailTemplate,
+                            emailSubject: formData.emailSubject,
+                            trackEmailReads: formData.trackEmailReads
                         })
                     });
 
@@ -2239,6 +2322,13 @@
                     .split(',')
                     .map(industry => industry.trim())
                     .filter(industry => industry.length > 0);
+
+                // Microsoft Graph Integration options
+                const saveToOneDrive = document.getElementById('saveToOneDrive').checked;
+                const sendEmailCampaign = document.getElementById('sendEmailCampaign').checked;
+                const emailTemplate = document.getElementById('emailTemplate').value.trim();
+                const emailSubject = document.getElementById('emailSubject').value.trim();
+                const trackEmailReads = document.getElementById('trackEmailReads').checked;
                 
                 return { 
                     jobTitles, 
@@ -2247,7 +2337,12 @@
                     useProductMaterials, 
                     maxRecords, 
                     excludeEmailDomains, 
-                    excludeIndustries 
+                    excludeIndustries,
+                    saveToOneDrive,
+                    sendEmailCampaign,
+                    emailTemplate,
+                    emailSubject,
+                    trackEmailReads
                 };
             }
 
@@ -2653,6 +2748,168 @@
                 setTimeout(() => {
                     this.statusMessage.innerHTML = '';
                 }, 5000);
+            }
+
+            // Microsoft Graph Integration Methods
+            toggleEmailCampaignDetails(show) {
+                const details = document.getElementById('emailCampaignDetails');
+                if (details) {
+                    details.style.display = show ? 'block' : 'none';
+                    
+                    // If showing, set default values
+                    if (show) {
+                        const emailSubject = document.getElementById('emailSubject');
+                        const emailTemplate = document.getElementById('emailTemplate');
+                        
+                        if (!emailSubject.value) {
+                            emailSubject.value = 'Professional introduction from {company}';
+                        }
+                        
+                        if (!emailTemplate.value) {
+                            emailTemplate.value = `Hello {name},
+
+I hope this email finds you well. I noticed your role as {title} at {company} and wanted to reach out regarding our SME insurance solutions.
+
+At our company, we specialize in providing comprehensive insurance coverage tailored specifically for {industry} businesses like yours. Our solutions help companies:
+
+• Protect against industry-specific risks
+• Reduce insurance costs through specialized coverage
+• Ensure compliance with regulatory requirements
+
+I'd love to schedule a brief 15-minute call to discuss how we can help {company} optimize your insurance strategy.
+
+Would you be available for a quick conversation this week?
+
+Best regards,
+[Your Name]`;
+                        }
+                        
+                        this.validateEmailCampaign();
+                    }
+                }
+            }
+
+            validateEmailCampaign() {
+                const sendEmailCheckbox = document.getElementById('sendEmailCampaign');
+                const emailSubject = document.getElementById('emailSubject');
+                const emailTemplate = document.getElementById('emailTemplate');
+                const submitBtn = document.getElementById('generateBtn');
+                
+                if (sendEmailCheckbox.checked) {
+                    const hasSubject = emailSubject.value.trim().length > 0;
+                    const hasTemplate = emailTemplate.value.trim().length > 0;
+                    
+                    // Add visual validation feedback
+                    emailSubject.style.borderColor = hasSubject ? 'var(--color-gray-300)' : 'var(--color-error)';
+                    emailTemplate.style.borderColor = hasTemplate ? 'var(--color-gray-300)' : 'var(--color-error)';
+                    
+                    return hasSubject && hasTemplate;
+                }
+                
+                return true;
+            }
+
+            async testMicrosoftGraphConnection() {
+                try {
+                    this.addLog('Testing Microsoft Graph connection...', 'processing');
+                    
+                    const response = await fetch('/api/microsoft-graph/test');
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.addLog(`Microsoft Graph connected successfully - User: ${result.user}`, 'progress');
+                        return true;
+                    } else {
+                        this.addLog('Microsoft Graph connection failed - integration disabled', 'warning');
+                        return false;
+                    }
+                } catch (error) {
+                    this.addLog(`Microsoft Graph test failed: ${error.message}`, 'warning');
+                    return false;
+                }
+            }
+
+            async handleOneDriveSave(leads, jobId) {
+                if (!leads || leads.length === 0) return null;
+                
+                try {
+                    this.addLog('Saving leads to OneDrive Excel...', 'processing');
+                    
+                    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                    const filename = `singapore-leads-${timestamp}.xlsx`;
+                    
+                    const response = await fetch('/api/microsoft-graph/onedrive/create-excel', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            leads: leads,
+                            filename: filename,
+                            folderPath: '/LGA-Leads'
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.addLog(`✅ Excel file saved to OneDrive: ${result.filename}`, 'progress');
+                        
+                        // Add OneDrive link to results
+                        setTimeout(() => {
+                            this.addOneDriveLinkToResults(result);
+                        }, 1000);
+                        
+                        return result.fileId;
+                    } else {
+                        this.addLog(`OneDrive save failed: ${result.message}`, 'error');
+                        return null;
+                    }
+                    
+                } catch (error) {
+                    this.addLog(`OneDrive save error: ${error.message}`, 'error');
+                    return null;
+                }
+            }
+
+            addOneDriveLinkToResults(oneDriveResult) {
+                const leadsSection = document.getElementById('leadsSection');
+                if (!leadsSection || leadsSection.classList.contains('hidden')) return;
+                
+                // Check if OneDrive link already exists
+                if (document.getElementById('oneDriveLink')) return;
+                
+                const oneDriveLinkDiv = document.createElement('div');
+                oneDriveLinkDiv.id = 'oneDriveLink';
+                oneDriveLinkDiv.style.cssText = `
+                    margin: var(--space-4) 0;
+                    padding: var(--space-3);
+                    background: var(--color-blue-50);
+                    border: 1px solid var(--color-blue-200);
+                    border-radius: var(--border-radius-md);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                `;
+                
+                oneDriveLinkDiv.innerHTML = `
+                    <div>
+                        <strong>📊 OneDrive Excel File:</strong>
+                        <span style="margin-left: var(--space-2); color: var(--color-blue-600);">${oneDriveResult.filename}</span>
+                        <small style="display: block; color: var(--color-gray-500); margin-top: var(--space-1);">
+                            Saved to ${oneDriveResult.folderPath} • ${oneDriveResult.leadsCount} leads with email tracking columns
+                        </small>
+                    </div>
+                    <a href="${oneDriveResult.oneDriveUrl}" target="_blank" class="btn btn-primary" style="margin-left: var(--space-3);">
+                        🔗 Open in OneDrive
+                    </a>
+                `;
+                
+                // Insert after the leads stats
+                const statsDiv = document.getElementById('leadsStats');
+                if (statsDiv && statsDiv.parentNode) {
+                    statsDiv.parentNode.insertBefore(oneDriveLinkDiv, statsDiv.nextSibling);
+                }
             }
 
             // PDF Upload Methods

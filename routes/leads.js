@@ -435,7 +435,12 @@ router.post('/start-workflow-job', async (req, res) => {
             useProductMaterials = false, 
             chunkSize = 100,
             excludeEmailDomains = [],
-            excludeIndustries = []
+            excludeIndustries = [],
+            saveToOneDrive = false,
+            sendEmailCampaign = false,
+            emailTemplate = '',
+            emailSubject = '',
+            trackEmailReads = true
         } = req.body;
 
         // Generate unique job ID
@@ -445,9 +450,9 @@ router.post('/start-workflow-job', async (req, res) => {
         const jobStatus = {
             id: jobId,
             status: 'started',
-            progress: { step: 1, message: 'Starting workflow...', total: 4 },
+            progress: { step: 1, message: 'Starting workflow...', total: saveToOneDrive || sendEmailCampaign ? 6 : 4 },
             startTime: new Date().toISOString(),
-            params: { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries },
+            params: { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries, saveToOneDrive, sendEmailCampaign, emailTemplate, emailSubject, trackEmailReads },
             result: null,
             error: null,
             completedAt: null
@@ -496,10 +501,11 @@ async function processWorkflowJob(jobId, protocol, host) {
     if (!job) return;
     
     try {
-        const { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries } = job.params;
+        const { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries, saveToOneDrive, sendEmailCampaign, emailTemplate, emailSubject, trackEmailReads } = job.params;
         
         // Step 1: Generate Web URL
-        job.progress = { step: 2, message: 'Generating Web URL...', total: 4 };
+        const totalSteps = 4 + (saveToOneDrive ? 1 : 0) + (sendEmailCampaign ? 1 : 0);
+        job.progress = { step: 2, message: 'Generating Web URL...', total: totalSteps };
         job.status = 'generating_url';
         
         const apolloResponse = await axios.post(`${protocol}://${host}/api/apollo/generate-url`, {
@@ -508,7 +514,7 @@ async function processWorkflowJob(jobId, protocol, host) {
         const { apolloUrl } = apolloResponse.data;
         
         // Step 2: Start Web scraping
-        job.progress = { step: 3, message: 'Scraping leads from Web...', total: 4 };
+        job.progress = { step: 3, message: 'Scraping leads from Web...', total: totalSteps };
         job.status = 'scraping';
         
         let scrapeData = null;
@@ -527,7 +533,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                 currentJob.progress = { 
                     step: 3, 
                     message: `Web scraping in progress... (${timeStr} elapsed)`, 
-                    total: 4,
+                    total: totalSteps,
                     elapsed: elapsed
                 };
             }
@@ -570,7 +576,7 @@ async function processWorkflowJob(jobId, protocol, host) {
         }
 
         // Step 3: Process leads in chunks
-        job.progress = { step: 4, message: `Processing ${scrapeData.count} leads in batches...`, total: 4 };
+        job.progress = { step: 4, message: `Processing ${scrapeData.count} leads in batches...`, total: totalSteps };
         job.status = 'processing';
         
         let processedLeads = [];
@@ -589,7 +595,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                 job.progress = {
                     step: 4,
                     message: `Processing chunk ${chunkNumber}/${totalChunks}...`,
-                    total: 4,
+                    total: totalSteps,
                     chunk: chunkNumber,
                     totalChunks: totalChunks
                 };
@@ -612,7 +618,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                 job.progress = {
                     step: 4,
                     message: `Processing chunk ${chunkNumber}/${totalChunks}...`,
-                    total: 4,
+                    total: totalSteps,
                     chunk: chunkNumber,
                     totalChunks: totalChunks
                 };
@@ -638,6 +644,67 @@ async function processWorkflowJob(jobId, protocol, host) {
             }
         }
 
+        // Step 5: Save to OneDrive (if enabled)
+        let oneDriveFileId = null;
+        if (saveToOneDrive && processedLeads.length > 0) {
+            try {
+                job.progress = { step: 5, message: 'Saving leads to OneDrive...', total: sendEmailCampaign ? 6 : 5 };
+                job.status = 'saving_onedrive';
+                
+                console.log(`📊 Job ${jobId}: Saving ${processedLeads.length} leads to OneDrive`);
+                
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                const filename = `singapore-leads-${timestamp}.xlsx`;
+                
+                const oneDriveResponse = await axios.post(`${protocol}://${host}/api/microsoft-graph/onedrive/create-excel`, {
+                    leads: processedLeads,
+                    filename: filename,
+                    folderPath: '/LGA-Leads'
+                });
+                
+                if (oneDriveResponse.data.success) {
+                    oneDriveFileId = oneDriveResponse.data.fileId;
+                    console.log(`✅ Job ${jobId}: Leads saved to OneDrive: ${filename}`);
+                }
+            } catch (oneDriveError) {
+                console.error(`⚠️ Job ${jobId}: OneDrive save failed:`, oneDriveError.message);
+                // Continue with workflow even if OneDrive fails
+            }
+        }
+
+        // Step 6: Send Email Campaign (if enabled)
+        let campaignResult = null;
+        if (sendEmailCampaign && emailTemplate && emailSubject && processedLeads.length > 0) {
+            try {
+                const finalStep = saveToOneDrive ? 6 : 5;
+                job.progress = { step: finalStep, message: 'Sending email campaign...', total: finalStep };
+                job.status = 'sending_emails';
+                
+                console.log(`📧 Job ${jobId}: Starting email campaign for ${processedLeads.length} leads`);
+                
+                const emailResponse = await axios.post(`${protocol}://${host}/api/email/send-campaign`, {
+                    leads: processedLeads,
+                    emailTemplate: emailTemplate,
+                    subject: emailSubject,
+                    trackReads: trackEmailReads,
+                    oneDriveFileId: oneDriveFileId
+                });
+                
+                if (emailResponse.data.success) {
+                    campaignResult = {
+                        campaignId: emailResponse.data.campaignId,
+                        sent: emailResponse.data.sent,
+                        failed: emailResponse.data.failed,
+                        trackingEnabled: emailResponse.data.trackingEnabled
+                    };
+                    console.log(`✅ Job ${jobId}: Email campaign completed. Sent: ${emailResponse.data.sent}, Failed: ${emailResponse.data.failed}`);
+                }
+            } catch (emailError) {
+                console.error(`⚠️ Job ${jobId}: Email campaign failed:`, emailError.message);
+                // Continue with workflow even if email campaign fails
+            }
+        }
+
         // Job completed successfully
         job.status = 'completed';
         job.result = {
@@ -658,6 +725,12 @@ async function processWorkflowJob(jobId, protocol, host) {
                 excludedIndustries: excludeIndustries,
                 filtersApplied: excludeEmailDomains.length > 0 || excludeIndustries.length > 0,
                 scrapeMetadata,
+                oneDriveIntegration: {
+                    enabled: saveToOneDrive,
+                    success: oneDriveFileId ? true : false,
+                    fileId: oneDriveFileId
+                },
+                emailCampaign: campaignResult,
                 completedAt: new Date().toISOString()
             }
         };
@@ -759,7 +832,7 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
                 job.progress = {
                     step: 3,
                     message: `Web ${apolloStatus.status}... (${timeStr} elapsed)`,
-                    total: 4,
+                    total: totalSteps,
                     elapsed: elapsed,
                     apolloJobId: apolloJobId,
                     apolloStatus: apolloStatus.status
