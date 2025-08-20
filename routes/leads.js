@@ -574,6 +574,7 @@ async function processWorkflowJob(jobId, protocol, host) {
         job.status = 'processing';
         
         let processedLeads = [];
+        let totalFilteredCount = 0;
         const totalChunks = Math.ceil(scrapeData.count / chunkSize);
         
         // Handle both direct leads and sessionId approaches
@@ -593,8 +594,9 @@ async function processWorkflowJob(jobId, protocol, host) {
                     totalChunks: totalChunks
                 };
                 
-                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host);
-                processedLeads.push(...finalChunk);
+                const chunkResult = await processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host);
+                processedLeads.push(...chunkResult.leads);
+                totalFilteredCount += chunkResult.filteredCount;
 
                 if (i + chunkSize < leads.length) {
                     await new Promise(resolve => setTimeout(resolve, 500));
@@ -623,8 +625,9 @@ async function processWorkflowJob(jobId, protocol, host) {
                 }, { timeout: 0 });
 
                 const chunk = chunkResponse.data.leads;
-                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host);
-                processedLeads.push(...finalChunk);
+                const chunkResult = await processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host);
+                processedLeads.push(...chunkResult.leads);
+                totalFilteredCount += chunkResult.filteredCount;
 
                 offset += chunkLimit;
                 
@@ -648,6 +651,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                 maxRecords,
                 totalFound: scrapeData.count,
                 processed: processedLeads.length,
+                totalFilteredOut: totalFilteredCount,
                 outreachGenerated: generateOutreach && !!openai,
                 usedProductMaterials: useProductMaterials && generateOutreach,
                 excludedEmailDomains: excludeEmailDomains,
@@ -671,7 +675,7 @@ async function processWorkflowJob(jobId, protocol, host) {
 
 // Helper function to filter leads based on exclusion criteria
 function filterLeads(leads, excludeEmailDomains = [], excludeIndustries = []) {
-    if (!leads || leads.length === 0) return leads;
+    if (!leads || leads.length === 0) return { filteredLeads: leads, filteredCount: 0 };
     
     const filteredLeads = leads.filter(lead => {
         // Filter by email domain
@@ -704,13 +708,14 @@ function filterLeads(leads, excludeEmailDomains = [], excludeIndustries = []) {
         console.log(`🔍 Filtered out ${filteredCount} leads based on exclusion criteria`);
     }
     
-    return filteredLeads;
+    return { filteredLeads, filteredCount };
 }
 
 // Helper function to process chunks in background job
 async function processChunk(chunk, generateOutreach, useProductMaterials, excludeEmailDomains, excludeIndustries, protocol, host) {
     // Apply exclusion filters first
-    let finalChunk = filterLeads(chunk, excludeEmailDomains, excludeIndustries);
+    const { filteredLeads, filteredCount } = filterLeads(chunk, excludeEmailDomains, excludeIndustries);
+    let finalChunk = filteredLeads;
 
     // Generate outreach for this chunk if enabled (only if we have leads after filtering)
     if (generateOutreach && openai && finalChunk.length > 0) {
@@ -728,7 +733,7 @@ async function processChunk(chunk, generateOutreach, useProductMaterials, exclud
         }
     }
 
-    return finalChunk;
+    return { leads: finalChunk, filteredCount };
 }
 
 // Poll Apollo job status until completion

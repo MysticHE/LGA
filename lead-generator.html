@@ -2313,6 +2313,12 @@
                 const limitReached = metadata.scrapeMetadata?.limitReached || false;
                 const deduplicationRate = metadata.scrapeMetadata?.deduplicationStats?.deduplicationRate || '0%';
                 
+                // Get filtering information
+                const totalFilteredOut = metadata.totalFilteredOut || 0;
+                const excludedEmailDomains = metadata.excludedEmailDomains || [];
+                const excludedIndustries = metadata.excludedIndustries || [];
+                const filtersApplied = metadata.filtersApplied || false;
+                
                 // Show applied filters - handle undefined arrays safely
                 const jobTitles = metadata.jobTitles || [];
                 const companySizes = metadata.companySizes || [];
@@ -2320,7 +2326,7 @@
                 // Enhanced statistics display
                 const limitDisplay = metadata.maxRecords === 0 || metadata.maxRecords === 'unlimited' ? 'No Limit' : `${metadata.maxRecords} records`;
                 
-                const filtersDisplay = jobTitles.length > 0 || companySizes.length > 0 ? `
+                const filtersDisplay = jobTitles.length > 0 || companySizes.length > 0 || filtersApplied ? `
                     <div style="margin-bottom: var(--space-3); padding: var(--space-3); background: var(--color-gray-50); border-radius: var(--border-radius-md);">
                         <strong>Applied Filters:</strong>
                         <div style="margin-top: var(--space-2);">
@@ -2330,6 +2336,12 @@
                                 <strong>Location:</strong> Singapore | 
                                 <strong>Record Limit:</strong> ${limitDisplay}${metadata.outreachGenerated ? ` | <strong>AI Outreach:</strong> ${outreachCount}` : ''}
                             </span>
+                            ${filtersApplied ? `
+                                <div style="margin-top: var(--space-1); font-size: var(--font-size-sm); color: var(--color-orange-600);">
+                                    ${excludedEmailDomains.length > 0 ? `<strong>🚫 Excluded Email Domains:</strong> ${excludedEmailDomains.join(', ')} | ` : ''}
+                                    ${excludedIndustries.length > 0 ? `<strong>🏭 Excluded Industries:</strong> ${excludedIndustries.join(', ')}` : ''}
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 ` : '';
@@ -2358,6 +2370,12 @@
                             <div style="font-size: var(--font-size-xl); font-weight: 700; color: var(--color-indigo-700); margin-bottom: var(--space-1);">${leads.filter(l => l.linkedin_url).length}</div>
                             <div style="font-size: var(--font-size-xs); color: var(--color-indigo-600); font-weight: var(--font-weight-medium);">With LinkedIn</div>
                         </div>
+                        ${totalFilteredOut > 0 ? `
+                        <div class="stats-card" style="flex: 1; min-width: 120px; padding: var(--space-3); background: linear-gradient(135deg, var(--color-orange-50) 0%, var(--color-white) 100%); border-radius: var(--border-radius-lg); border: 1px solid var(--color-orange-300); text-align: center; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.1);">
+                            <div style="font-size: var(--font-size-xl); font-weight: 700; color: var(--color-orange-700); margin-bottom: var(--space-1);">${totalFilteredOut.toLocaleString()}</div>
+                            <div style="font-size: var(--font-size-xs); color: var(--color-orange-600); font-weight: var(--font-weight-medium);">Filtered Out</div>
+                        </div>
+                        ` : ''}
                     </div>
                     
                     <!-- Processing Details -->
