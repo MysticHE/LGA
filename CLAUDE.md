@@ -241,6 +241,13 @@ DELETE /api/leads/materials/{materialId}
 
 ## Recent Changes
 
+### v1.3.2 - Enhanced Filtering Display & Results Dashboard
+- **NEW: Filtered Leads Counter**: Results now display how many leads were filtered out by exclusion criteria
+- **Enhanced Applied Filters Display**: Shows excluded email domains and industries in results panel
+- **Visual Filter Feedback**: New "Filtered Out" stat card with orange accent when filters are applied
+- **Improved Results Layout**: Dynamic stat cards that only show relevant information
+- **Better User Transparency**: Complete visibility into filtering process and results impact
+
 ### v1.3.1 - Critical Bug Fixes for Exclusion Filters & PDF Integration
 - **FIXED: Exclusion Filters Not Working**: Added missing `excludeEmailDomains` and `excludeIndustries` parameters to frontend API call
 - **FIXED: PDF Materials Not Being Used**: Added missing `useProductMaterials` parameter to frontend API call
