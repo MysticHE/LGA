@@ -16,11 +16,12 @@ A complete lead generation tool that automates Apollo.io scraping with AI-powere
 - **Solution**: Use async API (`/runs` endpoint) with polling mechanism
 - **Dataset Retrieval**: Multi-method fallback system for robust data access
 
-### Microsoft Graph Integration (v2.0)
-- **OneDrive Storage**: Automatic Excel file creation with tracking columns
-- **Email Automation**: Bulk email campaigns through Microsoft Graph Mail API
+### Microsoft Graph Integration (v2.0 - Delegated Authentication)
+- **OneDrive Storage**: Automatic Excel file creation with tracking columns using user's Microsoft 365 account
+- **Email Automation**: Bulk email campaigns through Microsoft Graph Mail API with user authentication
 - **Real-time Tracking**: Webhook notifications for email read receipts and replies
-- **Authentication**: Client Secret Credential flow for server-side operations
+- **Authentication**: MSAL-based delegated authentication flow with popup login experience
+- **User Experience**: Familiar Microsoft 365 login with session management and token refresh
 
 ## Environment Setup
 
@@ -61,6 +62,15 @@ MAX_REQUESTS_PER_MINUTE=10
 }
 ```
 
+### Azure App Registration Requirements (Delegated Permissions)
+```
+✅ Files.ReadWrite.All        # OneDrive file access
+✅ Mail.Send                  # Send emails
+✅ Mail.ReadWrite             # Read email status for tracking  
+✅ User.Read                  # Read user profile
+✅ offline_access             # Refresh tokens
+```
+
 ## Key Features
 
 ### 1. Enhanced AI Email Generation with Product Materials
@@ -76,11 +86,13 @@ MAX_REQUESTS_PER_MINUTE=10
 - **Frontend**: Input allows 0-10,000 leads
 - **Backend**: Handles `recordLimit = 0` for unlimited processing
 
-### 3. Microsoft Graph Integration (NEW v2.0)
-- **OneDrive Excel Storage**: Automatically save leads to Microsoft 365 Excel files with tracking columns
-- **Email Automation**: Send bulk personalized email campaigns through Microsoft Graph Mail API
+### 3. Microsoft Graph Integration (NEW v2.0 - Delegated Authentication)
+- **User Authentication**: MSAL-based popup login with familiar Microsoft 365 experience
+- **OneDrive Excel Storage**: Save leads to user's Microsoft 365 Excel files with tracking columns
+- **Email Automation**: Send personalized campaigns through user's Microsoft Graph Mail API access
 - **Real-time Email Tracking**: Track email opens, reads, and replies with webhook notifications
-- **Excel Sync**: Real-time updates to OneDrive Excel files when emails are read/replied
+- **Excel Sync**: Real-time updates to user's OneDrive Excel files when emails are read/replied
+- **Session Management**: Secure token storage with automatic refresh capabilities
 - **Campaign Analytics**: Detailed tracking and reporting for email campaigns
 
 ### 4. Async Job Processing
@@ -117,18 +129,27 @@ GET /api/leads/job-result/{jobId}     # Get completed results
 GET /api/leads/jobs                   # List all active jobs
 ```
 
-### Microsoft Graph Integration (NEW v2.0)
+### Microsoft Graph Integration (NEW v2.0 - Delegated Auth)
 ```
-GET  /api/microsoft-graph/test                         # Test connection
-POST /api/microsoft-graph/onedrive/create-excel        # Create Excel in OneDrive
+GET  /api/microsoft-graph/test                         # Test connection (requires session)
+POST /api/microsoft-graph/onedrive/create-excel        # Create Excel in user's OneDrive
 POST /api/microsoft-graph/onedrive/update-excel-tracking # Update tracking data
-GET  /api/microsoft-graph/onedrive/files               # List OneDrive files
+GET  /api/microsoft-graph/onedrive/files               # List user's OneDrive files
 POST /api/email/send-campaign                          # Send email campaign
 GET  /api/email/tracking/:campaignId                   # Get campaign tracking
 POST /api/email/webhook/notifications                  # Webhook endpoint
 GET  /api/email/webhook/notifications                  # Webhook validation
 POST /api/email/webhook/subscribe                      # Create subscription
 GET  /api/email/track-read                             # Pixel tracking
+```
+
+### Authentication Routes (NEW v2.0)
+```
+GET  /auth/login                                       # Initiate Microsoft 365 login
+GET  /auth/callback                                    # OAuth2 callback handler
+GET  /auth/status                                      # Check authentication status
+POST /auth/logout                                      # Logout user
+GET  /auth/test-graph                                  # Test authenticated Graph connection
 ```
 
 ### PDF Materials Management
@@ -187,10 +208,16 @@ Raw Leads → Enhanced AI Outreach → OneDrive Save (Optional) → Email Campai
 Final Results → Excel Export → Real-time Email Tracking
 ```
 
-### Microsoft Graph Workflow (NEW)
+### Microsoft Graph Workflow (NEW v2.0 - Delegated Auth)
 ```
-1. Generate Leads → 2. Create OneDrive Excel → 3. Send Email Campaign → 
-4. Track Email Opens → 5. Update Excel File → 6. Campaign Analytics
+1. User Authentication → 2. Generate Leads → 3. Create OneDrive Excel (User's Account) → 
+4. Send Email Campaign (User's Account) → 5. Track Email Opens → 6. Update Excel File → 7. Campaign Analytics
+```
+
+### Authentication Flow (NEW)
+```
+1. User checks OneDrive/Email options → 2. System detects auth required → 3. Popup opens with Microsoft 365 login → 
+4. User authenticates → 5. Session tokens stored → 6. Operations proceed with user's account
 ```
 
 ## Common Issues & Solutions
@@ -217,14 +244,16 @@ Final Results → Excel Export → Real-time Email Tracking
 
 ## Frontend Integration
 
-### User Experience (Enhanced v2.0)
+### User Experience (Enhanced v2.0 - Delegated Auth)
 - **Terminology**: "Web scraping" instead of "Apollo" for user-facing messages
 - **PDF Upload**: Drag & drop interface with real-time file management
 - **Product Materials**: Toggle to enable/disable enhanced AI emails
-- **Microsoft 365 Integration**: OneDrive save and email campaign options
+- **Microsoft 365 Integration**: OneDrive save and email campaign options with user authentication
+- **Authentication**: Familiar Microsoft 365 popup login experience
 - **Email Campaign Builder**: Template editor with personalization variables
 - **Progress**: Real-time status updates with elapsed time display (now up to 6 steps)
 - **Error Handling**: User-friendly error messages with retry suggestions
+- **Session Management**: Persistent authentication across browser sessions
 - **Results**: Downloadable Excel export with OneDrive links and tracking status
 
 ### PDF Upload Features
@@ -239,22 +268,25 @@ Final Results → Excel Export → Real-time Email Tracking
 - **Timeout**: No frontend timeout (matches unlimited backend)
 - **Error Recovery**: Automatic retry with user notification
 
-## File Structure (Updated v2.0)
+## File Structure (Updated v2.0 - Delegated Auth)
 ```
 ├── routes/
-│   ├── apollo.js            # Apify integration & async job management
-│   ├── leads.js             # Background job processing & OpenAI integration
-│   ├── microsoft-graph.js   # NEW: OneDrive Excel integration
-│   ├── email-automation.js  # NEW: Email campaigns & tracking
-│   └── index.js             # Main router
+│   ├── apollo.js              # Apify integration & async job management
+│   ├── leads.js               # Background job processing & OpenAI integration
+│   ├── microsoft-graph.js     # OneDrive Excel integration (delegated auth)
+│   ├── email-automation.js    # Email campaigns & tracking
+│   ├── auth.js                # NEW: Microsoft 365 authentication routes
+│   └── index.js               # Main router
 ├── middleware/
-│   ├── rateLimiter.js       # Rate limiting with polling exemptions
-│   └── graphAuth.js         # NEW: Microsoft Graph authentication
-├── lead-generator.html      # Frontend interface (enhanced with MS365)
-├── server.js                # Express server setup (updated CSP)
-├── RENDER-SETUP.md          # NEW: Deployment guide for Azure & Render
-├── IMPLEMENTATION-SUMMARY.md # NEW: Complete feature documentation
-└── CLAUDE.md                # This file (project context)
+│   ├── rateLimiter.js         # Rate limiting with polling exemptions
+│   ├── graphAuth.js           # Original: Application auth (deprecated)
+│   └── delegatedGraphAuth.js  # NEW: MSAL delegated authentication
+├── lead-generator.html        # Frontend interface (enhanced with popup auth)
+├── server.js                  # Express server setup (updated routes)
+├── RENDER-SETUP.md            # Deployment guide (updated for delegated auth)
+├── IMPLEMENTATION-SUMMARY.md  # Complete feature documentation
+├── AZURE-DEBUG-CHECKLIST.md   # NEW: Azure troubleshooting guide
+└── CLAUDE.md                  # This file (project context)
 ```
 
 ## Development Workflow
@@ -266,9 +298,11 @@ GET /api/leads/test                  # Test OpenAI integration
 GET /api/apollo/test                 # Test Apollo integration
 GET /api/leads/jobs                  # List active jobs
 
-# Microsoft Graph Testing (NEW)
-GET /api/microsoft-graph/test        # Test Microsoft Graph connection
-GET /api/microsoft-graph/onedrive/files # List OneDrive files
+# Microsoft Graph Testing (NEW - Delegated Auth)
+GET /auth/login                       # Initiate Microsoft 365 authentication
+GET /auth/status?sessionId={id}       # Check authentication status
+GET /api/microsoft-graph/test         # Test connection (requires X-Session-Id header)
+GET /api/microsoft-graph/onedrive/files # List user's OneDrive files
 
 # PDF Materials Testing
 GET /api/leads/materials
@@ -301,6 +335,18 @@ POST /api/email/webhook/subscribe     # Create webhook subscription
 
 ## Recent Changes
 
+### v2.1 - Delegated Authentication Flow (CRITICAL UPDATE)
+- **FIXED: Authentication Flow**: Switched from Application to Delegated authentication for proper Microsoft Graph access
+- **NEW: MSAL Integration**: Complete MSAL-based authentication with popup login experience
+- **NEW: Authentication Routes**: `/auth/login`, `/auth/callback`, `/auth/status`, `/auth/logout` endpoints
+- **NEW: Session Management**: Secure token storage with automatic refresh capabilities
+- **NEW: Frontend Popup Auth**: Seamless Microsoft 365 login popup with session persistence
+- **Updated: Azure Permissions**: Changed to Delegated permissions (Files.ReadWrite.All, Mail.Send, Mail.ReadWrite, User.Read, offline_access)
+- **Enhanced: User Experience**: Uses user's own Microsoft 365 account for all operations
+- **Fixed: `/me` Endpoint Issues**: All OneDrive and email operations now work with delegated tokens
+- **NEW: middleware/delegatedGraphAuth.js**: Complete MSAL authentication provider
+- **NEW: routes/auth.js**: OAuth2 flow handling with callback management
+
 ### v2.0 - Microsoft Graph API Integration (MAJOR UPDATE)
 - **NEW: OneDrive Excel Integration**: Automatically save leads to Microsoft 365 Excel files with tracking columns
 - **NEW: Email Automation System**: Send bulk personalized email campaigns through Microsoft Graph Mail API
@@ -310,7 +356,6 @@ POST /api/email/webhook/subscribe     # Create webhook subscription
 - **Updated Frontend**: Microsoft 365 integration section with email campaign builder
 - **New Dependencies**: @microsoft/microsoft-graph-client, @azure/identity, @azure/msal-node, node-cron
 - **Comprehensive Documentation**: RENDER-SETUP.md and IMPLEMENTATION-SUMMARY.md guides
-- **Authentication Middleware**: Client Secret Credential flow for server-side operations
 - **Webhook System**: Real-time notifications with pixel tracking and subscription management
 
 ### v1.3.2 - Enhanced Filtering Display & Results Dashboard
