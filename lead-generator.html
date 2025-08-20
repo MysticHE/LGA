@@ -659,6 +659,37 @@
             font-weight: var(--font-weight-medium);
         }
 
+        /* Two-column layout styles */
+        .processing-row-dual {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-4);
+            align-items: start;
+            margin-bottom: var(--space-3);
+        }
+
+        .exclusion-row-dual {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-4);
+            align-items: start;
+            margin-bottom: var(--space-3);
+        }
+
+        /* Responsive design for smaller screens */
+        @media (max-width: 768px) {
+            .processing-row-dual,
+            .exclusion-row-dual {
+                grid-template-columns: 1fr;
+                gap: var(--space-3);
+            }
+        }
+
+        /* Adjust exclusion input groups for dual layout */
+        .exclusion-row-dual .exclusion-input-group {
+            margin-bottom: 0;
+        }
+
         .loading {
             opacity: 0.7;
             pointer-events: none;
@@ -1503,13 +1534,12 @@
                             <span>Processing Options</span>
                         </label>
                         <div class="processing-options">
-                            <div class="processing-row">
+                            <!-- Processing Options Row -->
+                            <div class="processing-row-dual">
                                 <div class="checkbox-group">
                                     <input type="checkbox" id="generateOutreach" checked style="accent-color: var(--color-primary-500);">
                                     <label for="generateOutreach">🤖 Generate AI Outreach</label>
                                 </div>
-                            </div>
-                            <div class="processing-row">
                                 <div class="number-input-group">
                                     <label for="maxRecords">📊 Max Leads:</label>
                                     <input type="number" id="maxRecords" value="0" min="0" max="10000">
@@ -1517,24 +1547,25 @@
                                 </div>
                             </div>
                             
-                            
                             <!-- Exclusion Filters Section -->
                             <div class="exclusion-section-divider"></div>
                             <div class="exclusion-filters-section">
-                                <div class="exclusion-input-group">
-                                    <label for="excludeEmailDomains">🚫 Exclude Email Domains:</label>
-                                    <div class="exclusion-input-wrapper">
-                                        <input type="text" id="excludeEmailDomains" placeholder="gmail.com, yahoo.com, outlook.com">
+                                <div class="exclusion-row-dual">
+                                    <div class="exclusion-input-group">
+                                        <label for="excludeEmailDomains">🚫 Exclude Email Domains:</label>
+                                        <div class="exclusion-input-wrapper">
+                                            <input type="text" id="excludeEmailDomains" placeholder="gmail.com, yahoo.com, outlook.com">
+                                        </div>
+                                        <div class="exclusion-help-text">Separate domains with commas</div>
                                     </div>
-                                    <div class="exclusion-help-text">Separate domains with commas</div>
-                                </div>
-                                
-                                <div class="exclusion-input-group">
-                                    <label for="excludeIndustries">🏭 Exclude Industries:</label>
-                                    <div class="exclusion-input-wrapper">
-                                        <input type="text" id="excludeIndustries" placeholder="Non-profit, Government, Education">
+                                    
+                                    <div class="exclusion-input-group">
+                                        <label for="excludeIndustries">🏭 Exclude Industries:</label>
+                                        <div class="exclusion-input-wrapper">
+                                            <input type="text" id="excludeIndustries" placeholder="Non-profit, Government, Education">
+                                        </div>
+                                        <div class="exclusion-help-text">Separate industries with commas</div>
                                     </div>
-                                    <div class="exclusion-help-text">Separate industries with commas</div>
                                 </div>
                             </div>
                         </div>
