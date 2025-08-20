@@ -39,23 +39,33 @@ MAX_REQUESTS_PER_MINUTE=10
   "axios": "^1.5.0",
   "openai": "^4.0.0",
   "xlsx": "^0.18.0",
-  "rate-limiter-flexible": "^2.4.0"
+  "rate-limiter-flexible": "^2.4.0",
+  "multer": "^1.4.5",
+  "pdf-parse": "^1.1.1"
 }
 ```
 
 ## Key Features
 
-### 1. Unlimited Lead Scraping
+### 1. Enhanced AI Email Generation with Product Materials
+- **PDF Upload**: Support for multiple PDF files up to 10MB each (drag & drop interface)
+- **Content Integration**: Automatically extracts text from insurance product materials
+- **Enhanced Prompts**: Professional email generation using uploaded product information
+- **Smart Context**: AI researches company names and generates industry-specific content
+- **Token Management**: Intelligent content truncation to stay within API limits (~3K characters)
+- **Professional Format**: Email-only output (removed ice breaker) with subject lines and structured content
+
+### 2. Unlimited Lead Scraping
 - **Default**: 0 (unlimited) - removed 2000 lead limit
 - **Frontend**: Input allows 0-10,000 leads
 - **Backend**: Handles `recordLimit = 0` for unlimited processing
 
-### 2. Async Job Processing
+### 3. Async Job Processing
 - **Job Creation**: Immediate response with job ID
 - **Status Polling**: Real-time progress tracking
 - **Result Retrieval**: Separate endpoint for large datasets
 
-### 3. Error Handling
+### 4. Error Handling
 - **Apify Timeouts**: Automatic retry with exponential backoff
 - **Dataset 404s**: Multi-method retrieval fallback
 - **Rate Limiting**: Exempted polling endpoints to prevent 429 errors
@@ -80,6 +90,13 @@ GET /api/leads/job-result/{jobId}     # Get completed results
 GET /api/leads/jobs                   # List all active jobs
 ```
 
+### PDF Materials Management
+```
+POST /api/leads/upload-materials      # Upload PDF files (multipart/form-data)
+GET  /api/leads/materials             # List uploaded materials
+DELETE /api/leads/materials/{id}      # Delete specific material
+```
+
 ## Technical Implementation
 
 ### Apollo URL Generation
@@ -88,18 +105,25 @@ GET /api/leads/jobs                   # List all active jobs
 - **Parameters**: Job titles, company sizes
 - **Output**: Apollo.io search URL with encoded parameters
 
+### Enhanced AI Email Generation Process
+1. **PDF Processing**: Extract text content from uploaded insurance materials
+2. **Content Integration**: Combine product materials with lead information
+3. **Company Research**: AI analyzes company name for business context
+4. **Professional Email**: Generate subject line and structured email content
+5. **Token Optimization**: Smart truncation to fit within API limits
+
 ### Scraping Process
 1. **Generate Apollo URL** with job titles and company size filters
 2. **Start Apify scraper** with async API call
 3. **Poll Apify run status** every 5 seconds until completion
 4. **Retrieve dataset** using multi-method fallback approach
 5. **Transform data** to standardized lead format
-6. **Generate AI outreach** (optional, requires OpenAI API)
+6. **Generate AI outreach** (optional, with or without product materials)
 
 ### Data Flow
 ```
-Frontend Form → Apollo URL → Apify Scraper → Raw Leads → 
-Transform → AI Outreach → Final Results → Excel Export
+Frontend Form → PDF Upload (Optional) → Apollo URL → Apify Scraper → 
+Raw Leads → Enhanced AI Outreach → Final Results → Excel Export
 ```
 
 ## Common Issues & Solutions
@@ -128,9 +152,18 @@ Transform → AI Outreach → Final Results → Excel Export
 
 ### User Experience
 - **Terminology**: "Web scraping" instead of "Apollo" for user-facing messages
+- **PDF Upload**: Drag & drop interface with real-time file management
+- **Product Materials**: Toggle to enable/disable enhanced AI emails
 - **Progress**: Real-time status updates with elapsed time display
 - **Error Handling**: User-friendly error messages with retry suggestions
 - **Results**: Downloadable Excel export with structured data
+
+### PDF Upload Features
+- **Drag & Drop**: Intuitive file upload interface
+- **File Management**: Real-time list with file details (size, pages, date)
+- **Auto-cleanup**: Materials deleted after 24 hours
+- **Validation**: PDF-only uploads with size limits (10MB per file)
+- **Smart Integration**: Checkbox to enable/disable material usage
 
 ### Polling Strategy
 - **Interval**: 3 seconds with exponential backoff on rate limits
@@ -161,6 +194,11 @@ GET /api/apollo/test
 
 # List active jobs
 GET /api/leads/jobs
+
+# Test PDF materials endpoints
+GET /api/leads/materials
+POST /api/leads/upload-materials (with PDF files)
+DELETE /api/leads/materials/{materialId}
 ```
 
 ### Debugging
@@ -183,6 +221,14 @@ GET /api/leads/jobs
 - **CORS**: Configure appropriate CORS policies
 
 ## Recent Changes
+
+### v1.3 - Enhanced AI with Product Materials
+- **PDF Upload System**: Drag & drop interface for SME insurance materials
+- **Enhanced AI Prompts**: Professional email-only format with company research
+- **Content Integration**: Smart truncation and token management
+- **Material Management**: In-memory storage with auto-cleanup after 24 hours
+- **Improved UX**: Toggle to enable/disable enhanced AI features
+- **Dependencies**: Added multer and pdf-parse for file processing
 
 ### v1.2 - Unlimited Leads & Terminology
 - Removed 2000 lead limit, now defaults to unlimited (0)

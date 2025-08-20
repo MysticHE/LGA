@@ -2,7 +2,15 @@ const express = require('express');
 const OpenAI = require('openai');
 const XLSX = require('xlsx');
 const axios = require('axios');
+const multer = require('multer');
+const pdfParse = require('pdf-parse');
 const router = express.Router();
+
+// Configure multer for memory storage
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit per file
+});
 
 // Initialize OpenAI client
 let openai;
@@ -12,10 +20,151 @@ if (process.env.OPENAI_API_KEY) {
     });
 }
 
+// Initialize product materials storage (in-memory, like job storage)
+global.productMaterials = global.productMaterials || new Map();
+
+// PDF upload endpoint for product materials
+router.post('/upload-materials', upload.array('pdfs'), async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'No PDF files uploaded'
+            });
+        }
+
+        console.log(`📄 Processing ${req.files.length} PDF materials...`);
+
+        const materials = [];
+        const errors = [];
+
+        for (const file of req.files) {
+            try {
+                const materialId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+                
+                // Parse PDF content
+                const pdfData = await pdfParse(file.buffer);
+                
+                const material = {
+                    id: materialId,
+                    filename: file.originalname,
+                    content: pdfData.text,
+                    uploadedAt: new Date().toISOString(),
+                    pages: pdfData.numpages,
+                    size: file.size
+                };
+                
+                global.productMaterials.set(materialId, material);
+                materials.push({
+                    id: materialId,
+                    filename: file.originalname,
+                    pages: pdfData.numpages,
+                    size: file.size,
+                    contentLength: pdfData.text.length
+                });
+
+                console.log(`✅ Processed: ${file.originalname} (${pdfData.numpages} pages, ${pdfData.text.length} characters)`);
+
+            } catch (error) {
+                console.error(`❌ Error processing ${file.originalname}:`, error.message);
+                errors.push({
+                    filename: file.originalname,
+                    error: error.message
+                });
+            }
+        }
+
+        // Auto-cleanup materials after 24 hours
+        setTimeout(() => {
+            materials.forEach(material => {
+                global.productMaterials.delete(material.id);
+            });
+        }, 24 * 60 * 60 * 1000);
+
+        console.log(`✅ Successfully uploaded ${materials.length} materials. Errors: ${errors.length}`);
+
+        res.json({
+            success: true,
+            materials: materials,
+            errors: errors.length > 0 ? errors : undefined,
+            message: `${materials.length} PDF materials uploaded successfully`
+        });
+
+    } catch (error) {
+        console.error('PDF upload error:', error);
+        res.status(500).json({
+            error: 'Upload Error',
+            message: 'Failed to process PDF files',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// List uploaded materials
+router.get('/materials', (req, res) => {
+    try {
+        global.productMaterials = global.productMaterials || new Map();
+        
+        const materials = Array.from(global.productMaterials.values()).map(material => ({
+            id: material.id,
+            filename: material.filename,
+            uploadedAt: material.uploadedAt,
+            pages: material.pages,
+            size: material.size,
+            contentLength: material.content.length
+        }));
+
+        res.json({
+            success: true,
+            count: materials.length,
+            materials: materials
+        });
+
+    } catch (error) {
+        console.error('Materials list error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to list materials'
+        });
+    }
+});
+
+// Delete uploaded material
+router.delete('/materials/:materialId', (req, res) => {
+    try {
+        const { materialId } = req.params;
+        global.productMaterials = global.productMaterials || new Map();
+        
+        if (global.productMaterials.has(materialId)) {
+            const material = global.productMaterials.get(materialId);
+            global.productMaterials.delete(materialId);
+            
+            console.log(`🗑️ Deleted material: ${material.filename}`);
+            
+            res.json({
+                success: true,
+                message: `Material ${material.filename} deleted successfully`
+            });
+        } else {
+            res.status(404).json({
+                error: 'Not Found',
+                message: 'Material not found'
+            });
+        }
+
+    } catch (error) {
+        console.error('Material deletion error:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to delete material'
+        });
+    }
+});
+
 // Generate personalized outreach for leads
 router.post('/generate-outreach', async (req, res) => {
     try {
-        const { leads } = req.body;
+        const { leads, useProductMaterials = false } = req.body;
 
         // Validation
         if (!leads || !Array.isArray(leads) || leads.length === 0) {
@@ -45,10 +194,10 @@ router.post('/generate-outreach', async (req, res) => {
             const batchPromises = batch.map(async (lead, index) => {
                 try {
                     const globalIndex = i + index;
-                    console.log(`📝 Processing lead ${globalIndex + 1}/${leads.length}: ${lead.name}`);
+                    console.log(`📝 Processing lead ${globalIndex + 1}/${leads.length}: ${lead.name}${useProductMaterials ? ' (using product materials)' : ''}`);
 
                     // Generate personalized outreach using OpenAI
-                    const outreachContent = await generateOutreachContent(lead);
+                    const outreachContent = await generateOutreachContent(lead, useProductMaterials);
                     
                     return {
                         ...lead,
@@ -105,42 +254,70 @@ router.post('/generate-outreach', async (req, res) => {
 });
 
 // Generate outreach content for a single lead
-async function generateOutreachContent(lead) {
-    const prompt = `LinkedIn Personalized Outreach Generator
-Analyze the LinkedIn profile below and create personalized outreach content.
-LinkedIn URL: ${lead.linkedin_url || 'Not available'}
+async function generateOutreachContent(lead, useProductMaterials = false) {
+    // Get product materials context if requested and available
+    let productContext = '';
+    if (useProductMaterials) {
+        global.productMaterials = global.productMaterials || new Map();
+        const materials = Array.from(global.productMaterials.values());
+        
+        if (materials.length > 0) {
+            // Combine all PDF content, but limit to stay within token limits
+            const allContent = materials.map(m => `${m.filename}:\n${m.content}`).join('\n\n---\n\n');
+            // Limit to ~3000 characters to leave room for other prompt content
+            productContext = allContent.substring(0, 3000) + (allContent.length > 3000 ? '\n\n[Content truncated for token limits]' : '');
+        }
+    }
 
-Reference specific details like recent posts, job changes, company news, or shared connections.
+    const prompt = `Professional SME Insurance Email Generator
 
-Lead Information:
+${productContext ? `PRODUCT MATERIALS & SERVICES:
+${productContext}
+
+Use the above product information to create relevant and specific value propositions for the prospect's industry and role.
+` : ''}
+
+PROSPECT RESEARCH:
+Research the company "${lead.organization_name}" using your knowledge base to understand:
+- Their business model and potential insurance needs
+- Recent company developments or industry challenges
+- Appropriate insurance solutions for their sector
+
+LEAD INFORMATION:
 - Name: ${lead.name}
 - Title: ${lead.title}
 - Company: ${lead.organization_name}
 - Industry: ${lead.industry}
 - Location: ${lead.country}
+- LinkedIn: ${lead.linkedin_url || 'Not available'}
 
-Your Product/Service: SME Insurance
-Goal: Partnership and sales opportunity
+TASK: Create a professional, personalized email focused on SME insurance solutions
 
 Generate:
-🔥 ICE BREAKER (50-80 words):
-Casual, genuine opener
-Reference 2-3 specific profile details
-Natural conversation starter
+📧 PROFESSIONAL EMAIL:
 
-📧 EMAIL (100-150 words):
-Subject: [Personalized 5-8 words]
-Opening: Personal hook with specific details
-Body: Value proposition for their role/industry
-CTA: Clear next step
+Subject Line: [Personalized 5-8 words addressing their potential insurance needs]
 
-Rules:
-✅ Use specific details from the lead information
-✅ Match their seniority level tone
-✅ Sound human, not automated
-❌ No generic templates
-❌ Don't over-compliment
-❌ Avoid assumptions about needs`;
+Email Body (150-200 words):
+- Opening: Professional greeting with company-specific insight or industry reference
+- Value Proposition: Highlight 2-3 relevant insurance products/services from materials that match their industry
+- Business Case: Explain how these solutions address common challenges in their sector
+- Social Proof: Brief mention of similar companies we've helped (if relevant)
+- Call to Action: Professional request for brief meeting/call
+
+WRITING GUIDELINES:
+✅ Professional, consultative tone matching their seniority level
+✅ Reference specific insurance products from uploaded materials (if available)
+✅ Focus on business value and risk mitigation
+✅ Include industry-specific insights about their company/sector
+✅ Sound like a knowledgeable insurance advisor, not a generic salesperson
+✅ Use their name and company name naturally throughout
+❌ No generic insurance pitches or templates
+❌ Don't oversell - focus on education and consultation
+❌ Avoid insurance jargon - use business language
+❌ Don't make assumptions about their current coverage
+
+Format the response as a complete email ready to send.`;
 
     try {
         const response = await openai.chat.completions.create({
@@ -250,7 +427,7 @@ global.backgroundJobs = global.backgroundJobs || new Map();
 // Background job processing to avoid 5-minute timeout limit
 router.post('/start-workflow-job', async (req, res) => {
     try {
-        const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true, chunkSize = 100 } = req.body;
+        const { jobTitles, companySizes, maxRecords = 0, generateOutreach = true, useProductMaterials = false, chunkSize = 100 } = req.body;
 
         // Generate unique job ID
         const jobId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -261,7 +438,7 @@ router.post('/start-workflow-job', async (req, res) => {
             status: 'started',
             progress: { step: 1, message: 'Starting workflow...', total: 4 },
             startTime: new Date().toISOString(),
-            params: { jobTitles, companySizes, maxRecords, generateOutreach, chunkSize },
+            params: { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize },
             result: null,
             error: null,
             completedAt: null
@@ -310,7 +487,7 @@ async function processWorkflowJob(jobId, protocol, host) {
     if (!job) return;
     
     try {
-        const { jobTitles, companySizes, maxRecords, generateOutreach, chunkSize } = job.params;
+        const { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize } = job.params;
         
         // Step 1: Generate Web URL
         job.progress = { step: 2, message: 'Generating Web URL...', total: 4 };
@@ -407,7 +584,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                     totalChunks: totalChunks
                 };
                 
-                const finalChunk = await processChunk(chunk, generateOutreach, protocol, host);
+                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, protocol, host);
                 processedLeads.push(...finalChunk);
 
                 if (i + chunkSize < leads.length) {
@@ -437,7 +614,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                 }, { timeout: 0 });
 
                 const chunk = chunkResponse.data.leads;
-                const finalChunk = await processChunk(chunk, generateOutreach, protocol, host);
+                const finalChunk = await processChunk(chunk, generateOutreach, useProductMaterials, protocol, host);
                 processedLeads.push(...finalChunk);
 
                 offset += chunkLimit;
@@ -463,6 +640,7 @@ async function processWorkflowJob(jobId, protocol, host) {
                 totalFound: scrapeData.count,
                 processed: processedLeads.length,
                 outreachGenerated: generateOutreach && !!openai,
+                usedProductMaterials: useProductMaterials && generateOutreach,
                 scrapeMetadata,
                 completedAt: new Date().toISOString()
             }
@@ -480,14 +658,15 @@ async function processWorkflowJob(jobId, protocol, host) {
 }
 
 // Helper function to process chunks in background job
-async function processChunk(chunk, generateOutreach, protocol, host) {
+async function processChunk(chunk, generateOutreach, useProductMaterials, protocol, host) {
     let finalChunk = chunk;
 
     // Generate outreach for this chunk if enabled
     if (generateOutreach && openai) {
         try {
             const outreachResponse = await axios.post(`${protocol}://${host}/api/leads/generate-outreach`, {
-                leads: chunk
+                leads: chunk,
+                useProductMaterials: useProductMaterials
             }, { timeout: 0 });
             
             if (outreachResponse.data && outreachResponse.data.leads) {

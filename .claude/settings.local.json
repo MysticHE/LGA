@@ -23,7 +23,9 @@
       "Bash(rm:*)",
       "Bash(tasklist:*)",
       "Bash(find:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": [],

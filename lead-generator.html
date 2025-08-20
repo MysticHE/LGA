@@ -578,6 +578,149 @@
             pointer-events: none;
         }
 
+        /* PDF Upload Styles */
+        .product-materials-section {
+            margin-top: var(--space-3);
+        }
+
+        .upload-area {
+            border: 2px dashed var(--color-gray-300);
+            border-radius: var(--border-radius-md);
+            padding: var(--space-6);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            background: var(--color-gray-50);
+        }
+
+        .upload-area:hover {
+            border-color: var(--color-primary-500);
+            background: var(--color-primary-50, #fef7f4);
+        }
+
+        .upload-area.dragover {
+            border-color: var(--color-primary-500);
+            background: var(--color-primary-50, #fef7f4);
+            transform: scale(1.02);
+        }
+
+        .upload-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .upload-icon {
+            font-size: var(--font-size-2xl);
+            opacity: 0.7;
+        }
+
+        .upload-text strong {
+            color: var(--color-gray-700);
+            font-weight: var(--font-weight-semibold);
+        }
+
+        .upload-text small {
+            color: var(--color-gray-500);
+            display: block;
+            margin-top: 4px;
+        }
+
+        .upload-hint {
+            color: var(--color-gray-400);
+            font-size: var(--font-size-sm);
+        }
+
+        .uploaded-materials {
+            margin-top: var(--space-4);
+            padding: var(--space-3);
+            background: var(--color-white);
+            border: 1px solid var(--color-gray-200);
+            border-radius: var(--border-radius-md);
+        }
+
+        .materials-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-3);
+            padding-bottom: var(--space-2);
+            border-bottom: 1px solid var(--color-gray-200);
+        }
+
+        .materials-header span {
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-gray-700);
+        }
+
+        .btn-clear {
+            background: none;
+            border: 1px solid var(--color-gray-300);
+            color: var(--color-gray-600);
+            padding: 4px var(--space-2);
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-sm);
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .btn-clear:hover {
+            background: var(--color-gray-100);
+            border-color: var(--color-gray-400);
+        }
+
+        .materials-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+        }
+
+        .material-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--space-2);
+            background: var(--color-gray-50);
+            border-radius: var(--border-radius-sm);
+        }
+
+        .material-info {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            flex: 1;
+        }
+
+        .material-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .material-name {
+            font-weight: var(--font-weight-medium);
+            color: var(--color-gray-800);
+        }
+
+        .material-meta {
+            font-size: var(--font-size-sm);
+            color: var(--color-gray-500);
+        }
+
+        .btn-remove {
+            background: none;
+            border: none;
+            color: var(--color-error);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: var(--border-radius-sm);
+            transition: all 0.2s ease-in-out;
+        }
+
+        .btn-remove:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
         /* Animation */
         @keyframes spin {
             0% { transform: rotate(0deg); }
@@ -1232,6 +1375,44 @@
                 <div class="form-group">
                     <div class="filter-card">
                         <label class="form-label">
+                            <span class="emoji">📄</span>
+                            <span>Product Materials</span>
+                            <small style="color: var(--color-gray-500); font-weight: var(--font-weight-normal); margin-left: var(--space-2);">(Optional - Upload SME Insurance PDFs for enhanced emails)</small>
+                        </label>
+                        <div class="product-materials-section">
+                            <div class="upload-area" id="uploadArea" onclick="document.getElementById('pdfUpload').click()">
+                                <div class="upload-content">
+                                    <div class="upload-icon">📎</div>
+                                    <div class="upload-text">
+                                        <strong>Click to upload PDF files</strong>
+                                        <small>or drag and drop here</small>
+                                    </div>
+                                    <div class="upload-hint">Supported: PDF files up to 10MB each</div>
+                                </div>
+                            </div>
+                            <input type="file" id="pdfUpload" accept=".pdf" multiple style="display: none;">
+                            
+                            <div id="uploadedMaterials" class="uploaded-materials" style="display: none;">
+                                <div class="materials-header">
+                                    <span>📁 Uploaded Materials:</span>
+                                    <button type="button" class="btn-clear" onclick="clearAllMaterials()">Clear All</button>
+                                </div>
+                                <div id="materialsList" class="materials-list"></div>
+                            </div>
+                            
+                            <div class="processing-row" style="margin-top: var(--space-3);">
+                                <div class="checkbox-group">
+                                    <input type="checkbox" id="useProductMaterials" style="accent-color: var(--color-primary-500);">
+                                    <label for="useProductMaterials">🔥 Use uploaded materials in AI emails</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="filter-card">
+                        <label class="form-label">
                             <span class="emoji">⚙️</span>
                             <span>Processing Options</span>
                         </label>
@@ -1407,8 +1588,21 @@
                 this.startTime = null;
                 this.timerInterval = null;
                 
+                // PDF Upload elements
+                this.pdfUpload = document.getElementById('pdfUpload');
+                this.uploadArea = document.getElementById('uploadArea');
+                this.uploadedMaterials = document.getElementById('uploadedMaterials');
+                this.materialsList = document.getElementById('materialsList');
+                this.useProductMaterials = document.getElementById('useProductMaterials');
+                
+                this.uploadedFiles = []; // Track uploaded files
+                
                 this.bindEvents();
                 this.updatePreviews(); // Initialize previews
+                this.initializePDFUpload(); // Initialize PDF upload functionality
+                
+                // Initially disable the use materials checkbox
+                this.useProductMaterials.disabled = true;
             }
 
             bindEvents() {
@@ -1863,9 +2057,10 @@
                 
                 const companySizes = this.getSelectedValues(this.companySizeMultiselect);
                 const generateOutreach = document.getElementById('generateOutreach').checked;
+                const useProductMaterials = document.getElementById('useProductMaterials').checked;
                 const maxRecords = parseInt(document.getElementById('maxRecords').value) || 0;
                 
-                return { jobTitles, companySizes, generateOutreach, maxRecords };
+                return { jobTitles, companySizes, generateOutreach, useProductMaterials, maxRecords };
             }
 
             validateFormData(jobTitles, companySizes) {
@@ -2253,11 +2448,186 @@
                     this.statusMessage.innerHTML = '';
                 }, 5000);
             }
+
+            // PDF Upload Methods
+            initializePDFUpload() {
+                // File input change event
+                this.pdfUpload.addEventListener('change', (e) => this.handleFileUpload(e));
+                
+                // Drag and drop events
+                this.uploadArea.addEventListener('dragover', (e) => this.handleDragOver(e));
+                this.uploadArea.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+                this.uploadArea.addEventListener('drop', (e) => this.handleFileDrop(e));
+            }
+
+            handleDragOver(e) {
+                e.preventDefault();
+                this.uploadArea.classList.add('dragover');
+            }
+
+            handleDragLeave(e) {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+            }
+
+            handleFileDrop(e) {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+                
+                const files = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf');
+                if (files.length > 0) {
+                    this.uploadFiles(files);
+                } else {
+                    this.showStatus('Please drop PDF files only.', 'error');
+                }
+            }
+
+            handleFileUpload(e) {
+                const files = Array.from(e.target.files);
+                if (files.length > 0) {
+                    this.uploadFiles(files);
+                }
+                // Reset file input
+                e.target.value = '';
+            }
+
+            async uploadFiles(files) {
+                if (files.length === 0) return;
+
+                const formData = new FormData();
+                files.forEach(file => {
+                    formData.append('pdfs', file);
+                });
+
+                try {
+                    this.showStatus(`📄 Uploading ${files.length} PDF file(s)...`, 'info');
+                    
+                    const response = await fetch('/api/leads/upload-materials', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.uploadedFiles.push(...data.materials);
+                        this.updateMaterialsList();
+                        this.showStatus(`✅ Successfully uploaded ${data.materials.length} materials`, 'success');
+                        
+                        // Enable the use materials checkbox
+                        if (this.uploadedFiles.length > 0) {
+                            this.useProductMaterials.disabled = false;
+                        }
+                    } else {
+                        throw new Error(data.message || 'Upload failed');
+                    }
+                } catch (error) {
+                    console.error('PDF upload error:', error);
+                    this.showStatus(`❌ Upload failed: ${error.message}`, 'error');
+                }
+            }
+
+            updateMaterialsList() {
+                if (this.uploadedFiles.length === 0) {
+                    this.uploadedMaterials.style.display = 'none';
+                    return;
+                }
+
+                this.uploadedMaterials.style.display = 'block';
+                this.materialsList.innerHTML = '';
+
+                this.uploadedFiles.forEach(material => {
+                    const materialItem = document.createElement('div');
+                    materialItem.className = 'material-item';
+                    materialItem.innerHTML = `
+                        <div class="material-info">
+                            <div class="upload-icon" style="font-size: 16px;">📄</div>
+                            <div class="material-details">
+                                <div class="material-name">${material.filename}</div>
+                                <div class="material-meta">
+                                    ${material.pages} pages • ${this.formatFileSize(material.size)} • ${new Date(material.uploadedAt).toLocaleDateString()}
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-remove" onclick="leadGenerator.removeMaterial('${material.id}')">
+                            ✕
+                        </button>
+                    `;
+                    this.materialsList.appendChild(materialItem);
+                });
+            }
+
+            async removeMaterial(materialId) {
+                try {
+                    const response = await fetch(`/api/leads/materials/${materialId}`, {
+                        method: 'DELETE'
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.uploadedFiles = this.uploadedFiles.filter(m => m.id !== materialId);
+                        this.updateMaterialsList();
+                        this.showStatus('📄 Material removed', 'info');
+
+                        // Disable checkbox if no materials left
+                        if (this.uploadedFiles.length === 0) {
+                            this.useProductMaterials.disabled = true;
+                            this.useProductMaterials.checked = false;
+                        }
+                    } else {
+                        throw new Error(data.message || 'Failed to remove material');
+                    }
+                } catch (error) {
+                    console.error('Remove material error:', error);
+                    this.showStatus(`❌ Failed to remove material: ${error.message}`, 'error');
+                }
+            }
+
+            async clearAllMaterials() {
+                if (this.uploadedFiles.length === 0) return;
+
+                try {
+                    // Delete each material from server
+                    const deletePromises = this.uploadedFiles.map(material => 
+                        fetch(`/api/leads/materials/${material.id}`, { method: 'DELETE' })
+                    );
+                    
+                    await Promise.all(deletePromises);
+                    
+                    this.uploadedFiles = [];
+                    this.updateMaterialsList();
+                    this.useProductMaterials.disabled = true;
+                    this.useProductMaterials.checked = false;
+                    this.showStatus('📄 All materials cleared', 'info');
+                } catch (error) {
+                    console.error('Clear materials error:', error);
+                    this.showStatus(`❌ Failed to clear materials: ${error.message}`, 'error');
+                }
+            }
+
+            formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        }
+
+        // Global variable to access LeadGenerator instance
+        let leadGenerator;
+
+        // Global function for clearing materials (called from HTML)
+        function clearAllMaterials() {
+            if (leadGenerator) {
+                leadGenerator.clearAllMaterials();
+            }
         }
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', () => {
-            new LeadGenerator();
+            leadGenerator = new LeadGenerator();
         });
     </script>
 </body>
