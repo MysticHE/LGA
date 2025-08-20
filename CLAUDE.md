@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A complete lead generation tool that automates Apollo.io scraping with AI-powered outreach generation. Features background job processing to handle large datasets without timeout limitations.
+A complete lead generation tool that automates Apollo.io scraping with AI-powered outreach generation and Microsoft Graph API integration. Features background job processing, OneDrive Excel storage, and email automation with tracking capabilities.
 
 ## Core Architecture
 
@@ -16,6 +16,12 @@ A complete lead generation tool that automates Apollo.io scraping with AI-powere
 - **Solution**: Use async API (`/runs` endpoint) with polling mechanism
 - **Dataset Retrieval**: Multi-method fallback system for robust data access
 
+### Microsoft Graph Integration (v2.0)
+- **OneDrive Storage**: Automatic Excel file creation with tracking columns
+- **Email Automation**: Bulk email campaigns through Microsoft Graph Mail API
+- **Real-time Tracking**: Webhook notifications for email read receipts and replies
+- **Authentication**: Client Secret Credential flow for server-side operations
+
 ## Environment Setup
 
 ### Required Environment Variables
@@ -23,6 +29,12 @@ A complete lead generation tool that automates Apollo.io scraping with AI-powere
 # Core API Keys
 APIFY_API_TOKEN=your_apify_token_here
 OPENAI_API_KEY=your_openai_key_here
+
+# Microsoft Graph Integration (v2.0)
+AZURE_TENANT_ID=your_tenant_id_here
+AZURE_CLIENT_ID=your_client_id_here
+AZURE_CLIENT_SECRET=your_client_secret_here
+RENDER_EXTERNAL_URL=https://your-app-name.onrender.com
 
 # Server Configuration
 PORT=3000
@@ -41,7 +53,11 @@ MAX_REQUESTS_PER_MINUTE=10
   "xlsx": "^0.18.0",
   "rate-limiter-flexible": "^2.4.0",
   "multer": "^1.4.5",
-  "pdf-parse": "^1.1.1"
+  "pdf-parse": "^1.1.1",
+  "@microsoft/microsoft-graph-client": "^3.0.0",
+  "@azure/identity": "^4.0.0",
+  "@azure/msal-node": "^2.0.0",
+  "node-cron": "^3.0.0"
 }
 ```
 
@@ -60,27 +76,38 @@ MAX_REQUESTS_PER_MINUTE=10
 - **Frontend**: Input allows 0-10,000 leads
 - **Backend**: Handles `recordLimit = 0` for unlimited processing
 
-### 3. Async Job Processing
+### 3. Microsoft Graph Integration (NEW v2.0)
+- **OneDrive Excel Storage**: Automatically save leads to Microsoft 365 Excel files with tracking columns
+- **Email Automation**: Send bulk personalized email campaigns through Microsoft Graph Mail API
+- **Real-time Email Tracking**: Track email opens, reads, and replies with webhook notifications
+- **Excel Sync**: Real-time updates to OneDrive Excel files when emails are read/replied
+- **Campaign Analytics**: Detailed tracking and reporting for email campaigns
+
+### 4. Async Job Processing
 - **Job Creation**: Immediate response with job ID
 - **Status Polling**: Real-time progress tracking
 - **Result Retrieval**: Separate endpoint for large datasets
+- **Extended Workflow**: Now supports up to 6 steps including OneDrive save and email campaigns
 
-### 4. Error Handling
+### 5. Error Handling
 - **Apify Timeouts**: Automatic retry with exponential backoff
 - **Dataset 404s**: Multi-method retrieval fallback
 - **Rate Limiting**: Exempted polling endpoints to prevent 429 errors
 - **Network Issues**: Retry logic with graceful degradation
+- **Microsoft Graph Fallbacks**: Graceful handling when Graph API is unavailable
 
 ## API Endpoints
 
-### Core Workflow
+### Core Workflow (Extended v2.0)
 ```
 POST /api/leads/start-workflow-job
 ├── POST /api/apollo/generate-url
 ├── POST /api/apollo/start-scrape-job
 ├── GET /api/apollo/job-status/{jobId}
 ├── GET /api/apollo/job-result/{jobId}
-└── POST /api/leads/generate-outreach
+├── POST /api/leads/generate-outreach
+├── POST /api/microsoft-graph/onedrive/create-excel    # NEW: OneDrive save
+└── POST /api/email/send-campaign                      # NEW: Email automation
 ```
 
 ### Job Management
@@ -88,6 +115,20 @@ POST /api/leads/start-workflow-job
 GET /api/leads/job-status/{jobId}     # Poll job progress
 GET /api/leads/job-result/{jobId}     # Get completed results
 GET /api/leads/jobs                   # List all active jobs
+```
+
+### Microsoft Graph Integration (NEW v2.0)
+```
+GET  /api/microsoft-graph/test                         # Test connection
+POST /api/microsoft-graph/onedrive/create-excel        # Create Excel in OneDrive
+POST /api/microsoft-graph/onedrive/update-excel-tracking # Update tracking data
+GET  /api/microsoft-graph/onedrive/files               # List OneDrive files
+POST /api/email/send-campaign                          # Send email campaign
+GET  /api/email/tracking/:campaignId                   # Get campaign tracking
+POST /api/email/webhook/notifications                  # Webhook endpoint
+GET  /api/email/webhook/notifications                  # Webhook validation
+POST /api/email/webhook/subscribe                      # Create subscription
+GET  /api/email/track-read                             # Pixel tracking
 ```
 
 ### PDF Materials Management
@@ -139,10 +180,17 @@ GUIDELINES: Professional tone, specific product references, business value focus
 5. **Transform data** to standardized lead format
 6. **Generate AI outreach** (optional, with or without product materials)
 
-### Data Flow
+### Data Flow (Extended v2.0)
 ```
 Frontend Form → PDF Upload (Optional) → Apollo URL → Apify Scraper → 
-Raw Leads → Enhanced AI Outreach → Final Results → Excel Export
+Raw Leads → Enhanced AI Outreach → OneDrive Save (Optional) → Email Campaign (Optional) → 
+Final Results → Excel Export → Real-time Email Tracking
+```
+
+### Microsoft Graph Workflow (NEW)
+```
+1. Generate Leads → 2. Create OneDrive Excel → 3. Send Email Campaign → 
+4. Track Email Opens → 5. Update Excel File → 6. Campaign Analytics
 ```
 
 ## Common Issues & Solutions
@@ -169,13 +217,15 @@ Raw Leads → Enhanced AI Outreach → Final Results → Excel Export
 
 ## Frontend Integration
 
-### User Experience
+### User Experience (Enhanced v2.0)
 - **Terminology**: "Web scraping" instead of "Apollo" for user-facing messages
 - **PDF Upload**: Drag & drop interface with real-time file management
 - **Product Materials**: Toggle to enable/disable enhanced AI emails
-- **Progress**: Real-time status updates with elapsed time display
+- **Microsoft 365 Integration**: OneDrive save and email campaign options
+- **Email Campaign Builder**: Template editor with personalization variables
+- **Progress**: Real-time status updates with elapsed time display (now up to 6 steps)
 - **Error Handling**: User-friendly error messages with retry suggestions
-- **Results**: Downloadable Excel export with structured data
+- **Results**: Downloadable Excel export with OneDrive links and tracking status
 
 ### PDF Upload Features
 - **Drag & Drop**: Intuitive file upload interface
@@ -189,35 +239,45 @@ Raw Leads → Enhanced AI Outreach → Final Results → Excel Export
 - **Timeout**: No frontend timeout (matches unlimited backend)
 - **Error Recovery**: Automatic retry with user notification
 
-## File Structure
+## File Structure (Updated v2.0)
 ```
 ├── routes/
-│   ├── apollo.js          # Apify integration & async job management
-│   ├── leads.js           # Background job processing & OpenAI integration
-│   └── index.js           # Main router
+│   ├── apollo.js            # Apify integration & async job management
+│   ├── leads.js             # Background job processing & OpenAI integration
+│   ├── microsoft-graph.js   # NEW: OneDrive Excel integration
+│   ├── email-automation.js  # NEW: Email campaigns & tracking
+│   └── index.js             # Main router
 ├── middleware/
-│   └── rateLimiter.js     # Rate limiting with polling exemptions
-├── lead-generator.html    # Frontend interface
-└── server.js              # Express server setup
+│   ├── rateLimiter.js       # Rate limiting with polling exemptions
+│   └── graphAuth.js         # NEW: Microsoft Graph authentication
+├── lead-generator.html      # Frontend interface (enhanced with MS365)
+├── server.js                # Express server setup (updated CSP)
+├── RENDER-SETUP.md          # NEW: Deployment guide for Azure & Render
+├── IMPLEMENTATION-SUMMARY.md # NEW: Complete feature documentation
+└── CLAUDE.md                # This file (project context)
 ```
 
 ## Development Workflow
 
-### Testing
+### Testing (Extended v2.0)
 ```bash
-# Test OpenAI integration
-GET /api/leads/test
+# Core API Testing
+GET /api/leads/test                  # Test OpenAI integration
+GET /api/apollo/test                 # Test Apollo integration
+GET /api/leads/jobs                  # List active jobs
 
-# Test Apollo integration  
-GET /api/apollo/test
+# Microsoft Graph Testing (NEW)
+GET /api/microsoft-graph/test        # Test Microsoft Graph connection
+GET /api/microsoft-graph/onedrive/files # List OneDrive files
 
-# List active jobs
-GET /api/leads/jobs
-
-# Test PDF materials endpoints
+# PDF Materials Testing
 GET /api/leads/materials
 POST /api/leads/upload-materials (with PDF files)
 DELETE /api/leads/materials/{materialId}
+
+# Email Campaign Testing (NEW)
+GET /api/email/tracking/{campaignId}  # Get campaign status
+POST /api/email/webhook/subscribe     # Create webhook subscription
 ```
 
 ### Debugging
@@ -240,6 +300,18 @@ DELETE /api/leads/materials/{materialId}
 - **CORS**: Configure appropriate CORS policies
 
 ## Recent Changes
+
+### v2.0 - Microsoft Graph API Integration (MAJOR UPDATE)
+- **NEW: OneDrive Excel Integration**: Automatically save leads to Microsoft 365 Excel files with tracking columns
+- **NEW: Email Automation System**: Send bulk personalized email campaigns through Microsoft Graph Mail API
+- **NEW: Real-time Email Tracking**: Webhook notifications for email reads, replies with Excel sync
+- **NEW: Campaign Analytics**: Detailed tracking dashboard for email campaign performance
+- **Enhanced Background Jobs**: Extended workflow from 4 to up to 6 steps with MS365 integration
+- **Updated Frontend**: Microsoft 365 integration section with email campaign builder
+- **New Dependencies**: @microsoft/microsoft-graph-client, @azure/identity, @azure/msal-node, node-cron
+- **Comprehensive Documentation**: RENDER-SETUP.md and IMPLEMENTATION-SUMMARY.md guides
+- **Authentication Middleware**: Client Secret Credential flow for server-side operations
+- **Webhook System**: Real-time notifications with pixel tracking and subscription management
 
 ### v1.3.2 - Enhanced Filtering Display & Results Dashboard
 - **NEW: Filtered Leads Counter**: Results now display how many leads were filtered out by exclusion criteria
