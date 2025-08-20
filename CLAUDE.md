@@ -107,10 +107,29 @@ DELETE /api/leads/materials/{id}      # Delete specific material
 
 ### Enhanced AI Email Generation Process
 1. **PDF Processing**: Extract text content from uploaded insurance materials
-2. **Content Integration**: Combine product materials with lead information
+2. **Content Integration**: Combine product materials with lead information (limited to 3K chars)
 3. **Company Research**: AI analyzes company name for business context
-4. **Professional Email**: Generate subject line and structured email content
-5. **Token Optimization**: Smart truncation to fit within API limits
+4. **Professional Email**: Generate subject line and structured email content using GPT-4o-mini
+5. **Token Optimization**: Smart truncation to fit within API limits (500 max tokens, 0.7 temperature)
+
+### Current AI Prompt Structure
+```
+Professional SME Insurance Email Generator
+
+[IF PDF MATERIALS UPLOADED - up to 3K characters:]
+PRODUCT MATERIALS & SERVICES:
+[Combined PDF content from all uploaded files]
+
+PROSPECT RESEARCH & LEAD INFO:
+- Company research for business model and insurance needs
+- Lead details: name, title, company, industry, location, LinkedIn
+
+TASK: Generate professional email with:
+- Subject Line: 5-8 personalized words
+- Email Body: 150-200 words with opening, value proposition, business case, social proof, CTA
+
+GUIDELINES: Professional tone, specific product references, business value focus, no jargon
+```
 
 ### Scraping Process
 1. **Generate Apollo URL** with job titles and company size filters
@@ -221,6 +240,13 @@ DELETE /api/leads/materials/{materialId}
 - **CORS**: Configure appropriate CORS policies
 
 ## Recent Changes
+
+### v1.3.1 - Critical Bug Fixes for Exclusion Filters & PDF Integration
+- **FIXED: Exclusion Filters Not Working**: Added missing `excludeEmailDomains` and `excludeIndustries` parameters to frontend API call
+- **FIXED: PDF Materials Not Being Used**: Added missing `useProductMaterials` parameter to frontend API call
+- **Enhanced Email Filtering**: Both email domain and industry exclusion filters now work correctly during lead processing
+- **Verified PDF Integration**: Confirmed PDF content is properly extracted and passed to OpenAI for enhanced email generation
+- **Improved Debugging**: Console logs now show filtered leads and material usage status
 
 ### v1.3 - Enhanced AI with Product Materials
 - **PDF Upload System**: Drag & drop interface for SME insurance materials
