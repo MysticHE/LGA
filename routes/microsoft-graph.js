@@ -1,10 +1,10 @@
 const express = require('express');
 const XLSX = require('xlsx');
-const { requireGraphAuth } = require('../middleware/graphAuth');
+const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const router = express.Router();
 
-// Apply Graph authentication middleware to all routes
-router.use(requireGraphAuth);
+// Apply delegated Graph authentication middleware to protected routes
+// Note: /test route is excluded from authentication requirement
 
 /**
  * OneDrive Excel Integration
@@ -12,7 +12,7 @@ router.use(requireGraphAuth);
  */
 
 // Create Excel workbook in OneDrive
-router.post('/onedrive/create-excel', async (req, res) => {
+router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => {
     try {
         const { leads, filename, folderPath = '/LGA-Leads' } = req.body;
 
@@ -81,12 +81,15 @@ router.post('/onedrive/create-excel', async (req, res) => {
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
         const finalFilename = filename || `singapore-leads-${timestamp}.xlsx`;
 
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
         // Create folder if it doesn't exist
-        await createOneDriveFolder(req.graphClient, folderPath);
+        await createOneDriveFolder(graphClient, folderPath);
 
         // Upload Excel file to OneDrive
         const uploadResult = await uploadToOneDrive(
-            req.graphClient, 
+            graphClient, 
             excelBuffer, 
             finalFilename, 
             folderPath
@@ -119,7 +122,7 @@ router.post('/onedrive/create-excel', async (req, res) => {
 });
 
 // Update Excel file with email tracking data
-router.post('/onedrive/update-excel-tracking', async (req, res) => {
+router.post('/onedrive/update-excel-tracking', requireDelegatedAuth, async (req, res) => {
     try {
         const { fileId, leadEmail, trackingData } = req.body;
 
@@ -132,8 +135,11 @@ router.post('/onedrive/update-excel-tracking', async (req, res) => {
 
         console.log(`📊 Updating Excel tracking for ${leadEmail}...`);
 
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
         // Download current Excel file
-        const fileContent = await req.graphClient
+        const fileContent = await graphClient
             .api(`/me/drive/items/${fileId}/content`)
             .get();
 
@@ -173,7 +179,7 @@ router.post('/onedrive/update-excel-tracking', async (req, res) => {
         const updatedBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
         // Upload updated file back to OneDrive
-        await req.graphClient
+        await graphClient
             .api(`/me/drive/items/${fileId}/content`)
             .put(updatedBuffer);
 
@@ -196,13 +202,16 @@ router.post('/onedrive/update-excel-tracking', async (req, res) => {
 });
 
 // List OneDrive files
-router.get('/onedrive/files', async (req, res) => {
+router.get('/onedrive/files', requireDelegatedAuth, async (req, res) => {
     try {
         const { folderPath = '/LGA-Leads' } = req.query;
 
         console.log(`📂 Listing OneDrive files in ${folderPath}...`);
 
-        const files = await req.graphClient
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        const files = await graphClient
             .api(`/me/drive/root:${folderPath}:/children`)
             .filter("file ne null")
             .select('id,name,size,createdDateTime,lastModifiedDateTime,webUrl')
@@ -276,24 +285,48 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
     }
 }
 
-// Test Microsoft Graph connection
+// Test Microsoft Graph connection - handles both authenticated and unauthenticated requests
 router.get('/test', async (req, res) => {
     try {
-        const testResult = await req.graphAuth.testConnection();
+        const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+        
+        if (!sessionId) {
+            return res.json({
+                success: false,
+                message: 'Authentication required for Microsoft Graph integration',
+                authRequired: true,
+                loginUrl: '/auth/login'
+            });
+        }
+
+        const authProvider = getDelegatedAuthProvider();
+        
+        if (!authProvider.isAuthenticated(sessionId)) {
+            return res.json({
+                success: false,
+                message: 'Session not authenticated',
+                authRequired: true,
+                loginUrl: '/auth/login'
+            });
+        }
+
+        const testResult = await authProvider.testConnection(sessionId);
         
         if (testResult.success) {
             res.json({
                 success: true,
                 message: 'Microsoft Graph connection successful',
                 user: testResult.user,
-                accessType: 'Application',
-                permissions: 'Files.ReadWrite.All, Mail.Send, Mail.ReadWrite.All, User.Read.All'
+                email: testResult.email,
+                accessType: 'Delegated',
+                permissions: 'User.Read, Files.ReadWrite.All, Mail.Send, Mail.ReadWrite'
             });
         } else {
-            res.status(500).json({
+            res.status(401).json({
                 success: false,
                 message: 'Microsoft Graph connection failed',
-                error: testResult.error
+                error: testResult.error,
+                authRequired: true
             });
         }
     } catch (error) {

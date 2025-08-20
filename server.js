@@ -8,6 +8,7 @@ const apolloRoutes = require('./routes/apollo');
 const leadRoutes = require('./routes/leads');
 const microsoftGraphRoutes = require('./routes/microsoft-graph');
 const emailAutomationRoutes = require('./routes/email-automation');
+const authRoutes = require('./routes/auth');
 const { rateLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
@@ -50,6 +51,7 @@ app.use('/api/apollo', apolloRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/microsoft-graph', microsoftGraphRoutes);
 app.use('/api/email', emailAutomationRoutes);
+app.use('/auth', authRoutes);
 
 // Serve the main application
 app.get('/', (req, res) => {

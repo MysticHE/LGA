@@ -31,13 +31,14 @@ This guide covers the complete setup process for deploying your Lead Generation 
 1. In your app registration, go to **API permissions**
 2. Click **Add a permission**
 3. Select **Microsoft Graph**
-4. Choose **Application permissions** (not Delegated)
+4. Choose **Delegated permissions** (not Application permissions)
 5. Add the following permissions:
    ```
    Files.ReadWrite.All        # OneDrive file access
    Mail.Send                  # Send emails
-   Mail.ReadWrite.All         # Read email status for tracking
-   User.Read.All              # Read user profiles
+   Mail.ReadWrite             # Read email status for tracking
+   User.Read                  # Read user profile
+   offline_access             # Refresh tokens
    ```
 6. Click **Add permissions**
 7. Click **Grant admin consent** (you need admin privileges)

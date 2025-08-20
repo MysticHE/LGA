@@ -2813,18 +2813,122 @@ Best regards,
                 try {
                     this.addLog('Testing Microsoft Graph connection...', 'processing');
                     
-                    const response = await fetch('/api/microsoft-graph/test');
+                    // Check if user is already authenticated
+                    let sessionId = localStorage.getItem('msGraph_sessionId');
+                    
+                    const headers = {};
+                    if (sessionId) {
+                        headers['X-Session-Id'] = sessionId;
+                    }
+                    
+                    const response = await fetch('/api/microsoft-graph/test', { headers });
                     const result = await response.json();
                     
                     if (result.success) {
                         this.addLog(`Microsoft Graph connected successfully - User: ${result.user}`, 'progress');
                         return true;
+                    } else if (result.authRequired) {
+                        // User needs to authenticate
+                        this.addLog('Microsoft 365 authentication required...', 'processing');
+                        const authSuccess = await this.authenticateWithMicrosoft365();
+                        return authSuccess;
                     } else {
                         this.addLog('Microsoft Graph connection failed - integration disabled', 'warning');
                         return false;
                     }
                 } catch (error) {
                     this.addLog(`Microsoft Graph test failed: ${error.message}`, 'warning');
+                    return false;
+                }
+            }
+
+            async authenticateWithMicrosoft365() {
+                try {
+                    this.addLog('Initiating Microsoft 365 login...', 'processing');
+                    
+                    // Get authentication URL
+                    const authResponse = await fetch('/auth/login');
+                    const authData = await authResponse.json();
+                    
+                    if (!authData.success) {
+                        this.addLog('Failed to initiate Microsoft 365 login', 'error');
+                        return false;
+                    }
+                    
+                    // Store session ID
+                    localStorage.setItem('msGraph_sessionId', authData.sessionId);
+                    
+                    // Open authentication popup
+                    const popup = window.open(
+                        authData.authUrl, 
+                        'microsoft365Auth', 
+                        'width=600,height=700,scrollbars=yes,resizable=yes'
+                    );
+                    
+                    if (!popup) {
+                        this.addLog('Popup blocked. Please allow popups and try again.', 'error');
+                        return false;
+                    }
+                    
+                    // Wait for authentication to complete
+                    return new Promise((resolve) => {
+                        const checkClosed = setInterval(() => {
+                            if (popup.closed) {
+                                clearInterval(checkClosed);
+                                this.verifyAuthentication().then(resolve);
+                            }
+                        }, 1000);
+                        
+                        // Listen for auth success message
+                        const handleMessage = (event) => {
+                            if (event.data.type === 'auth_success') {
+                                clearInterval(checkClosed);
+                                popup.close();
+                                window.removeEventListener('message', handleMessage);
+                                this.addLog(`Microsoft 365 authenticated: ${event.data.user}`, 'progress');
+                                resolve(true);
+                            }
+                        };
+                        
+                        window.addEventListener('message', handleMessage);
+                        
+                        // Timeout after 5 minutes
+                        setTimeout(() => {
+                            clearInterval(checkClosed);
+                            window.removeEventListener('message', handleMessage);
+                            if (!popup.closed) {
+                                popup.close();
+                            }
+                            this.addLog('Authentication timeout. Please try again.', 'warning');
+                            resolve(false);
+                        }, 300000);
+                    });
+                    
+                } catch (error) {
+                    this.addLog(`Authentication error: ${error.message}`, 'error');
+                    return false;
+                }
+            }
+
+            async verifyAuthentication() {
+                try {
+                    const sessionId = localStorage.getItem('msGraph_sessionId');
+                    if (!sessionId) return false;
+                    
+                    const response = await fetch('/api/microsoft-graph/test', {
+                        headers: { 'X-Session-Id': sessionId }
+                    });
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.addLog(`Authentication verified - User: ${result.user}`, 'progress');
+                        return true;
+                    } else {
+                        localStorage.removeItem('msGraph_sessionId');
+                        return false;
+                    }
+                } catch (error) {
+                    this.addLog(`Authentication verification failed: ${error.message}`, 'error');
                     return false;
                 }
             }
