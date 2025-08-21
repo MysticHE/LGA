@@ -709,9 +709,9 @@ async function processApolloJob(apolloJobId) {
 // Poll Apify run until completion
 async function pollApifyRun(apolloJobId, apifyRunId) {
     let pollCount = 0;
-    const maxPolls = 360; // 30 minutes max (5 second intervals)
+    // No timeout limit - scraper will run until completion
     
-    while (pollCount < maxPolls) {
+    while (true) {
         try {
             pollCount++;
             
@@ -837,7 +837,7 @@ async function pollApifyRun(apolloJobId, apifyRunId) {
         }
     }
     
-    throw new Error('Apify run exceeded maximum wait time (30 minutes)');
+    // This should never be reached since we removed the timeout limit
 }
 
 // Get Apollo job status

@@ -2094,7 +2094,7 @@
             }
 
             async pollJobStatus(jobId) {
-                const maxWaitTime = 30 * 60 * 1000; // 30 minutes max
+                // No timeout limit - scraper will run until completion
                 const startTime = Date.now();
                 let lastProgress = null;
                 let pollInterval = 5000; // Start with 5 seconds
@@ -2102,10 +2102,7 @@
                 
                 const poll = async () => {
                     try {
-                        // Check if we've exceeded max wait time
-                        if (Date.now() - startTime > maxWaitTime) {
-                            throw new Error('Job exceeded maximum wait time (30 minutes)');
-                        }
+                        // No timeout limit - continue until completion
                         
                         const response = await fetch(`/api/leads/job-status/${jobId}`);
                         
