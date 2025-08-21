@@ -707,6 +707,14 @@ async function processWorkflowJob(jobId, protocol, host) {
 
         // Job completed successfully
         job.status = 'completed';
+        // Update scrapeMetadata to reflect post-filtering results
+        const originalTotalAvailable = scrapeMetadata.totalAvailable || scrapeData.count;
+        const originalFinalCount = scrapeMetadata.finalCount || scrapeData.count;
+        
+        // Calculate corrected numbers after exclusion filters
+        const correctedFinalCount = processedLeads.length;
+        const correctedTotalAvailable = originalTotalAvailable; // Keep original as "available before filters"
+        
         job.result = {
             success: true,
             count: processedLeads.length,
@@ -724,7 +732,16 @@ async function processWorkflowJob(jobId, protocol, host) {
                 excludedEmailDomains: excludeEmailDomains,
                 excludedIndustries: excludeIndustries,
                 filtersApplied: excludeEmailDomains.length > 0 || excludeIndustries.length > 0,
-                scrapeMetadata,
+                scrapeMetadata: {
+                    ...scrapeMetadata,
+                    // Override key metrics to reflect post-filtering reality
+                    totalAvailable: correctedTotalAvailable,
+                    finalCount: correctedFinalCount,
+                    // Add original pre-filter values for reference
+                    originalTotalAvailable: originalTotalAvailable,
+                    originalFinalCount: originalFinalCount,
+                    postFilterAdjustment: true
+                },
                 oneDriveIntegration: {
                     enabled: saveToOneDrive,
                     success: oneDriveFileId ? true : false,

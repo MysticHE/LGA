@@ -2441,8 +2441,8 @@
                             </span>
                             ${filtersApplied ? `
                                 <div style="margin-top: var(--space-1); font-size: var(--font-size-sm); color: var(--color-orange-600);">
-                                    ${excludedEmailDomains.length > 0 ? `<strong>🚫 Excluded Email Domains:</strong> ${excludedEmailDomains.join(', ')} | ` : ''}
-                                    ${excludedIndustries.length > 0 ? `<strong>🏭 Excluded Industries:</strong> ${excludedIndustries.join(', ')}` : ''}
+                                    ${excludedEmailDomains.length > 0 ? `<strong>🚫 Excluded Email Domains:</strong> ${excludedEmailDomains.join(', ')}${excludedIndustries.length > 0 ? ' | ' : ` (${totalFilteredOut.toLocaleString()} filtered out)`}` : ''}
+                                    ${excludedIndustries.length > 0 ? `<strong>🏭 Excluded Industries:</strong> ${excludedIndustries.join(', ')} (${totalFilteredOut.toLocaleString()} filtered out)` : ''}
                                 </div>
                             ` : ''}
                         </div>
