@@ -84,7 +84,12 @@ router.get('/callback', async (req, res) => {
         if (result.success) {
             // Get redirect URL from session
             const sessionData = global.authSessions?.get(sessionId);
-            const redirectUrl = sessionData?.redirectUrl || '/';
+            const baseRedirectUrl = sessionData?.redirectUrl || '/';
+            
+            // Add sessionId as URL parameter
+            const redirectUrl = baseRedirectUrl.includes('?') 
+                ? `${baseRedirectUrl}&sessionId=${sessionId}`
+                : `${baseRedirectUrl}?sessionId=${sessionId}`;
             
             console.log(`✅ Authentication successful for session: ${sessionId}`);
             
