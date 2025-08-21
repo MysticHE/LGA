@@ -57,7 +57,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/apollo', apolloRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/microsoft-graph', microsoftGraphRoutes);
-app.use('/api/email', emailAutomationRoutes);
 app.use('/api/email-automation', emailAutomationRoutes);
 app.use('/api/email-automation/templates', emailTemplatesRoutes);
 app.use('/api/email-automation', emailSchedulerRoutes);
