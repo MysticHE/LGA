@@ -8,8 +8,15 @@ const apolloRoutes = require('./routes/apollo');
 const leadRoutes = require('./routes/leads');
 const microsoftGraphRoutes = require('./routes/microsoft-graph');
 const emailAutomationRoutes = require('./routes/email-automation');
+const emailTemplatesRoutes = require('./routes/email-templates');
+const emailSchedulerRoutes = require('./routes/email-scheduler');
 const authRoutes = require('./routes/auth');
 const { rateLimiter } = require('./middleware/rateLimiter');
+
+// Initialize email scheduler
+const emailScheduler = require('./jobs/emailScheduler');
+console.log('📅 Starting email scheduler...');
+emailScheduler.start();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -51,11 +58,19 @@ app.use('/api/apollo', apolloRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/microsoft-graph', microsoftGraphRoutes);
 app.use('/api/email', emailAutomationRoutes);
+app.use('/api/email-automation', emailAutomationRoutes);
+app.use('/api/email-automation/templates', emailTemplatesRoutes);
+app.use('/api/email-automation', emailSchedulerRoutes);
 app.use('/auth', authRoutes);
 
 // Serve the main application
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'lead-generator.html'));
+});
+
+// Serve email automation page
+app.get('/email-automation', (req, res) => {
+    res.sendFile(path.join(__dirname, 'email-automation.html'));
 });
 
 // Favicon route to prevent 404 errors

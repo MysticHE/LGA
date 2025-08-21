@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-A complete lead generation tool that automates Apollo.io scraping with AI-powered outreach generation and Microsoft Graph API integration. Features background job processing, OneDrive Excel storage, and email automation with tracking capabilities.
+A complete lead generation tool that automates Apollo.io scraping with AI-powered outreach generation and Microsoft Graph API integration. Features background job processing, OneDrive Excel storage, and comprehensive email automation with scheduling and tracking capabilities.
+
+**NEW: Email Automation System v3.0** - Complete separation of scraping and email automation with master Excel file management, intelligent scheduling, and multi-template support.
 
 ## Core Architecture
 
@@ -16,12 +18,20 @@ A complete lead generation tool that automates Apollo.io scraping with AI-powere
 - **Solution**: Use async API (`/runs` endpoint) with polling mechanism
 - **Dataset Retrieval**: Multi-method fallback system for robust data access
 
-### Microsoft Graph Integration (v2.0 - Delegated Authentication)
+### Microsoft Graph Integration (v2.1 - Delegated Authentication)
 - **OneDrive Storage**: Automatic Excel file creation with tracking columns using user's Microsoft 365 account
 - **Email Automation**: Bulk email campaigns through Microsoft Graph Mail API with user authentication
 - **Real-time Tracking**: Webhook notifications for email read receipts and replies
 - **Authentication**: MSAL-based delegated authentication flow with popup login experience
 - **User Experience**: Familiar Microsoft 365 login with session management and token refresh
+
+### Email Automation System (v3.0 - NEW)
+- **Master Excel Management**: Single `LGA-Master-Email-List.xlsx` file per user with intelligent merging
+- **Dual Content System**: AI-generated personalized emails AND fixed templates with variables
+- **Smart Scheduling**: Immediate and scheduled campaigns with follow-up sequences
+- **Background Automation**: Cron-based email scheduler running hourly across all user sessions
+- **Duplicate Prevention**: Cross-campaign email deduplication and intelligent filtering
+- **Template Management**: Full CRUD operations for email templates with validation and preview
 
 ## Environment Setup
 
@@ -58,7 +68,9 @@ MAX_REQUESTS_PER_MINUTE=10
   "@microsoft/microsoft-graph-client": "^3.0.0",
   "@azure/identity": "^4.0.0",
   "@azure/msal-node": "^2.0.0",
-  "node-cron": "^3.0.0"
+  "node-cron": "^3.0.0",
+  "cors": "^2.8.5",
+  "helmet": "^7.0.0"
 }
 ```
 
@@ -110,7 +122,7 @@ MAX_REQUESTS_PER_MINUTE=10
 
 ## API Endpoints
 
-### Core Workflow (Extended v2.0)
+### Core Workflow (Extended v2.1)
 ```
 POST /api/leads/start-workflow-job
 ├── POST /api/apollo/generate-url
@@ -118,8 +130,38 @@ POST /api/leads/start-workflow-job
 ├── GET /api/apollo/job-status/{jobId}
 ├── GET /api/apollo/job-result/{jobId}
 ├── POST /api/leads/generate-outreach
-├── POST /api/microsoft-graph/onedrive/create-excel    # NEW: OneDrive save
-└── POST /api/email/send-campaign                      # NEW: Email automation
+├── POST /api/microsoft-graph/onedrive/create-excel    # OneDrive save
+└── POST /api/email/send-campaign                      # Email automation
+```
+
+### Email Automation System (NEW v3.0)
+```
+/api/email-automation/
+├── /master-list
+│   ├── POST /upload - Upload and merge Excel files with duplicate detection
+│   ├── GET /data - Get master list data with filtering and pagination
+│   ├── GET /stats - Get dashboard statistics and analytics
+│   ├── PUT /lead/:email - Update individual lead information
+│   ├── GET /due-today - Get leads due for email today
+│   └── GET /export - Export master list to Excel
+├── /templates
+│   ├── GET / - List all email templates
+│   ├── POST / - Create new email template
+│   ├── GET /:templateId - Get specific template
+│   ├── PUT /:templateId - Update existing template
+│   ├── DELETE /:templateId - Delete template
+│   ├── POST /:templateId/preview - Preview template with sample data
+│   ├── PATCH /:templateId/toggle - Toggle template active status
+│   ├── GET /type/:templateType - Get templates by type
+│   └── POST /validate - Validate template content
+├── /campaigns
+│   ├── POST /start - Start immediate or scheduled email campaign
+│   ├── GET /:campaignId - Get campaign status and statistics
+│   ├── GET / - List all campaigns with filtering
+│   ├── POST /:campaignId/pause - Pause active campaign
+│   ├── POST /:campaignId/resume - Resume paused campaign
+│   └── POST /process-scheduled - Process scheduled campaigns (background job)
+└── POST /send-email/:email - Send email to specific lead
 ```
 
 ### Job Management
@@ -268,25 +310,33 @@ Final Results → Excel Export → Real-time Email Tracking
 - **Timeout**: No frontend timeout (matches unlimited backend)
 - **Error Recovery**: Automatic retry with user notification
 
-## File Structure (Updated v2.0 - Delegated Auth)
+## File Structure (Updated v3.0 - Email Automation System)
 ```
 ├── routes/
-│   ├── apollo.js              # Apify integration & async job management
-│   ├── leads.js               # Background job processing & OpenAI integration
-│   ├── microsoft-graph.js     # OneDrive Excel integration (delegated auth)
-│   ├── email-automation.js    # Email campaigns & tracking
-│   ├── auth.js                # NEW: Microsoft 365 authentication routes
-│   └── index.js               # Main router
+│   ├── apollo.js                # Apify integration & async job management
+│   ├── leads.js                 # Background job processing & OpenAI integration
+│   ├── microsoft-graph.js       # OneDrive Excel integration (delegated auth)
+│   ├── email-automation.js      # Email automation master list management
+│   ├── email-templates.js       # NEW: Template CRUD operations
+│   ├── email-scheduler.js       # NEW: Campaign management & scheduling
+│   ├── auth.js                  # Microsoft 365 authentication routes
+│   └── index.js                 # Main router
 ├── middleware/
-│   ├── rateLimiter.js         # Rate limiting with polling exemptions
-│   ├── graphAuth.js           # Original: Application auth (deprecated)
-│   └── delegatedGraphAuth.js  # NEW: MSAL delegated authentication
-├── lead-generator.html        # Frontend interface (enhanced with popup auth)
-├── server.js                  # Express server setup (updated routes)
-├── RENDER-SETUP.md            # Deployment guide (updated for delegated auth)
-├── IMPLEMENTATION-SUMMARY.md  # Complete feature documentation
-├── AZURE-DEBUG-CHECKLIST.md   # NEW: Azure troubleshooting guide
-└── CLAUDE.md                  # This file (project context)
+│   ├── rateLimiter.js           # Rate limiting with polling exemptions
+│   ├── graphAuth.js             # Original: Application auth (deprecated)
+│   └── delegatedGraphAuth.js    # MSAL delegated authentication
+├── utils/
+│   ├── excelProcessor.js        # NEW: Excel file processing & master file management
+│   └── emailContentProcessor.js # NEW: Email content processing & template handling
+├── jobs/
+│   └── emailScheduler.js        # NEW: Background email automation scheduler
+├── lead-generator.html          # Lead scraping interface (with navigation)
+├── email-automation.html        # NEW: Complete email automation interface
+├── server.js                    # Express server setup (updated with email automation routes)
+├── RENDER-SETUP.md              # Deployment guide (updated for delegated auth)
+├── IMPLEMENTATION-SUMMARY.md    # Complete feature documentation
+├── AZURE-DEBUG-CHECKLIST.md     # Azure troubleshooting guide
+└── CLAUDE.md                    # This file (project context)
 ```
 
 ## Development Workflow
@@ -334,6 +384,21 @@ POST /api/email/webhook/subscribe     # Create webhook subscription
 - **CORS**: Configure appropriate CORS policies
 
 ## Recent Changes
+
+### v3.0 - Complete Email Automation System (MAJOR UPDATE)
+- **NEW: Separate Email Automation Interface**: Complete standalone `email-automation.html` with navigation
+- **NEW: Master Excel File System**: Single `LGA-Master-Email-List.xlsx` per user with intelligent merging
+- **NEW: Dual Content System**: Support for both AI-generated emails AND template-based emails with variables
+- **NEW: Smart Duplicate Detection**: Cross-campaign email deduplication and upload merge capabilities
+- **NEW: Template Management**: Full CRUD system for email templates with validation and preview
+- **NEW: Campaign Scheduler**: Immediate and scheduled campaigns with follow-up automation
+- **NEW: Background Email Automation**: Cron-based scheduler running hourly across all user sessions
+- **NEW: Enhanced Excel Structure**: Extended columns for email automation while maintaining scraping compatibility
+- **NEW: API Routes**: Complete email automation API with `/master-list`, `/templates`, and `/campaigns` endpoints
+- **NEW: Utility Classes**: `ExcelProcessor` and `EmailContentProcessor` for robust file and content handling
+- **NEW: Background Jobs**: `jobs/emailScheduler.js` for automated email sending with session management
+- **Enhanced: Navigation**: Seamless switching between lead scraping and email automation
+- **Enhanced: User Experience**: Upload Excel → Merge with master → Create campaigns → Automated follow-ups
 
 ### v2.1 - Delegated Authentication Flow (CRITICAL UPDATE)
 - **FIXED: Authentication Flow**: Switched from Application to Delegated authentication for proper Microsoft Graph access

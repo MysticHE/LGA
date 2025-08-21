@@ -1,462 +1,555 @@
 const express = require('express');
-const { requireGraphAuth } = require('../middleware/graphAuth');
+const multer = require('multer');
+const XLSX = require('xlsx');
+const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
+const ExcelProcessor = require('../utils/excelProcessor');
+const EmailContentProcessor = require('../utils/emailContentProcessor');
 const router = express.Router();
 
-// Apply Graph authentication middleware to all routes
-router.use(requireGraphAuth);
+// Configure multer for file uploads
+const upload = multer({
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+            file.mimetype === 'application/vnd.ms-excel') {
+            cb(null, true);
+        } else {
+            cb(new Error('Only Excel files (.xlsx, .xls) are allowed'), false);
+        }
+    }
+});
 
-// Global email tracking storage (in production, use database)
-global.emailTracking = global.emailTracking || new Map();
+// Initialize processors
+const excelProcessor = new ExcelProcessor();
+const emailContentProcessor = new EmailContentProcessor();
 
 /**
- * Email Automation System with Read Receipt Tracking
- * Send emails through Microsoft Graph and track delivery/read status
+ * Email Automation Master List Management
+ * Handles Excel file operations, lead management, and campaign coordination
  */
 
-// Send email campaign
-router.post('/send-campaign', async (req, res) => {
+// Upload and merge Excel file with master list
+router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFile'), async (req, res) => {
     try {
-        const { 
-            leads, 
-            emailTemplate, 
-            subject, 
-            fromName = 'Lead Generation Team',
-            trackReads = true,
-            oneDriveFileId = null
-        } = req.body;
+        console.log('📤 Starting Excel file upload and merge...');
 
-        if (!leads || !Array.isArray(leads) || leads.length === 0) {
+        if (!req.file) {
             return res.status(400).json({
-                error: 'Validation Error',
-                message: 'Leads array is required and must not be empty'
+                success: false,
+                message: 'No Excel file provided'
             });
         }
 
-        if (!emailTemplate || !subject) {
+        console.log(`📊 Processing uploaded file: ${req.file.originalname} (${req.file.size} bytes)`);
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Parse uploaded Excel file
+        const uploadedLeads = excelProcessor.parseUploadedFile(req.file.buffer);
+
+        if (uploadedLeads.length === 0) {
             return res.status(400).json({
-                error: 'Validation Error',
-                message: 'Email template and subject are required'
+                success: false,
+                message: 'No valid leads found in uploaded file'
             });
         }
 
-        console.log(`📧 Starting email campaign for ${leads.length} leads...`);
+        // Check if master file exists, create if not
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        let masterWorkbook;
+        let existingData = [];
 
-        const campaignId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-        const results = [];
-        const errors = [];
+        try {
+            // Try to download existing master file
+            const files = await graphClient
+                .api(`/me/drive/root:${masterFolderPath}:/children`)
+                .filter(`name eq '${masterFileName}'`)
+                .get();
 
-        // Process leads in batches to respect Microsoft Graph rate limits
-        const batchSize = 10;
-        for (let i = 0; i < leads.length; i += batchSize) {
-            const batch = leads.slice(i, i + batchSize);
-            
-            const batchPromises = batch.map(async (lead, index) => {
-                try {
-                    const globalIndex = i + index;
-                    console.log(`📨 Sending email ${globalIndex + 1}/${leads.length} to ${lead.name} (${lead.email})`);
-
-                    const emailResult = await sendPersonalizedEmail(
-                        req.graphClient,
-                        lead,
-                        emailTemplate,
-                        subject,
-                        fromName,
-                        trackReads,
-                        campaignId
-                    );
-
-                    // Store tracking information
-                    const trackingId = `${campaignId}-${lead.email}`;
-                    global.emailTracking.set(trackingId, {
-                        campaignId,
-                        leadEmail: lead.email,
-                        leadName: lead.name,
-                        messageId: emailResult.messageId,
-                        status: 'sent',
-                        sentAt: new Date().toISOString(),
-                        readAt: null,
-                        repliedAt: null,
-                        oneDriveFileId: oneDriveFileId,
-                        trackingEnabled: trackReads
-                    });
-
-                    // Update OneDrive Excel if file ID provided
-                    if (oneDriveFileId) {
-                        try {
-                            await updateExcelTracking(req.graphClient, oneDriveFileId, lead.email, {
-                                sent: true,
-                                status: 'Sent',
-                                sentDate: new Date().toLocaleString()
-                            });
-                        } catch (excelError) {
-                            console.warn(`⚠️ Failed to update Excel for ${lead.email}:`, excelError.message);
-                        }
-                    }
-
-                    return {
-                        ...lead,
-                        email_sent: true,
-                        email_status: 'sent',
-                        sent_at: new Date().toISOString(),
-                        tracking_id: trackingId,
-                        message_id: emailResult.messageId
-                    };
-
-                } catch (error) {
-                    console.error(`❌ Failed to send email to ${lead.email}:`, error.message);
-                    errors.push({
-                        email: lead.email,
-                        name: lead.name,
-                        error: error.message
-                    });
-                    
-                    return {
-                        ...lead,
-                        email_sent: false,
-                        email_status: 'failed',
-                        error: error.message
-                    };
+            if (files.value.length > 0) {
+                console.log('📋 Found existing master file, downloading...');
+                const fileContent = await graphClient
+                    .api(`/me/drive/items/${files.value[0].id}/content`)
+                    .get();
+                
+                masterWorkbook = excelProcessor.bufferToWorkbook(fileContent);
+                
+                // Get existing leads data
+                const leadsSheet = masterWorkbook.Sheets['Leads'];
+                if (leadsSheet) {
+                    existingData = XLSX.utils.sheet_to_json(leadsSheet);
                 }
-            });
-
-            const batchResults = await Promise.all(batchPromises);
-            results.push(...batchResults);
-
-            // Add delay between batches to respect rate limits
-            if (i + batchSize < leads.length) {
-                await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+            } else {
+                console.log('📋 No master file found, creating new one...');
+                masterWorkbook = excelProcessor.createMasterFile();
             }
+        } catch (error) {
+            console.log('📋 Creating new master file due to error:', error.message);
+            masterWorkbook = excelProcessor.createMasterFile();
         }
 
-        console.log(`✅ Email campaign completed. Sent: ${results.filter(r => r.email_sent).length}, Failed: ${errors.length}`);
+        // Merge uploaded leads with existing data
+        const mergeResults = excelProcessor.mergeLeadsWithMaster(uploadedLeads, existingData);
+
+        if (mergeResults.newLeads.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No new leads to add - all leads already exist',
+                totalProcessed: mergeResults.totalProcessed,
+                newLeads: 0,
+                duplicates: mergeResults.duplicates.length,
+                duplicateDetails: mergeResults.duplicates
+            });
+        }
+
+        // Update master file with new leads
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads);
+
+        // Create folder if it doesn't exist
+        await createOneDriveFolder(graphClient, masterFolderPath);
+
+        // Save updated master file to OneDrive
+        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        await uploadToOneDrive(graphClient, masterBuffer, masterFileName, masterFolderPath);
+
+        console.log(`✅ Master file updated: ${mergeResults.newLeads.length} new leads added`);
 
         res.json({
             success: true,
-            campaignId: campaignId,
-            totalLeads: leads.length,
-            sent: results.filter(r => r.email_sent).length,
-            failed: errors.length,
-            results: results,
-            errors: errors.length > 0 ? errors : undefined,
-            trackingEnabled: trackReads,
-            oneDriveFileId: oneDriveFileId,
-            completedAt: new Date().toISOString()
+            message: 'Excel file uploaded and merged successfully',
+            totalProcessed: mergeResults.totalProcessed,
+            newLeads: mergeResults.newLeads.length,
+            duplicates: mergeResults.duplicates.length,
+            duplicateDetails: mergeResults.duplicates,
+            masterFile: {
+                name: masterFileName,
+                location: masterFolderPath,
+                totalLeads: existingData.length + mergeResults.newLeads.length
+            }
         });
 
     } catch (error) {
-        console.error('Email campaign error:', error);
+        console.error('❌ Excel upload error:', error);
         res.status(500).json({
-            error: 'Email Campaign Error',
-            message: 'Failed to send email campaign',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            success: false,
+            message: 'Failed to upload and process Excel file',
+            error: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
 
-// Get email tracking status
-router.get('/tracking/:campaignId', async (req, res) => {
+// Get master list data
+router.get('/master-list/data', requireDelegatedAuth, async (req, res) => {
     try {
-        const { campaignId } = req.params;
+        console.log('📋 Retrieving master list data...');
 
-        global.emailTracking = global.emailTracking || new Map();
+        const { limit = 100, offset = 0, status, campaign_stage } = req.query;
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Download master file
+        const masterWorkbook = await downloadMasterFile(graphClient);
         
-        const campaignEmails = Array.from(global.emailTracking.values())
-            .filter(tracking => tracking.campaignId === campaignId);
-
-        if (campaignEmails.length === 0) {
-            return res.status(404).json({
-                error: 'Campaign Not Found',
-                message: 'No tracking data found for this campaign'
+        if (!masterWorkbook) {
+            return res.json({
+                success: true,
+                data: [],
+                total: 0,
+                message: 'No master file found'
             });
         }
 
-        const summary = {
-            totalEmails: campaignEmails.length,
-            sent: campaignEmails.filter(e => e.status === 'sent').length,
-            read: campaignEmails.filter(e => e.readAt !== null).length,
-            replied: campaignEmails.filter(e => e.repliedAt !== null).length,
-            pending: campaignEmails.filter(e => e.status === 'sent' && !e.readAt).length
+        // Get leads data
+        const leadsSheet = masterWorkbook.Sheets['Leads'];
+        let leadsData = XLSX.utils.sheet_to_json(leadsSheet);
+
+        // Filter data if parameters provided
+        if (status) {
+            leadsData = leadsData.filter(lead => lead.Status === status);
+        }
+        if (campaign_stage) {
+            leadsData = leadsData.filter(lead => lead.Campaign_Stage === campaign_stage);
+        }
+
+        // Apply pagination
+        const total = leadsData.length;
+        const paginatedData = leadsData.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+
+        res.json({
+            success: true,
+            data: paginatedData,
+            total: total,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            hasMore: (parseInt(offset) + parseInt(limit)) < total
+        });
+
+    } catch (error) {
+        console.error('❌ Master list retrieval error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve master list',
+            error: error.message
+        });
+    }
+});
+
+// Get master list statistics
+router.get('/master-list/stats', requireDelegatedAuth, async (req, res) => {
+    try {
+        console.log('📊 Calculating master list statistics...');
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Download master file
+        const masterWorkbook = await downloadMasterFile(graphClient);
+        
+        if (!masterWorkbook) {
+            return res.json({
+                success: true,
+                data: {
+                    totalLeads: 0,
+                    dueToday: 0,
+                    emailsSent: 0,
+                    emailsRead: 0,
+                    repliesReceived: 0,
+                    statusBreakdown: {}
+                }
+            });
+        }
+
+        // Calculate statistics
+        const stats = excelProcessor.getMasterFileStats(masterWorkbook);
+
+        res.json({
+            success: true,
+            data: stats
+        });
+
+    } catch (error) {
+        console.error('❌ Statistics calculation error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to calculate statistics',
+            error: error.message
+        });
+    }
+});
+
+// Update lead information
+router.put('/master-list/lead/:email', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { email } = req.params;
+        const updates = req.body;
+
+        console.log(`📝 Updating lead: ${email}`);
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Download master file
+        const masterWorkbook = await downloadMasterFile(graphClient);
+        
+        if (!masterWorkbook) {
+            return res.status(404).json({
+                success: false,
+                message: 'Master file not found'
+            });
+        }
+
+        // Update lead in master file
+        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
+
+        // Save updated file
+        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+
+        console.log(`✅ Lead updated: ${email}`);
+
+        res.json({
+            success: true,
+            message: `Lead ${email} updated successfully`,
+            updatedFields: Object.keys(updates)
+        });
+
+    } catch (error) {
+        console.error('❌ Lead update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update lead',
+            error: error.message
+        });
+    }
+});
+
+// Get leads due for email today
+router.get('/master-list/due-today', requireDelegatedAuth, async (req, res) => {
+    try {
+        console.log('📅 Getting leads due for email today...');
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Download master file
+        const masterWorkbook = await downloadMasterFile(graphClient);
+        
+        if (!masterWorkbook) {
+            return res.json({
+                success: true,
+                data: [],
+                total: 0
+            });
+        }
+
+        // Get leads due today
+        const dueLeads = excelProcessor.getLeadsDueToday(masterWorkbook);
+
+        res.json({
+            success: true,
+            data: dueLeads,
+            total: dueLeads.length
+        });
+
+    } catch (error) {
+        console.error('❌ Due leads retrieval error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve due leads',
+            error: error.message
+        });
+    }
+});
+
+// Export master list to Excel
+router.get('/master-list/export', requireDelegatedAuth, async (req, res) => {
+    try {
+        console.log('📥 Exporting master list...');
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Download master file
+        const masterWorkbook = await downloadMasterFile(graphClient);
+        
+        if (!masterWorkbook) {
+            return res.status(404).json({
+                success: false,
+                message: 'Master file not found'
+            });
+        }
+
+        // Convert to buffer and send
+        const buffer = excelProcessor.workbookToBuffer(masterWorkbook);
+        
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+        const filename = `LGA-Master-Email-List-Export-${timestamp}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(buffer);
+
+    } catch (error) {
+        console.error('❌ Export error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to export master list',
+            error: error.message
+        });
+    }
+});
+
+// Send email to specific lead
+router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { email } = req.params;
+        const { emailChoice, customTemplate } = req.body;
+
+        console.log(`📧 Sending email to: ${email} using ${emailChoice}`);
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Download master file to get lead data and templates
+        const masterWorkbook = await downloadMasterFile(graphClient);
+        
+        if (!masterWorkbook) {
+            return res.status(404).json({
+                success: false,
+                message: 'Master file not found'
+            });
+        }
+
+        // Get lead data
+        const leadsSheet = masterWorkbook.Sheets['Leads'];
+        const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
+        const lead = leadsData.find(l => l.Email.toLowerCase() === email.toLowerCase());
+
+        if (!lead) {
+            return res.status(404).json({
+                success: false,
+                message: 'Lead not found'
+            });
+        }
+
+        // Get templates
+        const templates = excelProcessor.getTemplates(masterWorkbook);
+
+        // Process email content
+        const emailContent = await emailContentProcessor.processEmailContent(
+            lead, 
+            emailChoice || lead.Email_Choice || 'AI_Generated', 
+            templates
+        );
+
+        // Validate email content
+        const validation = emailContentProcessor.validateEmailContent(emailContent);
+        if (!validation.isValid) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid email content',
+                errors: validation.errors
+            });
+        }
+
+        // Send email using Microsoft Graph
+        const emailMessage = {
+            subject: emailContent.subject,
+            body: {
+                contentType: 'HTML',
+                content: emailContentProcessor.convertToHTML(emailContent)
+            },
+            toRecipients: [
+                {
+                    emailAddress: {
+                        address: lead.Email,
+                        name: lead.Name
+                    }
+                }
+            ]
         };
 
-        res.json({
-            success: true,
-            campaignId: campaignId,
-            summary: summary,
-            emails: campaignEmails.map(email => ({
-                email: email.leadEmail,
-                name: email.leadName,
-                status: email.status,
-                sentAt: email.sentAt,
-                readAt: email.readAt,
-                repliedAt: email.repliedAt
-            }))
+        await graphClient.api('/me/sendMail').post({
+            message: emailMessage,
+            saveToSentItems: true
         });
 
-    } catch (error) {
-        console.error('Email tracking error:', error);
-        res.status(500).json({
-            error: 'Tracking Error',
-            message: 'Failed to retrieve tracking data'
-        });
-    }
-});
+        // Update lead status in master file
+        const updates = {
+            Status: 'Sent',
+            Last_Email_Date: new Date().toISOString().split('T')[0],
+            Email_Count: (lead.Email_Count || 0) + 1,
+            Template_Used: emailContent.contentType,
+            Email_Content_Sent: emailContent.subject + '\n\n' + emailContent.body,
+            Next_Email_Date: excelProcessor.calculateNextEmailDate(new Date(), lead.Follow_Up_Days || 7),
+            'Email Sent': 'Yes',
+            'Email Status': 'Sent',
+            'Sent Date': new Date().toISOString()
+        };
 
-// Webhook endpoint for email read receipts and replies
-router.post('/webhook/notifications', async (req, res) => {
-    try {
-        const notifications = req.body.value || [];
-        
-        console.log(`📬 Received ${notifications.length} webhook notifications`);
+        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
+        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
-        for (const notification of notifications) {
-            try {
-                await processEmailNotification(req.graphClient, notification);
-            } catch (notificationError) {
-                console.error('Error processing notification:', notificationError);
-            }
-        }
-
-        // Always return 200 OK for webhook
-        res.status(200).json({ success: true });
-
-    } catch (error) {
-        console.error('Webhook processing error:', error);
-        // Still return 200 OK to avoid webhook retry loops
-        res.status(200).json({ success: true, error: error.message });
-    }
-});
-
-// Webhook validation endpoint
-router.get('/webhook/notifications', (req, res) => {
-    const validationToken = req.query.validationToken;
-    
-    if (validationToken) {
-        console.log('📬 Webhook validation received');
-        res.setHeader('Content-Type', 'text/plain');
-        res.status(200).send(validationToken);
-    } else {
-        res.status(400).json({ error: 'Missing validation token' });
-    }
-});
-
-// Create webhook subscription for email notifications
-router.post('/webhook/subscribe', async (req, res) => {
-    try {
-        const webhookUrl = process.env.RENDER_EXTERNAL_URL 
-            ? `${process.env.RENDER_EXTERNAL_URL}/api/email/webhook/notifications`
-            : `${req.protocol}://${req.get('host')}/api/email/webhook/notifications`;
-
-        console.log(`📬 Creating webhook subscription for: ${webhookUrl}`);
-
-        const subscription = await req.graphClient
-            .api('/subscriptions')
-            .post({
-                changeType: 'created,updated',
-                notificationUrl: webhookUrl,
-                resource: '/me/messages',
-                expirationDateTime: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
-                clientState: 'LGA-EmailTracking'
-            });
-
-        console.log(`✅ Webhook subscription created: ${subscription.id}`);
+        console.log(`✅ Email sent successfully to: ${email}`);
 
         res.json({
             success: true,
-            subscriptionId: subscription.id,
-            expirationDateTime: subscription.expirationDateTime,
-            notificationUrl: webhookUrl,
-            message: 'Webhook subscription created successfully'
-        });
-
-    } catch (error) {
-        console.error('Webhook subscription error:', error);
-        res.status(500).json({
-            error: 'Subscription Error',
-            message: 'Failed to create webhook subscription',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-});
-
-// Helper function to send personalized email
-async function sendPersonalizedEmail(client, lead, template, subject, fromName, trackReads, campaignId) {
-    // Personalize email content
-    const personalizedContent = template
-        .replace(/\{name\}/g, lead.name || 'there')
-        .replace(/\{company\}/g, lead.organization_name || 'your company')
-        .replace(/\{title\}/g, lead.title || '')
-        .replace(/\{industry\}/g, lead.industry || '');
-
-    const personalizedSubject = subject
-        .replace(/\{name\}/g, lead.name || 'there')
-        .replace(/\{company\}/g, lead.organization_name || 'your company');
-
-    // Add tracking pixel if read tracking is enabled
-    const trackingPixel = trackReads 
-        ? `<img src="${process.env.RENDER_EXTERNAL_URL}/api/email/track-read?id=${campaignId}-${lead.email}" width="1" height="1" style="display:none;" />`
-        : '';
-
-    const emailMessage = {
-        subject: personalizedSubject,
-        body: {
-            contentType: 'HTML',
-            content: personalizedContent + trackingPixel
-        },
-        toRecipients: [
-            {
-                emailAddress: {
-                    address: lead.email,
-                    name: lead.name
-                }
-            }
-        ],
-        from: {
-            emailAddress: {
-                name: fromName
-            }
-        }
-    };
-
-    // Send email
-    await client.api('/me/sendMail').post({
-        message: emailMessage,
-        saveToSentItems: true
-    });
-
-    return {
-        messageId: `${campaignId}-${lead.email}`, // Simplified message ID
-        success: true
-    };
-}
-
-// Helper function to process webhook notifications
-async function processEmailNotification(client, notification) {
-    try {
-        // Get the message details
-        const message = await client.api(`/me/messages/${notification.resourceData.id}`).get();
-        
-        // Check if this is related to our tracking
-        const messageId = message.id;
-        const conversationId = message.conversationId;
-        
-        // Find related tracking record
-        const trackingRecord = Array.from(global.emailTracking.values())
-            .find(tracking => 
-                message.subject.includes(tracking.leadEmail) || 
-                message.toRecipients.some(recipient => recipient.emailAddress.address === tracking.leadEmail)
-            );
-
-        if (trackingRecord) {
-            let updated = false;
-            
-            // Check if message was read (hasBeenRead property)
-            if (message.isRead && !trackingRecord.readAt) {
-                trackingRecord.readAt = new Date().toISOString();
-                trackingRecord.status = 'read';
-                updated = true;
-                console.log(`📖 Email read by ${trackingRecord.leadEmail}`);
-            }
-            
-            // Check if this is a reply
-            if (message.sender && message.sender.emailAddress.address === trackingRecord.leadEmail) {
-                trackingRecord.repliedAt = new Date().toISOString();
-                trackingRecord.status = 'replied';
-                updated = true;
-                console.log(`↩️ Email reply from ${trackingRecord.leadEmail}`);
-            }
-            
-            // Update Excel file if tracking record has OneDrive file ID
-            if (updated && trackingRecord.oneDriveFileId) {
-                try {
-                    await updateExcelTracking(client, trackingRecord.oneDriveFileId, trackingRecord.leadEmail, {
-                        sent: true,
-                        status: trackingRecord.status,
-                        sentDate: trackingRecord.sentAt ? new Date(trackingRecord.sentAt).toLocaleString() : '',
-                        readDate: trackingRecord.readAt ? new Date(trackingRecord.readAt).toLocaleString() : '',
-                        replyDate: trackingRecord.repliedAt ? new Date(trackingRecord.repliedAt).toLocaleString() : ''
-                    });
-                } catch (excelError) {
-                    console.warn(`⚠️ Failed to update Excel tracking:`, excelError.message);
-                }
-            }
-        }
-        
-    } catch (error) {
-        console.error('Error processing email notification:', error);
-    }
-}
-
-// Helper function to update Excel tracking (referenced from microsoft-graph.js)
-async function updateExcelTracking(client, fileId, leadEmail, trackingData) {
-    // This would make a call to the Excel update endpoint
-    // For now, we'll implement a simplified version
-    try {
-        const response = await fetch(`${process.env.RENDER_EXTERNAL_URL}/api/microsoft-graph/onedrive/update-excel-tracking`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
+            message: `Email sent successfully to ${email}`,
+            emailContent: {
+                subject: emailContent.subject,
+                contentType: emailContent.contentType,
+                variables: emailContent.variables
             },
-            body: JSON.stringify({
-                fileId,
-                leadEmail,
-                trackingData
-            })
+            leadUpdates: updates
         });
-        
-        if (!response.ok) {
-            throw new Error(`Excel update failed: ${response.statusText}`);
-        }
-        
-        return await response.json();
+
     } catch (error) {
-        console.error('Excel tracking update error:', error);
+        console.error('❌ Email sending error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send email',
+            error: error.message
+        });
+    }
+});
+
+// Helper function to download master file
+async function downloadMasterFile(graphClient) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            console.log('📋 Master file not found');
+            return null;
+        }
+
+        const fileContent = await graphClient
+            .api(`/me/drive/items/${files.value[0].id}/content`)
+            .get();
+
+        return excelProcessor.bufferToWorkbook(fileContent);
+    } catch (error) {
+        console.error('❌ Master file download error:', error);
+        return null;
+    }
+}
+
+// Helper function to create OneDrive folder
+async function createOneDriveFolder(client, folderPath) {
+    try {
+        await client.api(`/me/drive/root:${folderPath}`).get();
+        console.log(`📂 Folder ${folderPath} already exists`);
+    } catch (error) {
+        if (error.code === 'itemNotFound') {
+            const folderName = folderPath.split('/').pop();
+            const parentPath = folderPath.substring(0, folderPath.lastIndexOf('/')) || '/';
+            
+            await client.api(`/me/drive/root:${parentPath}:/children`).post({
+                name: folderName,
+                folder: {},
+                '@microsoft.graph.conflictBehavior': 'rename'
+            });
+            
+            console.log(`📂 Created folder: ${folderPath}`);
+        } else {
+            throw error;
+        }
+    }
+}
+
+// Helper function to upload file to OneDrive
+async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
+    try {
+        const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
+        
+        const result = await client.api(uploadUrl).put(fileBuffer);
+        
+        console.log(`📤 Uploaded file: ${filename} to ${folderPath}`);
+        
+        return {
+            id: result.id,
+            name: result.name,
+            webUrl: result.webUrl,
+            size: result.size
+        };
+    } catch (error) {
+        console.error('❌ OneDrive upload error:', error);
         throw error;
     }
 }
-
-// Pixel tracking endpoint for email read receipts
-router.get('/track-read', (req, res) => {
-    try {
-        const { id } = req.query;
-        
-        if (id && global.emailTracking.has(id)) {
-            const tracking = global.emailTracking.get(id);
-            
-            if (!tracking.readAt) {
-                tracking.readAt = new Date().toISOString();
-                tracking.status = 'read';
-                console.log(`📖 Email read tracked: ${tracking.leadEmail}`);
-                
-                // Update Excel file asynchronously
-                if (tracking.oneDriveFileId) {
-                    updateExcelTracking(null, tracking.oneDriveFileId, tracking.leadEmail, {
-                        sent: true,
-                        status: 'read',
-                        sentDate: tracking.sentAt ? new Date(tracking.sentAt).toLocaleString() : '',
-                        readDate: new Date(tracking.readAt).toLocaleString()
-                    }).catch(error => {
-                        console.warn('Failed to update Excel on read tracking:', error);
-                    });
-                }
-            }
-        }
-        
-        // Return 1x1 transparent pixel
-        const pixel = Buffer.from([
-            0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,
-            0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x21, 0xF9, 0x04, 0x01, 0x00, 0x00, 0x00,
-            0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02,
-            0x44, 0x01, 0x00, 0x3B
-        ]);
-        
-        res.setHeader('Content-Type', 'image/gif');
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.send(pixel);
-        
-    } catch (error) {
-        console.error('Read tracking error:', error);
-        res.status(200).send(''); // Always return success to avoid breaking email display
-    }
-});
 
 module.exports = router;
