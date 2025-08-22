@@ -12,7 +12,7 @@ const contentConfig = {
         maxContentLength: 50000,
         
         // Target output length for optimized content (characters)
-        targetOutputLength: 2500,
+        targetOutputLength: 3500,
         
         // Minimum segment length to consider for processing
         minSegmentLength: 30,
@@ -22,7 +22,7 @@ const contentConfig = {
         
         // Content quality thresholds
         qualityThresholds: {
-            minScore: 3,        // Minimum score to include segment
+            minScore: 1,        // Lowered from 3 - include more content segments
             highQuality: 7,     // Score threshold for high-quality content
             excellentQuality: 9 // Score threshold for excellent content
         }

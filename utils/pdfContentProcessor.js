@@ -87,13 +87,21 @@ class PDFContentProcessor {
             // Step 4: Select and compile best content
             const optimizedContent = this.compileOptimalContent(scoredContent, leadContext);
 
+            const originalLength = materials.reduce((sum, m) => sum + m.content.length, 0);
+            const compressionRatio = this.calculateCompressionRatio(materials, optimizedContent);
+            
             return {
                 success: true,
-                originalLength: materials.reduce((sum, m) => sum + m.content.length, 0),
+                originalLength: originalLength,
                 optimizedLength: optimizedContent.length,
-                compressionRatio: this.calculateCompressionRatio(materials, optimizedContent),
+                compressionRatio: compressionRatio,
                 content: optimizedContent,
-                metadata: this.generateMetadata(scoredContent, leadContext)
+                metadata: {
+                    ...this.generateMetadata(scoredContent, leadContext),
+                    compressionRatio: compressionRatio,  // Include in metadata for caching
+                    originalLength: originalLength,
+                    optimizedLength: optimizedContent.length
+                }
             };
 
         } catch (error) {
@@ -222,15 +230,15 @@ class PDFContentProcessor {
             let score = 0;
             const content = segment.content.toLowerCase();
 
-            // Base scoring by section type
+            // Base scoring by section type (optimized for insurance products)
             const typeScores = {
-                'products': 10,
-                'benefits': 8,
-                'coverage': 9,
-                'business': 7,
-                'pricing': 6,
-                'general': 3,
-                'contact': 2
+                'products': 12,     // Increased - most important for product details
+                'coverage': 11,     // Increased - coverage details are crucial
+                'benefits': 10,     // High priority for value propositions
+                'business': 8,      // Increased - business applications matter
+                'pricing': 7,       // Increased - pricing info is valuable
+                'general': 4,       // Increased from 3 - include more general content
+                'contact': 2        // Keep low priority
             };
             score += typeScores[segment.type] || 3;
 
@@ -292,7 +300,7 @@ class PDFContentProcessor {
         allSegments.sort((a, b) => b.score - a.score);
 
         // Build content within character limit
-        const maxChars = 2500;  // Leave room for other prompt content
+        const maxChars = 3500;  // Increased from 2500 for more comprehensive content
         let compiledContent = '';
         let currentLength = 0;
         const usedSources = new Set();
@@ -301,7 +309,7 @@ class PDFContentProcessor {
         const contentBySource = {};
         
         for (const segment of allSegments) {
-            if (segment.score < 3) break;  // Skip low-quality content
+            if (segment.score < 1) break;  // Lowered from 3 to 1 - include more content
             
             const segmentLength = segment.content.length;
             if (currentLength + segmentLength > maxChars) {
