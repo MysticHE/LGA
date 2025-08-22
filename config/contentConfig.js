@@ -203,7 +203,7 @@ const contentConfig = {
 
     // Feature flags
     features: {
-        enableAISummarization: true,     // Enable AI-powered summarization
+        enableAISummarization: false,    // Disabled - AI Analyzer removed to preserve specific product details
         enableIndustryOptimization: true, // Enable industry-specific optimization
         enableCaching: true,             // Enable content caching
         enableBatchProcessing: true,     // Enable batch processing for multiple files

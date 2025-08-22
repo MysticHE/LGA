@@ -305,58 +305,22 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
                 }
 
                 if (!optimizedResult) {
-                    console.log('🔄 Processing PDF materials with optimization engine...');
+                    console.log('🔄 Processing PDF materials with content optimization...');
                     
-                    // Step 1: Process content with our new engine
+                    // Process content with Content Processor (cleaning + intelligent extraction)
                     const processedResult = await contentProcessor.processContent(materials, leadContext);
                     
                     if (processedResult.success) {
-                        // Step 2: Apply AI optimization if available
-                        if (contentAnalyzer && config.features.enableAISummarization) {
-                            const analysisOptions = {
-                                type: 'industry',
-                                industry: leadContext.industry,
-                                role: leadContext.role,
-                                maxTokens: config.ai.tokenLimits.industry
-                            };
-                            
-                            const aiResult = await contentAnalyzer.analyzeContent(
-                                processedResult.content, 
-                                analysisOptions
-                            );
-                            
-                            if (aiResult.success) {
-                                optimizedResult = {
-                                    content: aiResult.analyzedContent,
-                                    metadata: {
-                                        ...processedResult.metadata,
-                                        aiOptimized: true,
-                                        tokensUsed: aiResult.tokensUsed,
-                                        compressionRatio: aiResult.compressionRatio
-                                    }
-                                };
-                            } else {
-                                // Fallback to processed content without AI optimization
-                                optimizedResult = {
-                                    content: processedResult.content,
-                                    metadata: {
-                                        ...processedResult.metadata,
-                                        aiOptimized: false,
-                                        fallbackReason: aiResult.error
-                                    }
-                                };
+                        // Use Content Processor output directly (no AI Analyzer)
+                        optimizedResult = {
+                            content: processedResult.content,
+                            metadata: {
+                                ...processedResult.metadata,
+                                aiOptimized: false,
+                                processingMethod: 'Content Processor Only',
+                                productsPreserved: true
                             }
-                        } else {
-                            // Use processed content without AI optimization
-                            optimizedResult = {
-                                content: processedResult.content,
-                                metadata: {
-                                    ...processedResult.metadata,
-                                    aiOptimized: false,
-                                    reason: 'AI analyzer not available'
-                                }
-                            };
-                        }
+                        };
                         
                         // Cache the result
                         if (config.cache.enabled && optimizedResult) {
@@ -387,11 +351,12 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
                 processingMetadata = optimizedResult.metadata;
 
                 const processingTime = Date.now() - startTime;
-                console.log(`📊 Content optimization completed in ${processingTime}ms:`, {
+                console.log(`📊 Content processing completed in ${processingTime}ms:`, {
                     originalLength: materials.reduce((sum, m) => sum + m.content.length, 0),
                     optimizedLength: productContext.length,
                     compressionRatio: processingMetadata?.compressionRatio?.toFixed(2) || 'N/A',
-                    aiOptimized: processingMetadata?.aiOptimized || false,
+                    processingMethod: processingMetadata?.processingMethod || 'Content Processor',
+                    productsPreserved: processingMetadata?.productsPreserved || true,
                     cached: !!optimizedResult
                 });
 
