@@ -6,6 +6,12 @@ const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const router = express.Router();
 
+// Import new content processing modules
+const PDFContentProcessor = require('../utils/pdfContentProcessor');
+const ContentAnalyzer = require('../utils/contentAnalyzer');
+const ContentCache = require('../utils/contentCache');
+const { getEnvironmentConfig } = require('../config/contentConfig');
+
 // Configure multer for memory storage
 const upload = multer({ 
     storage: multer.memoryStorage(),
@@ -19,6 +25,19 @@ if (process.env.OPENAI_API_KEY) {
         apiKey: process.env.OPENAI_API_KEY
     });
 }
+
+// Initialize content processing modules
+const config = getEnvironmentConfig();
+const contentProcessor = new PDFContentProcessor();
+const contentAnalyzer = openai ? new ContentAnalyzer(openai) : null;
+const contentCache = new ContentCache();
+
+console.log('📊 Content processing system initialized:', {
+    processor: !!contentProcessor,
+    analyzer: !!contentAnalyzer,
+    cache: !!contentCache,
+    cacheEnabled: config.cache.enabled
+});
 
 // Initialize product materials storage (in-memory, like job storage)
 global.productMaterials = global.productMaterials || new Map();
@@ -253,19 +272,135 @@ router.post('/generate-outreach', async (req, res) => {
     }
 });
 
-// Generate outreach content for a single lead
+// Generate outreach content for a single lead with optimized content processing
 async function generateOutreachContent(lead, useProductMaterials = false) {
-    // Get product materials context if requested and available
+    const startTime = Date.now();
     let productContext = '';
+    let processingMetadata = null;
+    
     if (useProductMaterials) {
         global.productMaterials = global.productMaterials || new Map();
         const materials = Array.from(global.productMaterials.values());
         
         if (materials.length > 0) {
-            // Combine all PDF content, but limit to stay within token limits
-            const allContent = materials.map(m => `${m.filename}:\n${m.content}`).join('\n\n---\n\n');
-            // Limit to ~3000 characters to leave room for other prompt content
-            productContext = allContent.substring(0, 3000) + (allContent.length > 3000 ? '\n\n[Content truncated for token limits]' : '');
+            try {
+                // Create lead context for optimization
+                const leadContext = {
+                    industry: lead.industry,
+                    role: lead.title,
+                    company: lead.organization_name,
+                    country: lead.country
+                };
+
+                // Check cache first
+                const cacheKey = materials.map(m => m.id).join('_');
+                let optimizedResult = null;
+                
+                if (config.cache.enabled) {
+                    optimizedResult = contentCache.getByIndustryRole(
+                        cacheKey, 
+                        leadContext.industry, 
+                        leadContext.role
+                    );
+                }
+
+                if (!optimizedResult) {
+                    console.log('🔄 Processing PDF materials with optimization engine...');
+                    
+                    // Step 1: Process content with our new engine
+                    const processedResult = await contentProcessor.processContent(materials, leadContext);
+                    
+                    if (processedResult.success) {
+                        // Step 2: Apply AI optimization if available
+                        if (contentAnalyzer && config.features.enableAISummarization) {
+                            const analysisOptions = {
+                                type: 'industry',
+                                industry: leadContext.industry,
+                                role: leadContext.role,
+                                maxTokens: config.ai.tokenLimits.industry
+                            };
+                            
+                            const aiResult = await contentAnalyzer.analyzeContent(
+                                processedResult.content, 
+                                analysisOptions
+                            );
+                            
+                            if (aiResult.success) {
+                                optimizedResult = {
+                                    content: aiResult.analyzedContent,
+                                    metadata: {
+                                        ...processedResult.metadata,
+                                        aiOptimized: true,
+                                        tokensUsed: aiResult.tokensUsed,
+                                        compressionRatio: aiResult.compressionRatio
+                                    }
+                                };
+                            } else {
+                                // Fallback to processed content without AI optimization
+                                optimizedResult = {
+                                    content: processedResult.content,
+                                    metadata: {
+                                        ...processedResult.metadata,
+                                        aiOptimized: false,
+                                        fallbackReason: aiResult.error
+                                    }
+                                };
+                            }
+                        } else {
+                            // Use processed content without AI optimization
+                            optimizedResult = {
+                                content: processedResult.content,
+                                metadata: {
+                                    ...processedResult.metadata,
+                                    aiOptimized: false,
+                                    reason: 'AI analyzer not available'
+                                }
+                            };
+                        }
+                        
+                        // Cache the result
+                        if (config.cache.enabled && optimizedResult) {
+                            contentCache.cacheByIndustryRole(
+                                cacheKey,
+                                leadContext.industry,
+                                leadContext.role,
+                                optimizedResult
+                            );
+                        }
+                    } else {
+                        // Fallback to old processing method
+                        console.warn('⚠️ Content processing failed, using fallback method');
+                        const allContent = materials.map(m => `${m.filename}:\n${m.content}`).join('\n\n---\n\n');
+                        optimizedResult = {
+                            content: allContent.substring(0, 3000) + (allContent.length > 3000 ? '\n\n[Content truncated - processing error]' : ''),
+                            metadata: {
+                                processed: false,
+                                fallbackReason: processedResult.error
+                            }
+                        };
+                    }
+                } else {
+                    console.log('✅ Using cached optimized content');
+                }
+
+                productContext = optimizedResult.content;
+                processingMetadata = optimizedResult.metadata;
+
+                const processingTime = Date.now() - startTime;
+                console.log(`📊 Content optimization completed in ${processingTime}ms:`, {
+                    originalLength: materials.reduce((sum, m) => sum + m.content.length, 0),
+                    optimizedLength: productContext.length,
+                    compressionRatio: processingMetadata?.compressionRatio?.toFixed(2) || 'N/A',
+                    aiOptimized: processingMetadata?.aiOptimized || false,
+                    cached: !!optimizedResult
+                });
+
+            } catch (error) {
+                console.error('❌ Content optimization error:', error);
+                // Fallback to simple processing
+                const allContent = materials.map(m => `${m.filename}:\n${m.content}`).join('\n\n---\n\n');
+                productContext = allContent.substring(0, 3000) + (allContent.length > 3000 ? '\n\n[Content processing error - using fallback]' : '');
+            }
         }
     }
 
@@ -1044,6 +1179,68 @@ router.get('/test', async (req, res) => {
         checks,
         message: allGood ? 'OpenAI integration ready' : 'OpenAI integration has issues'
     });
+});
+
+// Content processing info and cache statistics endpoint
+router.get('/content-processing-info', (req, res) => {
+    try {
+        const cacheInfo = contentCache.getCacheInfo();
+        const configInfo = {
+            processingEnabled: !!contentProcessor,
+            aiAnalysisEnabled: !!contentAnalyzer,
+            cacheEnabled: config.cache.enabled,
+            features: config.features,
+            aiConfig: {
+                model: config.ai.model,
+                tokenLimits: config.ai.tokenLimits,
+                rateLimiting: config.ai.rateLimiting
+            }
+        };
+
+        res.json({
+            success: true,
+            system: 'Content Processing Engine v1.0',
+            timestamp: new Date().toISOString(),
+            config: configInfo,
+            cache: cacheInfo,
+            materials: {
+                count: global.productMaterials?.size || 0,
+                totalSize: Array.from(global.productMaterials?.values() || [])
+                    .reduce((sum, m) => sum + m.content.length, 0)
+            }
+        });
+
+    } catch (error) {
+        console.error('Content processing info error:', error);
+        res.status(500).json({
+            error: 'Info Error',
+            message: 'Failed to get content processing information',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Clear content cache endpoint (useful for development)
+router.post('/clear-content-cache', (req, res) => {
+    try {
+        const beforeStats = contentCache.getStats();
+        contentCache.clear();
+        
+        res.json({
+            success: true,
+            message: 'Content cache cleared successfully',
+            clearedEntries: beforeStats.currentEntries,
+            stats: contentCache.getStats()
+        });
+
+    } catch (error) {
+        console.error('Clear cache error:', error);
+        res.status(500).json({
+            error: 'Cache Error',
+            message: 'Failed to clear content cache',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
 });
 
 module.exports = router;
