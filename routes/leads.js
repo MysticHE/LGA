@@ -407,7 +407,10 @@ Generate (6–10 words) that are:
 
 2. Email Body:
 
-Start with an opening with a personalized hook tied to their role or company context. Reference the company's industry challenges or growth stage to create relevance immediately. No "I hope you're well."
+EMAIL OPENING RULES:
+- Start with a natural sentence linking the company's business goals or industry context to the challenges addressed by insurance solutions.
+- Avoid generic phrases like "you are likely aware" or "as the CEO...".
+- Make it sound consultative and empathetic, not scripted.
 
 Second paragraph with 2–3 potential pain points in bullets form companies like theirs face (e.g. Abusive claims, rising costs, talent retention, limited coverage etc).
 
@@ -420,19 +423,17 @@ Lastly, call to action, Professional request for brief meeting/call.
 WRITING GUIDELINES:
 
 - Professional, consultative tone — talk with them, not at them
-- Short paragraphs + bullet points for easy scanning
-- Personalize naturally with company name & role
 - No generic "we offer insurance" pitches
 - No heavy jargon or long product descriptions
 - No passive CTAs like "looking forward to your reply"
-- Content generated in markdown format
+- Output in plain text, not Markdown
+- Use short paragraphs and simple bullet points for readability
+- No extra formatting symbols like **bold** or ---; just clear text formatting for email
 
 LANGUAGE & TONE RULES:
 - Avoid repetitive use of "yours," "your company," or "your team."
-- Use the company name (e.g., ${lead.organization_name}) naturally when referring to the organization or employees.
-- Alternate phrasing with terms like "the organization," "the leadership," "the workforce at ${lead.organization_name}," or "employees at ${lead.organization_name}."
-- Maintain a consultative, professional tone — avoid overly casual or familiar language.
-- Keep language clear, benefit-focused, and respectful of executive-level readers.
+- Maintain a consultative, professional tone — avoid overly casual or familiar language
+- Keep language clear, benefit-focused, and respectful of executive-level readers
 
 Make sure that you review the email content to achieve a rating of 10/10;
 - Hooks readers faster with benefit-focused subject lines
