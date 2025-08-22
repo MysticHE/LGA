@@ -411,17 +411,31 @@
                     showAuthStatus('🔑 Connecting to Microsoft 365...', 'info');
                     
                     // Initiate authentication
+                    console.log('🔍 Attempting to initiate Microsoft 365 login...');
                     const loginResponse = await fetch('/auth/login?redirect=/email-automation');
+                    
+                    console.log('📡 Login response status:', loginResponse.status);
+                    
+                    if (!loginResponse.ok) {
+                        const errorText = await loginResponse.text();
+                        console.error('❌ Login endpoint error:', errorText);
+                        showAuthStatus(`❌ Login service unavailable (${loginResponse.status})`, 'error');
+                        return;
+                    }
+                    
                     const loginData = await loginResponse.json();
+                    console.log('📋 Login response data:', loginData);
                     
                     if (loginData.success && loginData.authUrl) {
                         showAuthStatus('🔑 Redirecting to Microsoft 365 login...', 'info');
+                        console.log('🚀 Redirecting to:', loginData.authUrl);
                         
                         // Store sessionId and redirect to Microsoft auth
                         sessionStorage.setItem('pendingSessionId', loginData.sessionId);
                         window.location.href = loginData.authUrl;
                     } else {
-                        showAuthStatus('❌ Failed to initiate Microsoft 365 login', 'error');
+                        console.error('❌ Login failed:', loginData);
+                        showAuthStatus(`❌ Failed to initiate Microsoft 365 login: ${loginData.message || 'Unknown error'}`, 'error');
                     }
                 }
             } catch (error) {
@@ -1071,6 +1085,35 @@
                 alert('👁️ Template Preview\n\nPreview functionality coming soon!\n- Real-time preview\n- Sample data insertion\n- Mobile responsiveness check');
             }
         }
+
+        // Debug helper function - call this in browser console if needed
+        window.debugAuth = async function() {
+            console.log('🔧 DEBUG: Testing authentication endpoints...');
+            
+            try {
+                // Test auth status
+                console.log('1️⃣ Testing /auth/status...');
+                const statusResponse = await fetch('/auth/status');
+                const statusData = await statusResponse.json();
+                console.log('Status response:', statusData);
+                
+                // Test auth login
+                console.log('2️⃣ Testing /auth/login...');
+                const loginResponse = await fetch('/auth/login?redirect=/email-automation');
+                const loginData = await loginResponse.json();
+                console.log('Login response:', loginData);
+                
+                if (loginData.success && loginData.authUrl) {
+                    console.log('✅ Authentication endpoints working. Auth URL generated:', loginData.authUrl);
+                    console.log('💡 You can manually navigate to this URL to test login');
+                } else {
+                    console.error('❌ Authentication endpoint failed:', loginData);
+                }
+                
+            } catch (error) {
+                console.error('❌ Debug test failed:', error);
+            }
+        };
 
         // Filter master list based on search and status
         function filterMasterList() {
