@@ -52,6 +52,7 @@ app.use(rateLimiter);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname)); // Serve files from root directory (for styles, etc.)
 
 // API Routes
 app.use('/api/apollo', apolloRoutes);
