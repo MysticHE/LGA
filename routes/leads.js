@@ -369,63 +369,93 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
         }
     }
 
-    const prompt = `Professional SME Insurance Email Generator
-
-${productContext ? `PRODUCT MATERIALS & SERVICES (up to 3.5K characters):
+    const prompt = `${productContext ? `[IF PDF MATERIALS UPLOADED - up to 3.5K characters:]
+PRODUCT MATERIALS & SERVICES:
 ${productContext}
 
-Extract key selling points, specific coverage types, and unique value propositions from the above materials to create highly relevant insurance recommendations.
+Use this product information to generate tailored, benefit-focused email content aligned with the prospect's industry challenges and role priorities.
 ` : ''}
 
-PROSPECT INTELLIGENCE:
-Research "${lead.organization_name}" to understand:
-- Business model and operational risks specific to ${lead.industry}
-- Growth stage challenges requiring insurance protection
-- Regulatory compliance requirements in their sector
-- Common insurance gaps in companies of their size/industry
+PROSPECT RESEARCH
 
-LEAD PROFILE:
-- Name: ${lead.name}
-- Title: ${lead.title} 
-- Company: ${lead.organization_name}
-- Industry: ${lead.industry}
-- Location: ${lead.country}
-- LinkedIn: ${lead.linkedin_url || 'Not available'}
+Research the company "${lead.organization_name}" using your knowledge base to understand:
 
-TASK: Generate executive-level business email with consultative insurance advisory approach
+Their industry-specific risks, compliance needs, and potential insurance gaps
 
-📧 EXECUTIVE EMAIL STRUCTURE:
+Any recent growth, regulatory changes, or workforce developments
 
-Subject Line: [6-10 words - benefit-focused, specific to their industry challenges]
+Common challenges faced by similar companies in the same sector
 
-Email Body (180-250 words):
+LEAD INFORMATION:
 
-**Key Challenges**: Open with 1-2 specific risks/challenges facing ${lead.industry} companies like ${lead.organization_name}
+Name: ${lead.name}
 
-**Value Proposition**: Present 2-3 most relevant insurance solutions from materials that directly address these challenges
-- Include specific coverage types and benefits
-- Reference how these protect their business model
-- Mention compliance/regulatory benefits if applicable
+Title: ${lead.title}
 
-**Social Proof**: Brief example of similar ${lead.industry} company success (if relevant from materials)
+Company: ${lead.organization_name}
 
-**Professional CTA**: Suggest specific next step (risk assessment, coverage review, or brief consultation)
+Industry: ${lead.industry}
 
-ENHANCED WRITING STANDARDS:
-✅ Executive-level consultative tone - advisor to decision maker
-✅ Industry-specific risk awareness and business acumen
-✅ Specific product names and coverage types from materials
-✅ Quantifiable benefits where possible (cost savings, compliance, etc.)
-✅ Natural integration of company research and industry insights
-✅ Professional urgency without being pushy
-✅ Clear value proposition tied to their specific business context
+Location: ${lead.country}
 
-❌ Generic insurance sales language or broad coverage descriptions
-❌ Assumptions about current insurance status
-❌ Technical insurance jargon - use business impact language
-❌ One-size-fits-all approaches
+LinkedIn: ${lead.linkedin_url || 'Not available'}
 
-Output: Complete professional email ready for executive-level outreach.`;
+TASK:
+
+Create a personalized, consultative marketing email for SME insurance solutions focusing on:
+
+Risk mitigation
+
+Compliance
+
+Employee protection & retention
+
+Cost savings
+
+GENERATE:
+
+📧 PROFESSIONAL EMAIL (150–180 words)
+
+1. Subject Line:
+
+Generate (6–10 words each) that are:
+
+Benefit-driven (e.g., compliance, cost savings, risk reduction)
+
+Personalized with company or industry reference
+
+Clear, no jargon or vague phrasing
+
+2. Email Body:
+
+Opening (2 sentences): Reference the company's industry challenges or growth stage to create relevance immediately. No "I hope you're well."
+
+Key Challenges (Bulleted): 2–3 pain points companies like theirs face (e.g., compliance, rising costs, talent retention).
+
+Value Proposition (Bulleted): 2–3 insurance solutions from materials, described benefit-first (e.g., cost savings, risk reduction), then name the product.
+
+Social Proof: Briefly mention similar companies helped or results achieved.
+
+Call to Action: Suggest two specific time slots for a short call; make it easy to accept.
+
+WRITING GUIDELINES:
+
+✅ Professional, consultative tone — talk with them, not at them
+✅ Short paragraphs + bullet points for easy scanning
+✅ Benefit-led messaging before product names
+✅ Include A/B subject lines for testing
+✅ Personalize naturally with company name & role
+✅ Optional comparison tables if data available
+
+❌ No generic "we offer insurance" pitches
+❌ No heavy jargon or long product descriptions
+❌ No passive CTAs like "looking forward to your reply"
+
+Make sure that you review the email content to achieve a rating of 10/10;
+- Hooks readers faster with benefit-focused subject lines
+- Speaks to their challenges clearly and empathetically
+- Structures the email for easy reading with bullets and concise paragraphs
+- Makes the call-to-action specific and easy to accept`;
 
     try {
         const response = await openai.chat.completions.create({
