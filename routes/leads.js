@@ -419,21 +419,26 @@ Lastly, call to action, Professional request for brief meeting/call.
 
 WRITING GUIDELINES:
 
-✅ Professional, consultative tone — talk with them, not at them
-✅ Short paragraphs + bullet points for easy scanning
-✅ Personalize naturally with company name & role
+- Professional, consultative tone — talk with them, not at them
+- Short paragraphs + bullet points for easy scanning
+- Personalize naturally with company name & role
+- No generic "we offer insurance" pitches
+- No heavy jargon or long product descriptions
+- No passive CTAs like "looking forward to your reply"
+- Content generated in markdown format
 
-❌ No generic "we offer insurance" pitches
-❌ No heavy jargon or long product descriptions
-❌ No passive CTAs like "looking forward to your reply"
+LANGUAGE & TONE RULES:
+- Avoid repetitive use of "yours," "your company," or "your team."
+- Use the company name (e.g., ${lead.organization_name}) naturally when referring to the organization or employees.
+- Alternate phrasing with terms like "the organization," "the leadership," "the workforce at ${lead.organization_name}," or "employees at ${lead.organization_name}."
+- Maintain a consultative, professional tone — avoid overly casual or familiar language.
+- Keep language clear, benefit-focused, and respectful of executive-level readers.
 
 Make sure that you review the email content to achieve a rating of 10/10;
 - Hooks readers faster with benefit-focused subject lines
 - Speaks to their challenges clearly and empathetically
 - Structures the email for easy reading with bullets and concise paragraphs
-- Makes the call-to-action specific and easy to accept
-
-Content generated should be in markdown format.`;
+- Makes the call-to-action specific and easy to accept`;
 
     try {
         const response = await openai.chat.completions.create({
