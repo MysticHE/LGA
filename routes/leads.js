@@ -371,53 +371,61 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
 
     const prompt = `Professional SME Insurance Email Generator
 
-${productContext ? `PRODUCT MATERIALS & SERVICES:
+${productContext ? `PRODUCT MATERIALS & SERVICES (up to 3.5K characters):
 ${productContext}
 
-Use the above product information to create relevant and specific value propositions for the prospect's industry and role.
+Extract key selling points, specific coverage types, and unique value propositions from the above materials to create highly relevant insurance recommendations.
 ` : ''}
 
-PROSPECT RESEARCH:
-Research the company "${lead.organization_name}" using your knowledge base to understand:
-- Their business model and potential insurance needs
-- Recent company developments or industry challenges
-- Appropriate insurance solutions for their sector
+PROSPECT INTELLIGENCE:
+Research "${lead.organization_name}" to understand:
+- Business model and operational risks specific to ${lead.industry}
+- Growth stage challenges requiring insurance protection
+- Regulatory compliance requirements in their sector
+- Common insurance gaps in companies of their size/industry
 
-LEAD INFORMATION:
+LEAD PROFILE:
 - Name: ${lead.name}
-- Title: ${lead.title}
+- Title: ${lead.title} 
 - Company: ${lead.organization_name}
 - Industry: ${lead.industry}
 - Location: ${lead.country}
 - LinkedIn: ${lead.linkedin_url || 'Not available'}
 
-TASK: Create a professional, personalized email focused on SME insurance solutions
+TASK: Generate executive-level business email with consultative insurance advisory approach
 
-Generate:
-📧 PROFESSIONAL EMAIL:
+📧 EXECUTIVE EMAIL STRUCTURE:
 
-Subject Line: [Personalized 5-8 words addressing their potential insurance needs]
+Subject Line: [6-10 words - benefit-focused, specific to their industry challenges]
 
-Email Body (150-200 words):
-- Opening: Professional greeting with company-specific insight or industry reference
-- Value Proposition: Highlight 2-3 relevant insurance products/services from materials that match their industry
-- Business Case: Explain how these solutions address common challenges in their sector
-- Social Proof: Brief mention of similar companies we've helped (if relevant)
-- Call to Action: Professional request for brief meeting/call
+Email Body (180-250 words):
 
-WRITING GUIDELINES:
-✅ Professional, consultative tone matching their seniority level
-✅ Reference specific insurance products from uploaded materials (if available)
-✅ Focus on business value and risk mitigation
-✅ Include industry-specific insights about their company/sector
-✅ Sound like a knowledgeable insurance advisor, not a generic salesperson
-✅ Use their name and company name naturally throughout
-❌ No generic insurance pitches or templates
-❌ Don't oversell - focus on education and consultation
-❌ Avoid insurance jargon - use business language
-❌ Don't make assumptions about their current coverage
+**Key Challenges**: Open with 1-2 specific risks/challenges facing ${lead.industry} companies like ${lead.organization_name}
 
-Format the response as a complete email ready to send.`;
+**Value Proposition**: Present 2-3 most relevant insurance solutions from materials that directly address these challenges
+- Include specific coverage types and benefits
+- Reference how these protect their business model
+- Mention compliance/regulatory benefits if applicable
+
+**Social Proof**: Brief example of similar ${lead.industry} company success (if relevant from materials)
+
+**Professional CTA**: Suggest specific next step (risk assessment, coverage review, or brief consultation)
+
+ENHANCED WRITING STANDARDS:
+✅ Executive-level consultative tone - advisor to decision maker
+✅ Industry-specific risk awareness and business acumen
+✅ Specific product names and coverage types from materials
+✅ Quantifiable benefits where possible (cost savings, compliance, etc.)
+✅ Natural integration of company research and industry insights
+✅ Professional urgency without being pushy
+✅ Clear value proposition tied to their specific business context
+
+❌ Generic insurance sales language or broad coverage descriptions
+❌ Assumptions about current insurance status
+❌ Technical insurance jargon - use business impact language
+❌ One-size-fits-all approaches
+
+Output: Complete professional email ready for executive-level outreach.`;
 
     try {
         const response = await openai.chat.completions.create({
