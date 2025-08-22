@@ -373,44 +373,26 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
 PRODUCT MATERIALS & SERVICES:
 ${productContext}
 
-Use this product information to generate tailored, benefit-focused email content aligned with the prospect's industry challenges and role priorities.
-` : ''}
+Use this product information to generate tailored, benefit-focused email content aligned with the prospect's industry challenges and role priorities
 
-PROSPECT RESEARCH
+` : ''}PROSPECT RESEARCH
 
 Research the company "${lead.organization_name}" using your knowledge base to understand:
+Their industry-specific risks, potential insurance gaps, employee retention, wellness, medical needs
 
-Their industry-specific risks, compliance needs, and potential insurance gaps
-
-Any recent growth, regulatory changes, or workforce developments
-
-Common challenges faced by similar companies in the same sector
-
-LEAD INFORMATION:
+LEAD INFORMATION
 
 Name: ${lead.name}
-
 Title: ${lead.title}
-
 Company: ${lead.organization_name}
-
 Industry: ${lead.industry}
-
 Location: ${lead.country}
-
 LinkedIn: ${lead.linkedin_url || 'Not available'}
 
 TASK:
 
 Create a personalized, consultative marketing email for SME insurance solutions focusing on:
-
-Risk mitigation
-
-Compliance
-
-Employee protection & retention
-
-Cost savings
+Employee protection & retention, medical needs, health and wellness, cost savings
 
 GENERATE:
 
@@ -418,34 +400,28 @@ GENERATE:
 
 1. Subject Line:
 
-Generate (6–10 words each) that are:
-
-Benefit-driven (e.g., compliance, cost savings, risk reduction)
-
-Personalized with company or industry reference
-
-Clear, no jargon or vague phrasing
+Generate (6–10 words) that are:
+- Benefit-Oriented or pain point to capture attention
+- Personalized with company or industry reference
+- Clear, no jargon or vague phrasing
 
 2. Email Body:
 
-Opening (2 sentences): Reference the company's industry challenges or growth stage to create relevance immediately. No "I hope you're well."
+Start with an opening with a personalized hook tied to their role or company context. Reference the company's industry challenges or growth stage to create relevance immediately. No "I hope you're well."
 
-Key Challenges (Bulleted): 2–3 pain points companies like theirs face (e.g., compliance, rising costs, talent retention).
+Second paragraph with 2–3 potential pain points in bullets form companies like theirs face (e.g. Abusive claims, rising costs, talent retention, limited coverage etc).
 
-Value Proposition (Bulleted): 2–3 insurance solutions from materials, described benefit-first (e.g., cost savings, risk reduction), then name the product.
+Third paragraph name the product with 2–3 insurance solutions in bullets form from materials, described benefit-first.
 
-Social Proof: Briefly mention similar companies helped or results achieved.
+Forth paragraph, briefly mention similar companies helped or results achieved.
 
-Call to Action: Suggest two specific time slots for a short call; make it easy to accept.
+Lastly, call to action, Professional request for brief meeting/call.
 
 WRITING GUIDELINES:
 
 ✅ Professional, consultative tone — talk with them, not at them
 ✅ Short paragraphs + bullet points for easy scanning
-✅ Benefit-led messaging before product names
-✅ Include A/B subject lines for testing
 ✅ Personalize naturally with company name & role
-✅ Optional comparison tables if data available
 
 ❌ No generic "we offer insurance" pitches
 ❌ No heavy jargon or long product descriptions
@@ -455,7 +431,9 @@ Make sure that you review the email content to achieve a rating of 10/10;
 - Hooks readers faster with benefit-focused subject lines
 - Speaks to their challenges clearly and empathetically
 - Structures the email for easy reading with bullets and concise paragraphs
-- Makes the call-to-action specific and easy to accept`;
+- Makes the call-to-action specific and easy to accept
+
+Content generated should be in markdown format.`;
 
     try {
         const response = await openai.chat.completions.create({
