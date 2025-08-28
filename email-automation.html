@@ -69,9 +69,12 @@
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title" data-icon="📤">Upload Lead List</h3>
-                    <button class="btn btn-outline" onclick="showUploadHelp()" title="Upload Help">
-                        ❓ Help
-                    </button>
+                    <div>
+                        <span id="uploadAuthStatus" class="auth-status" style="margin-right: 10px;">🔄 Checking...</span>
+                        <button class="btn btn-outline" onclick="showUploadHelp()" title="Upload Help">
+                            ❓ Help
+                        </button>
+                    </div>
                 </div>
                 <div class="upload-area" onclick="document.getElementById('fileInput').click()">
                     <div class="upload-icon">📁</div>
@@ -517,6 +520,21 @@
             statusDiv.className = `auth-status auth-${type}`;
             messageDiv.textContent = message;
             statusDiv.classList.remove('hidden');
+            
+            // Update upload auth status indicator
+            const uploadAuthStatus = document.getElementById('uploadAuthStatus');
+            if (uploadAuthStatus) {
+                if (type === 'success') {
+                    uploadAuthStatus.innerHTML = '✅ Ready';
+                    uploadAuthStatus.style.color = '#10b981';
+                } else if (type === 'info') {
+                    uploadAuthStatus.innerHTML = '🔄 Connecting...';
+                    uploadAuthStatus.style.color = '#3b82f6';
+                } else {
+                    uploadAuthStatus.innerHTML = '❌ Not Connected';
+                    uploadAuthStatus.style.color = '#ef4444';
+                }
+            }
         }
 
         // Handle file upload
@@ -525,6 +543,17 @@
             const file = fileInput.files[0];
             
             if (!file) return;
+            
+            // Check authentication first
+            if (!sessionId) {
+                document.getElementById('uploadSummary').innerHTML = `
+                    <strong>🔑 Authentication Required</strong><br>
+                    Please connect to Microsoft 365 first.<br>
+                    <button onclick="initializeEmailAutomation()" class="btn btn-primary" style="margin-top: 10px;">Connect Now</button>
+                `;
+                document.getElementById('uploadResults').classList.remove('hidden');
+                return;
+            }
             
             console.log('📤 Uploading file:', file.name);
             
@@ -563,14 +592,37 @@
                         loadMasterList()
                     ]);
                 } else {
-                    throw new Error(result.message || 'Upload failed');
+                    // Handle specific error types
+                    if (response.status === 401 || result.error === 'Authentication Required') {
+                        document.getElementById('uploadSummary').innerHTML = `
+                            <strong>🔑 Authentication Expired</strong><br>
+                            Your Microsoft 365 session has expired. Please reconnect.<br>
+                            <button onclick="window.location.reload()" class="btn btn-primary" style="margin-top: 10px;">Reconnect</button>
+                        `;
+                        sessionId = null; // Reset session
+                    } else {
+                        document.getElementById('uploadSummary').innerHTML = `
+                            <strong>❌ Upload Failed</strong><br>
+                            ${result.message || 'Unknown error occurred'}
+                        `;
+                    }
+                    document.getElementById('uploadResults').classList.remove('hidden');
                 }
             } catch (error) {
                 console.error('❌ Upload error:', error);
-                document.getElementById('uploadSummary').innerHTML = `
-                    <strong>❌ Upload Failed</strong><br>
-                    ${error.message}
-                `;
+                
+                // Check if it's a network/server error
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    document.getElementById('uploadSummary').innerHTML = `
+                        <strong>🌐 Connection Error</strong><br>
+                        Unable to connect to server. Please check your internet connection and try again.
+                    `;
+                } else {
+                    document.getElementById('uploadSummary').innerHTML = `
+                        <strong>❌ Upload Failed</strong><br>
+                        ${error.message || 'An unexpected error occurred'}
+                    `;
+                }
                 document.getElementById('uploadResults').classList.remove('hidden');
             } finally {
                 document.getElementById('uploadProgress').classList.add('hidden');

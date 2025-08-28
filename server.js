@@ -47,12 +47,13 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
-app.use(rateLimiter);
-
-// Serve static files
+// Serve static files (before rate limiting)
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname)); // Serve files from root directory (for styles, etc.)
+
+// Rate limiting for API routes only
+app.use('/api', rateLimiter);
+app.use('/auth', rateLimiter);
 
 // API Routes
 app.use('/api/apollo', apolloRoutes);

@@ -16,6 +16,13 @@ const rateLimiterMiddleware = async (req, res, next) => {
             return next();
         }
         
+        // Exempt static files from rate limiting
+        const staticFileExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
+        const isStaticFile = staticFileExtensions.some(ext => req.path.toLowerCase().endsWith(ext));
+        if (isStaticFile || req.path === '/favicon.ico') {
+            return next();
+        }
+        
         // Use IP address as the key
         const key = req.ip || req.connection.remoteAddress;
         
