@@ -250,30 +250,38 @@ class ExcelProcessor {
 
     /**
      * Update master Excel file with new leads
+     * @param {object} existingWorkbook - The existing Excel workbook
+     * @param {array} newLeads - Array of new lead objects to add
+     * @param {array} existingData - Optional: Pre-extracted existing data (avoids re-extraction)
      */
-    updateMasterFileWithLeads(existingWorkbook, newLeads) {
+    updateMasterFileWithLeads(existingWorkbook, newLeads, existingData = null) {
         try {
             const leadsSheet = existingWorkbook.Sheets['Leads'];
-            let existingData = [];
+            let finalExistingData = [];
             
-            // Extract existing data from the workbook
-            if (leadsSheet && leadsSheet['!ref']) {
-                existingData = XLSX.utils.sheet_to_json(leadsSheet);
-                console.log(`📊 RAW EXISTING DATA: Found ${existingData.length} rows in master file`);
+            // Use pre-extracted data if provided, otherwise extract from workbook
+            if (existingData !== null) {
+                console.log(`✅ USING PRE-EXTRACTED DATA: ${existingData.length} existing leads provided`);
+                finalExistingData = existingData;
+            } else if (leadsSheet && leadsSheet['!ref']) {
+                console.log(`🔄 EXTRACTING FROM WORKBOOK: Re-extracting existing data from sheet`);
+                // Extract existing data from the workbook
+                let rawExistingData = XLSX.utils.sheet_to_json(leadsSheet);
+                console.log(`📊 RAW EXISTING DATA: Found ${rawExistingData.length} rows in master file`);
                 
                 // DEBUG: Show first few rows to understand data structure
-                if (existingData.length > 0) {
-                    console.log(`🔍 SAMPLE DATA STRUCTURE:`, Object.keys(existingData[0]));
+                if (rawExistingData.length > 0) {
+                    console.log(`🔍 SAMPLE DATA STRUCTURE:`, Object.keys(rawExistingData[0]));
                     console.log(`🔍 FIRST ROW EMAIL FIELD:`, {
-                        'Email': existingData[0].Email,
-                        'email': existingData[0].email,
-                        'Email_normalized': this.normalizeEmail(existingData[0].Email || existingData[0].email || '')
+                        'Email': rawExistingData[0].Email,
+                        'email': rawExistingData[0].email,
+                        'Email_normalized': this.normalizeEmail(rawExistingData[0].Email || rawExistingData[0].email || '')
                     });
                 }
                 
                 // More lenient filtering - check multiple email field variations and data indicators
-                const originalCount = existingData.length;
-                existingData = existingData.filter(row => {
+                const originalCount = rawExistingData.length;
+                finalExistingData = rawExistingData.filter(row => {
                     // Check for email field variations
                     const email = this.normalizeEmail(row.Email || row.email || '');
                     
@@ -290,23 +298,23 @@ class ExcelProcessor {
                     
                     return hasData;
                 });
-                console.log(`📊 FILTERED EXISTING DATA: ${existingData.length} valid rows after filtering (removed ${originalCount - existingData.length} empty rows)`);
+                console.log(`📊 FILTERED EXISTING DATA: ${finalExistingData.length} valid rows after filtering (removed ${originalCount - finalExistingData.length} empty rows)`);
             } else {
                 console.log(`⚠️ CRITICAL: No Leads sheet found or empty sheet reference`);
                 console.log(`📊 Leads sheet exists: ${!!leadsSheet}`);
                 console.log(`📊 Sheet reference: ${leadsSheet ? leadsSheet['!ref'] : 'null'}`);
             }
             
-            console.log(`🔍 MERGE DEBUG: ${existingData.length} existing + ${newLeads.length} new = ${existingData.length + newLeads.length} total`);
+            console.log(`🔍 MERGE DEBUG: ${finalExistingData.length} existing + ${newLeads.length} new = ${finalExistingData.length + newLeads.length} total`);
             
-            if (existingData.length === 0) {
+            if (finalExistingData.length === 0) {
                 console.log(`⚠️ WARNING: No existing data found - this will result in data replacement!`);
             } else {
-                console.log(`✅ APPEND MODE: Will preserve ${existingData.length} existing leads`);
+                console.log(`✅ APPEND MODE: Will preserve ${finalExistingData.length} existing leads`);
             }
             
             // Combine existing and new data (APPEND mode)
-            const combinedData = [...existingData, ...newLeads];
+            const combinedData = [...finalExistingData, ...newLeads];
             
             
             // Ensure all rows have the complete structure

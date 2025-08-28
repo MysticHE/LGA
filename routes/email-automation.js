@@ -187,7 +187,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
 
         // CRITICAL: Update master file - this should APPEND, not replace
         console.log(`🔧 UPDATING: Adding ${mergeResults.newLeads.length} leads to ${existingData.length} existing`);
-        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads);
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads, existingData);
 
         // Create folder if it doesn't exist
         await createOneDriveFolder(graphClient, masterFolderPath);
@@ -631,7 +631,7 @@ router.post('/master-list/merge-recovery', requireDelegatedAuth, upload.single('
         }
 
         // Update master file with recovered leads
-        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(currentMasterWorkbook, mergeResults.newLeads);
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(currentMasterWorkbook, mergeResults.newLeads, currentLeads);
 
         // Create folder if needed
         await createOneDriveFolder(graphClient, masterFolderPath);
@@ -716,7 +716,7 @@ router.post('/debug/test-upload-merge', requireDelegatedAuth, async (req, res) =
         // Step 3: Update master file
         console.log('Step 3: Updating master file...');
         const masterWorkbook = existingWorkbook || excelProcessor.createMasterFile();
-        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads);
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads, existingData);
 
         // Step 4: Upload to OneDrive
         console.log('Step 4: Uploading to OneDrive...');
