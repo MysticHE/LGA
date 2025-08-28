@@ -125,8 +125,16 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         // Create folder if it doesn't exist
         await createOneDriveFolder(graphClient, masterFolderPath);
 
-        // Save updated master file to OneDrive
+        // Save updated master file to OneDrive with proper headers
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        
+        // Add debug: verify buffer contains correct data before upload
+        console.log('🔍 DEBUG: Pre-upload verification...');
+        const testWorkbook = excelProcessor.bufferToWorkbook(masterBuffer);
+        const testSheet = testWorkbook.Sheets['Leads'];
+        const testData = testSheet ? XLSX.utils.sheet_to_json(testSheet) : [];
+        console.log(`🔍 DEBUG: Pre-upload verification - ${testData.length} rows in Leads sheet`);
+        
         await uploadToOneDrive(graphClient, masterBuffer, masterFileName, masterFolderPath);
 
         console.log(`✅ Master file updated: ${mergeResults.newLeads.length} new leads added`);
@@ -727,6 +735,24 @@ async function downloadMasterFile(graphClient) {
         }
 
         console.log(`✅ Master file downloaded successfully - converted to buffer of ${buffer.length} bytes`);
+        
+        // Create a test file locally to compare
+        console.log('🔍 DEBUG: Creating test file for comparison...');
+        const testLeads = [{
+            Name: 'Test User',
+            Email: 'test@example.com',
+            'Company Name': 'Test Company'
+        }];
+        
+        const testProcessor = new ExcelProcessor();
+        const testWorkbook = testProcessor.createMasterFile();
+        const testWithData = testProcessor.updateMasterFileWithLeads(testWorkbook, testProcessor.normalizeLeadsData(testLeads));
+        const testBuffer = testProcessor.workbookToBuffer(testWithData);
+        
+        console.log(`🔍 DEBUG: Local test file buffer: ${testBuffer.length} bytes`);
+        console.log(`🔍 DEBUG: OneDrive file buffer: ${buffer.length} bytes`);
+        console.log(`🔍 DEBUG: Buffer comparison - First 50 bytes match: ${buffer.slice(0, 50).equals(testBuffer.slice(0, 50))}`);
+        
         return excelProcessor.bufferToWorkbook(buffer);
     } catch (error) {
         console.error('❌ Master file download error:', error);
@@ -774,7 +800,13 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            const result = await client.api(uploadUrl).put(fileBuffer);
+            // Set proper headers for Excel file upload
+            const result = await client
+                .api(uploadUrl)
+                .headers({
+                    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                })
+                .put(fileBuffer);
             
             console.log(`✅ Successfully uploaded: ${filename} to ${folderPath}`);
             console.log(`📋 File details: ID=${result.id}, Size=${result.size} bytes`);
