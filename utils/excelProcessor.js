@@ -141,6 +141,15 @@ class ExcelProcessor {
         console.log(`🔄 Starting merge process:`);
         console.log(`   - Uploaded leads: ${uploadedLeads.length}`);
         console.log(`   - Existing leads in master: ${existingData.length}`);
+        
+        // DEBUG: Show sample of existing data structure if available
+        if (existingData.length > 0) {
+            console.log(`🔍 EXISTING DATA SAMPLE:`, {
+                firstEmail: existingData[0].Email || existingData[0].email,
+                firstCompany: existingData[0]['Company Name'] || existingData[0].company,
+                dataKeys: Object.keys(existingData[0]).slice(0, 10) // First 10 keys
+            });
+        }
 
         // Create a Set of existing emails for fast lookup with better normalization
         const existingEmails = new Set();
@@ -252,12 +261,36 @@ class ExcelProcessor {
                 existingData = XLSX.utils.sheet_to_json(leadsSheet);
                 console.log(`📊 RAW EXISTING DATA: Found ${existingData.length} rows in master file`);
                 
-                // Filter out completely empty rows
+                // DEBUG: Show first few rows to understand data structure
+                if (existingData.length > 0) {
+                    console.log(`🔍 SAMPLE DATA STRUCTURE:`, Object.keys(existingData[0]));
+                    console.log(`🔍 FIRST ROW EMAIL FIELD:`, {
+                        'Email': existingData[0].Email,
+                        'email': existingData[0].email,
+                        'Email_normalized': this.normalizeEmail(existingData[0].Email || existingData[0].email || '')
+                    });
+                }
+                
+                // More lenient filtering - check multiple email field variations and data indicators
+                const originalCount = existingData.length;
                 existingData = existingData.filter(row => {
+                    // Check for email field variations
                     const email = this.normalizeEmail(row.Email || row.email || '');
-                    return email && email.length > 0;
+                    
+                    // Check for other data indicators (Name, Company, Title) - if any exist, keep the row
+                    const hasData = email || 
+                                  (row.Name && row.Name.toString().trim().length > 0) ||
+                                  (row.name && row.name.toString().trim().length > 0) ||
+                                  (row['Company Name'] && row['Company Name'].toString().trim().length > 0) ||
+                                  (row.Title && row.Title.toString().trim().length > 0);
+                    
+                    if (!hasData) {
+                        console.log(`🗑️ FILTERED OUT EMPTY ROW:`, row);
+                    }
+                    
+                    return hasData;
                 });
-                console.log(`📊 FILTERED EXISTING DATA: ${existingData.length} valid rows after filtering`);
+                console.log(`📊 FILTERED EXISTING DATA: ${existingData.length} valid rows after filtering (removed ${originalCount - existingData.length} empty rows)`);
             } else {
                 console.log(`⚠️ CRITICAL: No Leads sheet found or empty sheet reference`);
                 console.log(`📊 Leads sheet exists: ${!!leadsSheet}`);
