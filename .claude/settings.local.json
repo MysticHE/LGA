@@ -29,12 +29,15 @@
       "Bash(npm test)",
       "mcp__context7__resolve-library-id",
       "mcp__context7__get-library-docs",
-      "Bash(npm:*)"
+      "Bash(npm:*)",
+      "Bash(git config:*)",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": [],
     "additionalDirectories": [
-      "C:\\c\\Users\\keyqu"
+      "C:\\c\\Users\\keyqu",
+      "C:\\c\\Users\\huien"
     ]
   }
 }

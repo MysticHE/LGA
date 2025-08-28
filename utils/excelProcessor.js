@@ -105,17 +105,27 @@ class ExcelProcessor {
      */
     parseUploadedFile(fileBuffer) {
         try {
+            console.log(`🔍 DEBUG: Parsing Excel file buffer of ${fileBuffer.length} bytes`);
+            
             const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+            console.log(`🔍 DEBUG: Found ${workbook.SheetNames.length} sheets:`, workbook.SheetNames);
+            
             const sheetName = workbook.SheetNames[0]; // Use first sheet
             const worksheet = workbook.Sheets[sheetName];
+            
+            console.log(`🔍 DEBUG: Using sheet "${sheetName}" with range:`, worksheet['!ref']);
+            
             const data = XLSX.utils.sheet_to_json(worksheet);
             
             console.log(`📊 Parsed ${data.length} rows from uploaded file`);
+            console.log(`🔍 DEBUG: First row sample:`, data[0]);
+            console.log(`🔍 DEBUG: Headers in file:`, Object.keys(data[0] || {}));
             
             // Normalize and validate data
             const validLeads = data.filter(row => this.isValidLead(row));
             
             console.log(`✅ ${validLeads.length} valid leads found`);
+            console.log(`🔍 DEBUG: First valid lead:`, validLeads[0]);
             
             return validLeads;
         } catch (error) {
@@ -241,8 +251,13 @@ class ExcelProcessor {
      */
     updateMasterFileWithLeads(existingWorkbook, newLeads) {
         try {
+            console.log(`🔍 DEBUG: Starting updateMasterFileWithLeads with ${newLeads.length} new leads`);
+            
             const leadsSheet = existingWorkbook.Sheets['Leads'];
             let existingData = XLSX.utils.sheet_to_json(leadsSheet);
+            
+            console.log(`🔍 DEBUG: Raw existing data from sheet: ${existingData.length} rows`);
+            console.log(`🔍 DEBUG: First existing row sample:`, existingData[0]);
             
             // Filter out empty rows (rows where all values are empty strings)
             existingData = existingData.filter(row => {
@@ -254,17 +269,32 @@ class ExcelProcessor {
             
             console.log(`📊 Filtered existing data: ${existingData.length} valid rows (removed empty rows)`);
             
+            // Debug: Show sample of new leads
+            console.log(`🔍 DEBUG: First 2 new leads sample:`, newLeads.slice(0, 2));
+            
             // Combine existing and new data
             const combinedData = [...existingData, ...newLeads];
             
             console.log(`📊 Final combined data: ${combinedData.length} total rows`);
+            console.log(`🔍 DEBUG: First combined row:`, combinedData[0]);
+            console.log(`🔍 DEBUG: Last combined row:`, combinedData[combinedData.length - 1]);
             
             // Create new sheet with combined data
             const newSheet = XLSX.utils.json_to_sheet(combinedData);
+            
+            // Debug: Check what the sheet looks like
+            console.log(`🔍 DEBUG: New sheet range:`, newSheet['!ref']);
+            console.log(`🔍 DEBUG: Sheet cell A1:`, newSheet['A1']);
+            console.log(`🔍 DEBUG: Sheet cell B1:`, newSheet['B1']);
+            console.log(`🔍 DEBUG: Sheet cell A2:`, newSheet['A2']);
+            
             newSheet['!cols'] = this.getColumnWidths();
             
             // Replace the leads sheet
             existingWorkbook.Sheets['Leads'] = newSheet;
+            
+            // Debug: Verify the workbook structure
+            console.log(`🔍 DEBUG: Workbook sheets:`, Object.keys(existingWorkbook.Sheets));
             
             return existingWorkbook;
         } catch (error) {
@@ -537,17 +567,59 @@ class ExcelProcessor {
     }
 
     /**
+     * DEBUG: Validate and inspect workbook contents  
+     */
+    debugWorkbook(workbook, description = 'Unknown') {
+        console.log(`🔍 DEBUG: Inspecting workbook - ${description}`);
+        
+        const sheets = Object.keys(workbook.Sheets);
+        console.log(`🔍 DEBUG: Available sheets:`, sheets);
+        
+        sheets.forEach(sheetName => {
+            const sheet = workbook.Sheets[sheetName];
+            const range = sheet['!ref'];
+            const data = XLSX.utils.sheet_to_json(sheet);
+            
+            console.log(`🔍 DEBUG: Sheet "${sheetName}":`);
+            console.log(`   - Range: ${range}`);
+            console.log(`   - Row count: ${data.length}`);
+            console.log(`   - First row:`, data[0]);
+            console.log(`   - Last row:`, data[data.length - 1]);
+            
+            // Check some specific cells
+            if (range) {
+                console.log(`   - Cell A1:`, sheet['A1']);
+                console.log(`   - Cell B1:`, sheet['B1']);
+                if (data.length > 0) {
+                    console.log(`   - Cell A2:`, sheet['A2']);
+                }
+            }
+        });
+    }
+
+    /**
      * Convert workbook to buffer for saving
      */
     workbookToBuffer(workbook) {
-        return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        console.log(`🔍 DEBUG: Converting workbook to buffer...`);
+        this.debugWorkbook(workbook, 'Before buffer conversion');
+        
+        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        console.log(`🔍 DEBUG: Buffer size: ${buffer.length} bytes`);
+        
+        return buffer;
     }
 
     /**
      * Create workbook from buffer
      */
     bufferToWorkbook(buffer) {
-        return XLSX.read(buffer, { type: 'buffer' });
+        console.log(`🔍 DEBUG: Reading workbook from buffer of ${buffer.length} bytes`);
+        
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        this.debugWorkbook(workbook, 'After reading from buffer');
+        
+        return workbook;
     }
 }
 

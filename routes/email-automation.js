@@ -392,6 +392,127 @@ router.get('/master-list/export', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+// DEBUG: Inspect master file contents
+router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
+    try {
+        console.log('🔍 DEBUG: Inspecting master file contents...');
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Download master file
+        const masterWorkbook = await downloadMasterFile(graphClient);
+        
+        if (!masterWorkbook) {
+            return res.json({
+                success: false,
+                message: 'Master file not found'
+            });
+        }
+
+        // Inspect the workbook structure
+        const sheets = Object.keys(masterWorkbook.Sheets);
+        const debugInfo = {
+            sheets: sheets,
+            sheetDetails: {}
+        };
+
+        // Inspect each sheet
+        sheets.forEach(sheetName => {
+            const sheet = masterWorkbook.Sheets[sheetName];
+            const range = sheet['!ref'];
+            const data = XLSX.utils.sheet_to_json(sheet);
+            
+            debugInfo.sheetDetails[sheetName] = {
+                range: range,
+                rowCount: data.length,
+                firstRow: data[0] || null,
+                lastRow: data[data.length - 1] || null,
+                sampleData: data.slice(0, 3)
+            };
+        });
+
+        res.json({
+            success: true,
+            debugInfo: debugInfo
+        });
+
+    } catch (error) {
+        console.error('❌ Debug inspection error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to inspect master file',
+            error: error.message
+        });
+    }
+});
+
+// DEBUG: Test Excel file creation locally
+router.post('/debug/test-excel-creation', async (req, res) => {
+    try {
+        console.log('🔍 DEBUG: Testing Excel file creation...');
+
+        // Create a test Excel file with sample data
+        const testLeads = [
+            {
+                Name: 'Test User 1',
+                Email: 'test1@example.com',
+                'Company Name': 'Test Company 1',
+                Title: 'CEO'
+            },
+            {
+                Name: 'Test User 2', 
+                Email: 'test2@example.com',
+                'Company Name': 'Test Company 2',
+                Title: 'CTO'
+            }
+        ];
+
+        const excelProcessor = new ExcelProcessor();
+        const normalizedLeads = excelProcessor.normalizeLeadsData(testLeads);
+        
+        console.log('🔍 DEBUG: Normalized test leads:', normalizedLeads);
+
+        // Create master file
+        const masterWorkbook = excelProcessor.createMasterFile();
+        
+        // Update with test leads
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, normalizedLeads);
+        
+        // Convert to buffer and inspect
+        const buffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        
+        console.log('🔍 DEBUG: Created Excel buffer size:', buffer.length);
+
+        // Read the buffer back to verify
+        const verifyWorkbook = excelProcessor.bufferToWorkbook(buffer);
+        const leadsSheet = verifyWorkbook.Sheets['Leads'];
+        const verifyData = XLSX.utils.sheet_to_json(leadsSheet);
+
+        res.json({
+            success: true,
+            testResults: {
+                originalLeads: testLeads,
+                normalizedLeads: normalizedLeads,
+                bufferSize: buffer.length,
+                verifiedData: verifyData,
+                sheetRange: leadsSheet['!ref'],
+                firstCell: leadsSheet['A1'],
+                secondCell: leadsSheet['B1']
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Excel creation test error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to test Excel creation',
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
 // Send email to specific lead
 router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
     try {
