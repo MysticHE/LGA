@@ -487,8 +487,11 @@ async function downloadMasterFile(graphClient) {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
+        // Handle path correctly for OneDrive API
+        const cleanPath = masterFolderPath.startsWith('/') ? masterFolderPath.substring(1) : masterFolderPath;
+        
         const files = await graphClient
-            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .api(`/me/drive/root:/${cleanPath}:/children`)
             .filter(`name eq '${masterFileName}'`)
             .get();
 
@@ -511,18 +514,39 @@ async function downloadMasterFile(graphClient) {
 // Helper function to create OneDrive folder
 async function createOneDriveFolder(client, folderPath) {
     try {
-        await client.api(`/me/drive/root:${folderPath}`).get();
+        // Handle root path correctly - remove leading slash for OneDrive API
+        const cleanPath = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
+        
+        if (!cleanPath) {
+            console.log(`📂 Root folder - no creation needed`);
+            return;
+        }
+        
+        // Check if folder exists
+        await client.api(`/me/drive/root:/${cleanPath}`).get();
         console.log(`📂 Folder ${folderPath} already exists`);
     } catch (error) {
         if (error.code === 'itemNotFound') {
             const folderName = folderPath.split('/').pop();
-            const parentPath = folderPath.substring(0, folderPath.lastIndexOf('/')) || '/';
+            const parentPath = folderPath.substring(0, folderPath.lastIndexOf('/'));
             
-            await client.api(`/me/drive/root:${parentPath}:/children`).post({
-                name: folderName,
-                folder: {},
-                '@microsoft.graph.conflictBehavior': 'rename'
-            });
+            // Create folder in correct location
+            if (parentPath && parentPath !== '/') {
+                // Create in subfolder
+                const cleanParentPath = parentPath.startsWith('/') ? parentPath.substring(1) : parentPath;
+                await client.api(`/me/drive/root:/${cleanParentPath}:/children`).post({
+                    name: folderName,
+                    folder: {},
+                    '@microsoft.graph.conflictBehavior': 'rename'
+                });
+            } else {
+                // Create in root
+                await client.api(`/me/drive/root/children`).post({
+                    name: folderName,
+                    folder: {},
+                    '@microsoft.graph.conflictBehavior': 'rename'
+                });
+            }
             
             console.log(`📂 Created folder: ${folderPath}`);
         } else {
@@ -534,7 +558,19 @@ async function createOneDriveFolder(client, folderPath) {
 // Helper function to upload file to OneDrive
 async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
     try {
-        const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
+        // Handle path correctly for OneDrive API
+        let uploadUrl;
+        const cleanPath = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
+        
+        if (cleanPath) {
+            // Upload to subfolder
+            uploadUrl = `/me/drive/root:/${cleanPath}/${filename}:/content`;
+        } else {
+            // Upload to root
+            uploadUrl = `/me/drive/root:/${filename}:/content`;
+        }
+        
+        console.log(`📤 Uploading to URL: ${uploadUrl}`);
         
         const result = await client.api(uploadUrl).put(fileBuffer);
         
