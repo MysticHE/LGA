@@ -325,10 +325,108 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
     }
 }
 
+// Convert existing Excel file to table format (MIGRATION ENDPOINT)
+router.post('/onedrive/convert-to-table', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { filePath, worksheetName = 'Leads', tableName = 'LeadsTable', forceConvert = false } = req.body;
+        
+        if (!filePath) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'File path is required'
+            });
+        }
+        
+        console.log(`🔄 Converting Excel file to table format: ${filePath}`);
+        
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        
+        // Clean file path
+        const cleanFilePath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
+        
+        // Check if file exists
+        const fileInfo = await getOneDriveFileInfo(graphClient, cleanFilePath);
+        if (!fileInfo) {
+            return res.status(404).json({
+                error: 'File Not Found',
+                message: `Excel file not found: ${filePath}`
+            });
+        }
+        
+        // Check if table already exists
+        const tableInfo = await getExcelTableInfo(graphClient, fileInfo.id, worksheetName, tableName);
+        
+        if (tableInfo && !forceConvert) {
+            return res.json({
+                success: true,
+                action: 'already_exists',
+                message: `Table '${tableName}' already exists in worksheet '${worksheetName}'`,
+                fileId: fileInfo.id,
+                filename: fileInfo.name,
+                tableId: tableInfo.id
+            });
+        }
+        
+        if (tableInfo && forceConvert) {
+            console.log(`⚠️ Table exists but forceConvert=true, will recreate table`);
+            // Delete existing table first
+            try {
+                await graphClient
+                    .api(`/me/drive/items/${fileInfo.id}/workbook/tables/${tableName}`)
+                    .delete();
+                console.log(`🗑️ Deleted existing table '${tableName}'`);
+            } catch (deleteError) {
+                console.log(`⚠️ Could not delete existing table: ${deleteError.message}`);
+            }
+        }
+        
+        // Get existing data from worksheet
+        const existingData = await getWorksheetData(graphClient, fileInfo.id, worksheetName);
+        
+        if (!existingData || existingData.length === 0) {
+            return res.json({
+                success: false,
+                action: 'no_data',
+                message: `No data found in worksheet '${worksheetName}' to convert`,
+                fileId: fileInfo.id,
+                filename: fileInfo.name
+            });
+        }
+        
+        // Convert existing data to table
+        await convertExistingDataToTable(graphClient, fileInfo.id, worksheetName, tableName, existingData);
+        
+        console.log(`✅ Successfully converted file to table format`);
+        
+        res.json({
+            success: true,
+            action: 'converted',
+            message: `Successfully converted ${existingData.length} rows to table format`,
+            fileId: fileInfo.id,
+            filename: fileInfo.name,
+            filePath: filePath,
+            worksheetName: worksheetName,
+            tableName: tableName,
+            rowsConverted: existingData.length,
+            convertedAt: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Table conversion failed:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Table Conversion Failed',
+            message: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
 // Test Excel table append functionality
 router.post('/onedrive/test-table-append', requireDelegatedAuth, async (req, res) => {
     try {
-        console.log('🧪 Testing Excel table append functionality...');
+        console.log('🧪 Testing Excel table append functionality with conversion...');
         
         // Sample test data
         const testLeads = [
@@ -606,28 +704,44 @@ async function createExcelTableInFile(client, fileId, worksheetName, tableName, 
 }
 
 /**
- * Create Excel table (wrapper for existing file)
+ * Create Excel table for existing file (handles existing data safely)
  * @param {Object} client - Microsoft Graph client
  * @param {string} fileId - OneDrive file ID
  * @param {string} worksheetName - Worksheet name
  * @param {string} tableName - Table name
- * @param {Array} leads - Lead data to determine structure
+ * @param {Array} newLeads - New lead data to append
  */
-async function createExcelTable(client, fileId, worksheetName, tableName, leads) {
+async function createExcelTable(client, fileId, worksheetName, tableName, newLeads) {
     try {
-        // Add some initial data to the worksheet first
-        const normalizedLeads = leads.slice(0, 3).map(lead => normalizeLeadData(lead));
+        console.log(`🔄 Creating table '${tableName}' for existing file...`);
         
-        // Clear and populate worksheet with initial data
-        await populateWorksheetWithData(client, fileId, worksheetName, normalizedLeads);
+        // Step 1: Check if worksheet has existing data
+        const existingData = await getWorksheetData(client, fileId, worksheetName);
         
-        // Create table
-        await createExcelTableInFile(client, fileId, worksheetName, tableName, normalizedLeads);
-        
-        // Append remaining data if any
-        if (leads.length > 3) {
-            const remainingLeads = leads.slice(3).map(lead => normalizeLeadData(lead));
-            await appendDataToExcelTable(client, fileId, tableName, remainingLeads);
+        if (existingData && existingData.length > 0) {
+            console.log(`📊 Found ${existingData.length} existing rows in worksheet`);
+            
+            // Step 2: Convert existing data to table format
+            await convertExistingDataToTable(client, fileId, worksheetName, tableName, existingData);
+            
+            // Step 3: Append new data to the newly created table
+            if (newLeads && newLeads.length > 0) {
+                console.log(`➕ Appending ${newLeads.length} new leads to converted table`);
+                await appendDataToExcelTable(client, fileId, tableName, newLeads);
+            }
+        } else {
+            console.log(`📝 No existing data found, creating table with new data only`);
+            
+            // No existing data, create table with new leads
+            const normalizedLeads = newLeads.slice(0, 5).map(lead => normalizeLeadData(lead));
+            await populateWorksheetWithData(client, fileId, worksheetName, normalizedLeads);
+            await createExcelTableInFile(client, fileId, worksheetName, tableName, normalizedLeads);
+            
+            // Append remaining leads if any
+            if (newLeads.length > 5) {
+                const remainingLeads = newLeads.slice(5).map(lead => normalizeLeadData(lead));
+                await appendDataToExcelTable(client, fileId, tableName, remainingLeads);
+            }
         }
         
     } catch (error) {
@@ -840,6 +954,152 @@ function normalizeLeadData(lead) {
         'Reply Date': '',
         'Last Updated': new Date().toISOString()
     };
+}
+
+/**
+ * Get existing data from worksheet
+ * @param {Object} client - Microsoft Graph client
+ * @param {string} fileId - OneDrive file ID
+ * @param {string} worksheetName - Worksheet name
+ * @returns {Array|null} Existing data or null if no data
+ */
+async function getWorksheetData(client, fileId, worksheetName) {
+    try {
+        console.log(`🔍 Checking for existing data in worksheet '${worksheetName}'...`);
+        
+        // Get used range of the worksheet
+        const rangeResponse = await client
+            .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/usedRange`)
+            .get();
+        
+        if (!rangeResponse || !rangeResponse.values || rangeResponse.values.length === 0) {
+            console.log(`📄 Worksheet '${worksheetName}' is empty`);
+            return null;
+        }
+        
+        const values = rangeResponse.values;
+        console.log(`📊 Found ${values.length} rows with data in worksheet`);
+        
+        // Convert array of arrays to array of objects
+        if (values.length < 2) {
+            // Only header row or no data
+            console.log(`⚠️ Only header row found, treating as empty`);
+            return null;
+        }
+        
+        const headers = values[0]; // First row as headers
+        const dataRows = values.slice(1); // Rest as data
+        
+        const existingData = dataRows.map(row => {
+            const dataObj = {};
+            headers.forEach((header, index) => {
+                dataObj[header] = row[index] || '';
+            });
+            return dataObj;
+        });
+        
+        console.log(`✅ Converted ${existingData.length} existing rows to object format`);
+        return existingData;
+        
+    } catch (error) {
+        if (error.code === 'itemNotFound' || error.code === 'InvalidArgument') {
+            console.log(`📄 Worksheet '${worksheetName}' appears to be empty or invalid range`);
+            return null;
+        }
+        console.error(`❌ Error reading worksheet data:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Convert existing data to table format
+ * @param {Object} client - Microsoft Graph client
+ * @param {string} fileId - OneDrive file ID
+ * @param {string} worksheetName - Worksheet name
+ * @param {string} tableName - Table name
+ * @param {Array} existingData - Existing data from worksheet
+ */
+async function convertExistingDataToTable(client, fileId, worksheetName, tableName, existingData) {
+    try {
+        console.log(`🔄 Converting ${existingData.length} existing rows to table format...`);
+        
+        // Step 1: Normalize existing data to match our expected structure
+        const normalizedExistingData = existingData.map(row => {
+            // Try to map existing columns to our standard structure
+            const normalizedRow = normalizeLeadData(row);
+            
+            // Preserve any additional columns that exist in the original data
+            Object.keys(row).forEach(key => {
+                if (!normalizedRow.hasOwnProperty(key) && row[key]) {
+                    normalizedRow[key] = row[key];
+                }
+            });
+            
+            return normalizedRow;
+        });
+        
+        // Step 2: Get all unique headers from both existing and standard structure
+        const allHeaders = new Set();
+        normalizedExistingData.forEach(row => {
+            Object.keys(row).forEach(key => allHeaders.add(key));
+        });
+        
+        const finalHeaders = Array.from(allHeaders);
+        console.log(`📋 Table will include columns: ${finalHeaders.join(', ')}`);
+        
+        // Step 3: Clear the worksheet and rewrite with normalized data
+        console.log(`🧹 Clearing worksheet to prepare for table creation...`);
+        
+        // Clear the used range
+        try {
+            await client
+                .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/usedRange`)
+                .patch({ values: [[]] }); // Clear content
+        } catch (clearError) {
+            console.log(`⚠️ Could not clear worksheet (might already be empty): ${clearError.message}`);
+        }
+        
+        // Step 4: Write headers and data in table format
+        const tableData = [finalHeaders]; // Header row
+        normalizedExistingData.forEach(row => {
+            const dataRow = finalHeaders.map(header => String(row[header] || ''));
+            tableData.push(dataRow);
+        });
+        
+        // Calculate range for the table
+        const numCols = finalHeaders.length;
+        const numRows = tableData.length;
+        const endCol = getExcelColumnLetter(numCols);
+        const tableRange = `A1:${endCol}${numRows}`;
+        
+        console.log(`📝 Writing ${normalizedExistingData.length} rows to range ${tableRange}...`);
+        
+        // Write the data to worksheet
+        await client
+            .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/range(address='${tableRange}')`)
+            .patch({
+                values: tableData
+            });
+        
+        // Step 5: Create table from the written data
+        console.log(`🗂️ Creating table '${tableName}' from existing data...`);
+        
+        const tableRequest = {
+            address: tableRange,
+            hasHeaders: true,
+            name: tableName
+        };
+        
+        await client
+            .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/tables/add`)
+            .post(tableRequest);
+        
+        console.log(`✅ Successfully converted ${normalizedExistingData.length} existing rows to table '${tableName}'`);
+        
+    } catch (error) {
+        console.error(`❌ Error converting existing data to table:`, error);
+        throw error;
+    }
 }
 
 /**
