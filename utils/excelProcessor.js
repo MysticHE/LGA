@@ -254,20 +254,24 @@ class ExcelProcessor {
             console.log(`🔍 DEBUG: Starting updateMasterFileWithLeads with ${newLeads.length} new leads`);
             
             const leadsSheet = existingWorkbook.Sheets['Leads'];
-            let existingData = XLSX.utils.sheet_to_json(leadsSheet);
+            let existingData = [];
             
-            console.log(`🔍 DEBUG: Raw existing data from sheet: ${existingData.length} rows`);
-            console.log(`🔍 DEBUG: First existing row sample:`, existingData[0]);
-            
-            // Filter out empty rows (rows where all values are empty strings)
-            existingData = existingData.filter(row => {
-                // Check if the row has any non-empty values
-                return Object.values(row).some(value => 
-                    value !== null && value !== undefined && value !== ''
-                );
-            });
-            
-            console.log(`📊 Filtered existing data: ${existingData.length} valid rows (removed empty rows)`);
+            // Safely extract existing data
+            if (leadsSheet && leadsSheet['!ref']) {
+                existingData = XLSX.utils.sheet_to_json(leadsSheet);
+                console.log(`🔍 DEBUG: Raw existing data from sheet: ${existingData.length} rows`);
+                
+                // More conservative empty row filtering - only remove completely empty rows
+                existingData = existingData.filter(row => {
+                    // Check if the row has at least an email (primary key)
+                    const email = this.normalizeEmail(row.Email || row.email || '');
+                    return email && email.length > 0;
+                });
+                
+                console.log(`📊 Filtered existing data: ${existingData.length} valid rows (kept rows with valid emails)`);
+            } else {
+                console.log(`🔍 DEBUG: No existing Leads sheet or empty sheet - starting fresh`);
+            }
             
             // Debug: Show sample of new leads
             console.log(`🔍 DEBUG: First 2 new leads sample:`, newLeads.slice(0, 2));
@@ -279,8 +283,20 @@ class ExcelProcessor {
             console.log(`🔍 DEBUG: First combined row:`, combinedData[0]);
             console.log(`🔍 DEBUG: Last combined row:`, combinedData[combinedData.length - 1]);
             
-            // Create new sheet with combined data
-            const newSheet = XLSX.utils.json_to_sheet(combinedData);
+            // Ensure all rows have the complete structure
+            const normalizedData = combinedData.map(row => {
+                const normalized = {};
+                // Start with master file structure defaults
+                Object.keys(this.masterFileStructure).forEach(key => {
+                    normalized[key] = row[key] || '';
+                });
+                return normalized;
+            });
+            
+            // Create new sheet with normalized combined data
+            const newSheet = XLSX.utils.json_to_sheet(normalizedData, {
+                header: Object.keys(this.masterFileStructure)
+            });
             
             // Debug: Check what the sheet looks like
             console.log(`🔍 DEBUG: New sheet range:`, newSheet['!ref']);
@@ -290,11 +306,17 @@ class ExcelProcessor {
             
             newSheet['!cols'] = this.getColumnWidths();
             
-            // Replace the leads sheet
+            // Replace the leads sheet (this is necessary for proper Excel formatting)
             existingWorkbook.Sheets['Leads'] = newSheet;
             
             // Debug: Verify the workbook structure
             console.log(`🔍 DEBUG: Workbook sheets:`, Object.keys(existingWorkbook.Sheets));
+            
+            // Final verification - read back the data to ensure it's correct
+            const verificationData = XLSX.utils.sheet_to_json(newSheet);
+            console.log(`✅ VERIFICATION: Final sheet has ${verificationData.length} rows`);
+            console.log(`✅ VERIFICATION: First row has email: ${verificationData[0]?.Email}`);
+            console.log(`✅ VERIFICATION: Last row has email: ${verificationData[verificationData.length - 1]?.Email}`);
             
             return existingWorkbook;
         } catch (error) {
@@ -604,8 +626,8 @@ class ExcelProcessor {
         console.log(`🔍 DEBUG: Converting workbook to buffer...`);
         this.debugWorkbook(workbook, 'Before buffer conversion');
         
-        // Use xlsm format to prevent OneDrive auto-processing
-        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsm' });
+        // Use xlsx format for better OneDrive compatibility
+        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
         console.log(`🔍 DEBUG: Buffer size: ${buffer.length} bytes`);
         
         return buffer;

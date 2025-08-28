@@ -58,8 +58,8 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         }
 
         // Check if master file exists, create if not  
-        // Use .xlsm extension to prevent OneDrive auto-processing
-        const masterFileName = 'LGA-Master-Email-List.xlsm';
+        // Use .xlsx extension for better OneDrive compatibility
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
         let masterWorkbook;
@@ -135,8 +135,27 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         const testSheet = testWorkbook.Sheets['Leads'];
         const testData = testSheet ? XLSX.utils.sheet_to_json(testSheet) : [];
         console.log(`🔍 DEBUG: Pre-upload verification - ${testData.length} rows in Leads sheet`);
+        console.log(`🔍 DEBUG: Pre-upload first row:`, testData[0]);
+        console.log(`🔍 DEBUG: Pre-upload last row:`, testData[testData.length - 1]);
         
         await uploadToOneDrive(graphClient, masterBuffer, masterFileName, masterFolderPath);
+
+        // Post-upload verification: Download and check what was actually saved
+        console.log('🔍 DEBUG: Post-upload verification...');
+        try {
+            const verificationWorkbook = await downloadMasterFile(graphClient);
+            if (verificationWorkbook) {
+                const verifySheet = verificationWorkbook.Sheets['Leads'];
+                const verifyData = verifySheet ? XLSX.utils.sheet_to_json(verifySheet) : [];
+                console.log(`🔍 DEBUG: Post-upload verification - ${verifyData.length} rows actually saved`);
+                console.log(`🔍 DEBUG: Post-upload first row:`, verifyData[0]);
+                console.log(`🔍 DEBUG: Post-upload last row:`, verifyData[verifyData.length - 1]);
+            } else {
+                console.log('❌ DEBUG: Could not download file for verification');
+            }
+        } catch (verifyError) {
+            console.error('❌ DEBUG: Post-upload verification failed:', verifyError.message);
+        }
 
         console.log(`✅ Master file updated: ${mergeResults.newLeads.length} new leads added`);
         console.log(`🎉 Upload completed successfully - Master file ready in OneDrive`);
@@ -305,7 +324,7 @@ router.put('/master-list/lead/:email', requireDelegatedAuth, async (req, res) =>
 
         // Save updated file
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsm', '/LGA-Email-Automation');
+        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Lead updated: ${email}`);
 
@@ -452,6 +471,99 @@ router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
             success: false,
             message: 'Failed to inspect master file',
             error: error.message
+        });
+    }
+});
+
+// DEBUG: Test upload and merge process
+router.post('/debug/test-upload-merge', requireDelegatedAuth, async (req, res) => {
+    try {
+        console.log('🔍 DEBUG: Testing upload and merge process...');
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Create test upload data
+        const testUploadLeads = [
+            {
+                Name: 'Test User 1',
+                Email: 'test1@example.com',
+                'Company Name': 'Test Company 1',
+                Title: 'CEO'
+            },
+            {
+                Name: 'Test User 2', 
+                Email: 'test2@example.com',
+                'Company Name': 'Test Company 2',
+                Title: 'CTO'
+            }
+        ];
+
+        // Step 1: Try to download existing master file
+        console.log('Step 1: Downloading existing master file...');
+        const existingWorkbook = await downloadMasterFile(graphClient);
+        let existingData = [];
+        
+        if (existingWorkbook) {
+            const leadsSheet = existingWorkbook.Sheets['Leads'];
+            existingData = leadsSheet ? XLSX.utils.sheet_to_json(leadsSheet) : [];
+            console.log(`Found existing master file with ${existingData.length} leads`);
+        } else {
+            console.log('No existing master file found');
+        }
+
+        // Step 2: Merge test data with existing
+        console.log('Step 2: Merging test data...');
+        const mergeResults = excelProcessor.mergeLeadsWithMaster(testUploadLeads, existingData);
+        
+        if (mergeResults.newLeads.length === 0) {
+            return res.json({
+                success: true,
+                message: 'Test aborted - no new leads to add (all test emails already exist)',
+                existingCount: existingData.length,
+                testLeads: testUploadLeads,
+                duplicates: mergeResults.duplicates
+            });
+        }
+
+        // Step 3: Update master file
+        console.log('Step 3: Updating master file...');
+        const masterWorkbook = existingWorkbook || excelProcessor.createMasterFile();
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads);
+
+        // Step 4: Upload to OneDrive
+        console.log('Step 4: Uploading to OneDrive...');
+        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+
+        // Step 5: Verification
+        console.log('Step 5: Verifying upload...');
+        const verificationWorkbook = await downloadMasterFile(graphClient);
+        const verifyData = verificationWorkbook ? 
+            XLSX.utils.sheet_to_json(verificationWorkbook.Sheets['Leads']) : [];
+
+        res.json({
+            success: true,
+            testResults: {
+                originalExisting: existingData.length,
+                testLeadsUploaded: testUploadLeads.length,
+                newLeadsAdded: mergeResults.newLeads.length,
+                duplicatesFound: mergeResults.duplicates.length,
+                finalVerificationCount: verifyData.length,
+                expectedTotal: existingData.length + mergeResults.newLeads.length,
+                dataIntegrityCheck: verifyData.length === (existingData.length + mergeResults.newLeads.length),
+                firstRowAfterUpload: verifyData[0],
+                lastRowAfterUpload: verifyData[verifyData.length - 1]
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Upload merge test error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to test upload merge',
+            error: error.message,
+            stack: error.stack
         });
     }
 });
@@ -612,7 +724,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 
         const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsm', '/LGA-Email-Automation');
+        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Email sent successfully to: ${email}`);
 
@@ -640,7 +752,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 // Helper function to download master file
 async function downloadMasterFile(graphClient) {
     try {
-        const masterFileName = 'LGA-Master-Email-List.xlsm';
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
         console.log(`📥 Attempting to download master file from: ${masterFolderPath}`);
@@ -805,7 +917,7 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
             const result = await client
                 .api(uploadUrl)
                 .headers({
-                    'Content-Type': 'application/vnd.ms-excel.sheet.macroEnabled.12'
+                    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 })
                 .put(fileBuffer);
             
