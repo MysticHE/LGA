@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
@@ -140,21 +141,46 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         
         await uploadToOneDrive(graphClient, masterBuffer, masterFileName, masterFolderPath);
 
-        // Post-upload verification: Download and check what was actually saved
-        console.log('🔍 DEBUG: Post-upload verification...');
+        // Post-upload verification with extended wait time
+        console.log('🔍 DEBUG: Post-upload verification (waiting 5 seconds for OneDrive processing)...');
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+        
         try {
             const verificationWorkbook = await downloadMasterFile(graphClient);
-            if (verificationWorkbook) {
+            if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
                 const verifySheet = verificationWorkbook.Sheets['Leads'];
-                const verifyData = verifySheet ? XLSX.utils.sheet_to_json(verifySheet) : [];
+                const verifyData = XLSX.utils.sheet_to_json(verifySheet);
                 console.log(`🔍 DEBUG: Post-upload verification - ${verifyData.length} rows actually saved`);
                 console.log(`🔍 DEBUG: Post-upload first row:`, verifyData[0]);
                 console.log(`🔍 DEBUG: Post-upload last row:`, verifyData[verifyData.length - 1]);
+                
+                // Check data integrity
+                const expectedCount = existingData.length + mergeResults.newLeads.length;
+                if (verifyData.length !== expectedCount) {
+                    console.error(`❌ DATA INTEGRITY ERROR: Expected ${expectedCount} rows, got ${verifyData.length} rows`);
+                    throw new Error(`Data integrity check failed: Expected ${expectedCount} rows, got ${verifyData.length} rows`);
+                } else {
+                    console.log(`✅ DATA INTEGRITY CHECK: Passed - ${verifyData.length} rows as expected`);
+                }
             } else {
-                console.log('❌ DEBUG: Could not download file for verification');
+                console.error('❌ DEBUG: Post-upload verification failed - no Leads sheet found');
+                throw new Error('Post-upload verification failed: No Leads sheet found in uploaded file');
             }
         } catch (verifyError) {
             console.error('❌ DEBUG: Post-upload verification failed:', verifyError.message);
+            
+            // If verification fails, this is a critical error - don't claim success
+            return res.status(500).json({
+                success: false,
+                message: 'File uploaded but verification failed - data may not have been saved correctly',
+                error: verifyError.message,
+                troubleshooting: {
+                    suggestion: 'Please check your OneDrive file manually and try again if data is missing',
+                    expectedRows: existingData.length + mergeResults.newLeads.length,
+                    uploadedRows: mergeResults.newLeads.length,
+                    existingRows: existingData.length
+                }
+            });
         }
 
         console.log(`✅ Master file updated: ${mergeResults.newLeads.length} new leads added`);
@@ -902,57 +928,140 @@ async function createOneDriveFolder(client, folderPath) {
     }
 }
 
-// Helper function to upload file to OneDrive with retry logic
+// Helper function to upload file to OneDrive with retry logic and multiple methods
 async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRetries = 3) {
-    // Construct the correct OneDrive API path
-    const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
-    
     console.log(`📤 Uploading file: ${filename} to ${folderPath}`);
-    console.log(`📤 Using OneDrive API URL: ${uploadUrl}`);
     console.log(`📊 File size: ${fileBuffer.length} bytes`);
     
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            // Set proper headers for Excel file upload
-            const result = await client
-                .api(uploadUrl)
-                .headers({
-                    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                })
-                .put(fileBuffer);
-            
-            console.log(`✅ Successfully uploaded: ${filename} to ${folderPath}`);
-            console.log(`📋 File details: ID=${result.id}, Size=${result.size} bytes`);
-            console.log(`🔗 OneDrive URL: ${result.webUrl}`);
-            
-            return {
-                id: result.id,
-                name: result.name,
-                webUrl: result.webUrl,
-                size: result.size
-            };
-        } catch (error) {
-            const isLockError = error.statusCode === 423 || 
-                               error.code === 'resourceLocked' || 
-                               error.code === 'notAllowed';
-            
-            if (isLockError && attempt < maxRetries) {
-                const waitTime = Math.pow(2, attempt - 1) * 2000; // 2s, 4s, 8s
-                console.log(`🔒 File is locked, waiting ${waitTime/1000}s before retry (attempt ${attempt}/${maxRetries})`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                continue;
+    // Try multiple upload methods
+    const uploadMethods = [
+        {
+            name: 'Standard PUT',
+            execute: async () => {
+                const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
+                console.log(`📤 Method 1: Using OneDrive API URL: ${uploadUrl}`);
+                
+                return await client
+                    .api(uploadUrl)
+                    .headers({
+                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    })
+                    .put(fileBuffer);
             }
-            
-            console.error('❌ OneDrive upload error:', error);
-            if (isLockError) {
-                const customError = new Error(`File is locked. Please close the Excel file in OneDrive/Excel and try again. (Attempted ${maxRetries} times)`);
-                customError.originalError = error;
-                customError.isLockError = true;
-                throw customError;
+        },
+        {
+            name: 'Direct folder upload',
+            execute: async () => {
+                console.log(`📤 Method 2: Direct folder upload`);
+                
+                // First ensure folder exists and get its ID
+                let folderId;
+                try {
+                    const folderResponse = await client.api(`/me/drive/root:${folderPath}`).get();
+                    folderId = folderResponse.id;
+                } catch (error) {
+                    console.log('📂 Folder not found, creating...');
+                    await createOneDriveFolder(client, folderPath);
+                    const folderResponse = await client.api(`/me/drive/root:${folderPath}`).get();
+                    folderId = folderResponse.id;
+                }
+                
+                return await client
+                    .api(`/me/drive/items/${folderId}:/${filename}:/content`)
+                    .headers({
+                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    })
+                    .put(fileBuffer);
             }
-            throw error;
+        },
+        {
+            name: 'Upload session (for large files)',
+            execute: async () => {
+                console.log(`📤 Method 3: Upload session`);
+                
+                const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/createUploadSession`;
+                
+                const uploadSession = await client.api(uploadUrl).post({
+                    item: {
+                        '@microsoft.graph.conflictBehavior': 'replace',
+                        name: filename
+                    }
+                });
+                
+                // Upload the file in chunks (simple implementation for files < 60MB)
+                const uploadUrlSession = uploadSession.uploadUrl;
+                const response = await axios.put(uploadUrlSession, fileBuffer, {
+                    headers: {
+                        'Content-Length': fileBuffer.length.toString(),
+                        'Content-Range': `bytes 0-${fileBuffer.length - 1}/${fileBuffer.length}`,
+                        'Content-Type': 'application/octet-stream'
+                    }
+                });
+                
+                if (response.status !== 200 && response.status !== 201) {
+                    throw new Error(`Upload session failed: ${response.status} ${response.statusText}`);
+                }
+                
+                return response.data;
+            }
+        }
+    ];
+    
+    let lastError = null;
+    
+    for (const method of uploadMethods) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🔄 Trying ${method.name} (attempt ${attempt}/${maxRetries})`);
+                
+                const result = await method.execute();
+                
+                console.log(`✅ Successfully uploaded using ${method.name}: ${filename}`);
+                console.log(`📋 File details: ID=${result.id}, Size=${result.size} bytes`);
+                console.log(`🔗 OneDrive URL: ${result.webUrl}`);
+                
+                // Immediate verification - wait a moment for OneDrive to process
+                console.log('⏳ Waiting 2 seconds for OneDrive to process file...');
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                return {
+                    id: result.id,
+                    name: result.name,
+                    webUrl: result.webUrl,
+                    size: result.size
+                };
+            } catch (error) {
+                lastError = error;
+                console.log(`❌ ${method.name} attempt ${attempt} failed:`, error.message);
+                
+                const isLockError = error.statusCode === 423 || 
+                                   error.code === 'resourceLocked' || 
+                                   error.code === 'notAllowed';
+                
+                if (isLockError && attempt < maxRetries) {
+                    const waitTime = Math.pow(2, attempt - 1) * 2000; // 2s, 4s, 8s
+                    console.log(`🔒 File is locked, waiting ${waitTime/1000}s before retry`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    continue;
+                }
+                
+                // If not a lock error or max retries reached, try next method
+                if (!isLockError || attempt === maxRetries) {
+                    break;
+                }
+            }
         }
     }
+    
+    // If all methods failed, throw the last error
+    console.error('❌ All upload methods failed. Last error:', lastError);
+    if (lastError.statusCode === 423 || lastError.code === 'resourceLocked') {
+        const customError = new Error(`File is locked. Please close the Excel file in OneDrive/Excel and try again.`);
+        customError.originalError = lastError;
+        customError.isLockError = true;
+        throw customError;
+    }
+    throw lastError;
 }
 
 module.exports = router;
