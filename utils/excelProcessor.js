@@ -123,34 +123,51 @@ class ExcelProcessor {
             totalProcessed: uploadedLeads.length
         };
 
-        // Create a Set of existing emails for fast lookup
-        const existingEmails = new Set(
-            existingData.map(lead => (lead.Email || '').toLowerCase().trim())
-        );
+        console.log(`🔄 Starting merge process:`);
+        console.log(`   - Uploaded leads: ${uploadedLeads.length}`);
+        console.log(`   - Existing leads in master: ${existingData.length}`);
 
-        uploadedLeads.forEach(lead => {
-            const email = (lead.Email || lead.email || '').toLowerCase().trim();
+        // Create a Set of existing emails for fast lookup with better normalization
+        const existingEmails = new Set();
+        existingData.forEach(lead => {
+            const email = this.normalizeEmail(lead.Email || lead.email || '');
+            if (email) {
+                existingEmails.add(email);
+            }
+        });
+        
+        console.log(`   - Unique existing emails: ${existingEmails.size}`);
+
+        uploadedLeads.forEach((lead, index) => {
+            const email = this.normalizeEmail(lead.Email || lead.email || '');
             
             if (!email) {
-                console.warn('⚠️ Skipping lead without email:', lead.Name || 'Unknown');
+                console.warn(`⚠️ Row ${index + 1}: Skipping lead without valid email:`, {
+                    name: lead.Name || lead.name || 'Unknown',
+                    originalEmail: lead.Email || lead.email || 'None'
+                });
                 return;
             }
 
             if (existingEmails.has(email)) {
+                console.log(`🔍 Row ${index + 1}: Duplicate found - ${email}`);
                 results.duplicates.push({
                     email: email,
                     name: lead.Name || lead.name || '',
-                    reason: 'Email already exists'
+                    reason: 'Email already exists in master list'
                 });
             } else {
+                console.log(`✅ Row ${index + 1}: New lead - ${email}`);
                 // Normalize and add default automation settings
                 const normalizedLead = this.normalizeLeadData(lead);
                 results.newLeads.push(normalizedLead);
-                existingEmails.add(email); // Prevent duplicates within upload
+                existingEmails.add(email); // Prevent duplicates within current upload
             }
         });
 
-        console.log(`🔄 Merge results: ${results.newLeads.length} new, ${results.duplicates.length} duplicates`);
+        console.log(`🔄 Merge results:`);
+        console.log(`   - New leads to add: ${results.newLeads.length}`);
+        console.log(`   - Duplicates found: ${results.duplicates.length}`);
         
         return results;
     }
@@ -167,7 +184,8 @@ class ExcelProcessor {
         normalized['Company Name'] = lead['Company Name'] || lead.organization_name || lead.company || lead.Company || '';
         normalized['Company Website'] = lead['Company Website'] || lead.organization_website_url || lead.website || '';
         normalized['Size'] = lead.Size || lead.estimated_num_employees || lead.size || '';
-        normalized['Email'] = lead.Email || lead.email || '';
+        // Ensure email is properly normalized
+        normalized['Email'] = this.normalizeEmail(lead.Email || lead.email || '');
         normalized['Email Verified'] = lead['Email Verified'] || lead.email_verified || 'N';
         normalized['LinkedIn URL'] = lead['LinkedIn URL'] || lead.linkedin_url || lead.linkedin || '';
         normalized['Industry'] = lead.Industry || lead.industry || '';
@@ -403,8 +421,26 @@ class ExcelProcessor {
 
     // Helper methods
     isValidLead(lead) {
-        const email = lead.Email || lead.email || '';
-        return email && email.includes('@');
+        const email = this.normalizeEmail(lead.Email || lead.email || '');
+        return email && email.includes('@') && this.isValidEmail(email);
+    }
+    
+    /**
+     * Normalize email for consistent comparison
+     */
+    normalizeEmail(email) {
+        if (!email || typeof email !== 'string') {
+            return '';
+        }
+        return email.toLowerCase().trim();
+    }
+    
+    /**
+     * Basic email validation
+     */
+    isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
     }
 
     calculateNextEmailDate(fromDate, days) {

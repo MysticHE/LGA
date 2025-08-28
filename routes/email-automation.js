@@ -64,12 +64,16 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         let masterWorkbook;
         let existingData = [];
 
+        console.log('🔍 Looking for existing master file in OneDrive...');
+
         try {
             // Try to download existing master file
             const files = await graphClient
                 .api(`/me/drive/root:${masterFolderPath}:/children`)
                 .filter(`name eq '${masterFileName}'`)
                 .get();
+
+            console.log(`📂 Found ${files.value.length} files in ${masterFolderPath} folder`);
 
             if (files.value.length > 0) {
                 console.log('📋 Found existing master file, downloading...');
@@ -83,16 +87,20 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 const leadsSheet = masterWorkbook.Sheets['Leads'];
                 if (leadsSheet) {
                     existingData = XLSX.utils.sheet_to_json(leadsSheet);
+                    console.log(`📊 Found ${existingData.length} existing leads in master file`);
+                } else {
+                    console.log('⚠️ Master file exists but has no Leads sheet');
                 }
             } else {
                 console.log('📋 No master file found, creating new one...');
                 masterWorkbook = excelProcessor.createMasterFile();
             }
         } catch (error) {
+            console.error('❌ Error accessing master file:', error.message);
             if (error.code === 'itemNotFound' || error.message.includes('not found')) {
-                console.log('📋 No existing master file found - creating new master file for first time');
+                console.log('📋 Folder or file not found - creating new master file');
             } else {
-                console.log('📋 Creating new master file due to issue accessing existing file:', error.message);
+                console.log('📋 Creating new master file due to access issue:', error.message);
             }
             masterWorkbook = excelProcessor.createMasterFile();
         }
@@ -505,23 +513,27 @@ async function downloadMasterFile(graphClient) {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
-        // Handle path correctly for OneDrive API
-        const cleanPath = masterFolderPath.startsWith('/') ? masterFolderPath.substring(1) : masterFolderPath;
+        console.log(`📥 Attempting to download master file from: ${masterFolderPath}`);
         
         const files = await graphClient
-            .api(`/me/drive/root:/${cleanPath}:/children`)
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
             .filter(`name eq '${masterFileName}'`)
             .get();
+            
+        console.log(`📋 Found ${files.value.length} files matching master file name`);
 
         if (files.value.length === 0) {
-            console.log('📋 Master file not found');
+            console.log('📋 Master file not found in OneDrive');
             return null;
         }
 
+        console.log(`📥 Downloading master file: ${files.value[0].name} (${files.value[0].size} bytes)`);
+        
         const fileContent = await graphClient
             .api(`/me/drive/items/${files.value[0].id}/content`)
             .get();
 
+        console.log(`✅ Master file downloaded successfully`);
         return excelProcessor.bufferToWorkbook(fileContent);
     } catch (error) {
         console.error('❌ Master file download error:', error);
@@ -532,42 +544,27 @@ async function downloadMasterFile(graphClient) {
 // Helper function to create OneDrive folder
 async function createOneDriveFolder(client, folderPath) {
     try {
-        // Handle root path correctly - remove leading slash for OneDrive API
-        const cleanPath = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
+        console.log(`📂 Checking/creating OneDrive folder: ${folderPath}`);
         
-        if (!cleanPath) {
-            console.log(`📂 Root folder - no creation needed`);
-            return;
-        }
-        
-        // Check if folder exists
-        await client.api(`/me/drive/root:/${cleanPath}`).get();
+        // Check if folder exists using the correct API path
+        await client.api(`/me/drive/root:${folderPath}`).get();
         console.log(`📂 Folder ${folderPath} already exists`);
     } catch (error) {
         if (error.code === 'itemNotFound') {
-            const folderName = folderPath.split('/').pop();
-            const parentPath = folderPath.substring(0, folderPath.lastIndexOf('/'));
+            const folderName = folderPath.split('/').filter(Boolean).pop(); // Get last non-empty part
             
-            // Create folder in correct location
-            if (parentPath && parentPath !== '/') {
-                // Create in subfolder
-                const cleanParentPath = parentPath.startsWith('/') ? parentPath.substring(1) : parentPath;
-                await client.api(`/me/drive/root:/${cleanParentPath}:/children`).post({
-                    name: folderName,
-                    folder: {},
-                    '@microsoft.graph.conflictBehavior': 'rename'
-                });
-            } else {
-                // Create in root
-                await client.api(`/me/drive/root/children`).post({
-                    name: folderName,
-                    folder: {},
-                    '@microsoft.graph.conflictBehavior': 'rename'
-                });
-            }
+            console.log(`📂 Creating folder: ${folderName} in root directory`);
             
-            console.log(`📂 Created folder: ${folderPath}`);
+            // Create folder in root directory
+            await client.api(`/me/drive/root/children`).post({
+                name: folderName,
+                folder: {},
+                '@microsoft.graph.conflictBehavior': 'rename'
+            });
+            
+            console.log(`✅ Created folder: ${folderPath}`);
         } else {
+            console.error(`❌ Error checking/creating folder ${folderPath}:`, error);
             throw error;
         }
     }
@@ -575,25 +572,20 @@ async function createOneDriveFolder(client, folderPath) {
 
 // Helper function to upload file to OneDrive with retry logic
 async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRetries = 3) {
-    // Handle path correctly for OneDrive API
-    let uploadUrl;
-    const cleanPath = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
+    // Construct the correct OneDrive API path
+    const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
     
-    if (cleanPath) {
-        // Upload to subfolder
-        uploadUrl = `/me/drive/root:/${cleanPath}/${filename}:/content`;
-    } else {
-        // Upload to root
-        uploadUrl = `/me/drive/root:/${filename}:/content`;
-    }
-    
-    console.log(`📤 Uploading to URL: ${uploadUrl}`);
+    console.log(`📤 Uploading file: ${filename} to ${folderPath}`);
+    console.log(`📤 Using OneDrive API URL: ${uploadUrl}`);
+    console.log(`📊 File size: ${fileBuffer.length} bytes`);
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const result = await client.api(uploadUrl).put(fileBuffer);
             
-            console.log(`📤 Uploaded file: ${filename} to ${folderPath} (attempt ${attempt})`);
+            console.log(`✅ Successfully uploaded: ${filename} to ${folderPath}`);
+            console.log(`📋 File details: ID=${result.id}, Size=${result.size} bytes`);
+            console.log(`🔗 OneDrive URL: ${result.webUrl}`);
             
             return {
                 id: result.id,
