@@ -5,6 +5,7 @@ const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
+const { advancedExcelUpload } = require('./excel-upload-fix');
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -139,7 +140,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         console.log(`🔍 DEBUG: Pre-upload first row:`, testData[0]);
         console.log(`🔍 DEBUG: Pre-upload last row:`, testData[testData.length - 1]);
         
-        await uploadToOneDrive(graphClient, masterBuffer, masterFileName, masterFolderPath);
+        await advancedExcelUpload(graphClient, masterBuffer, masterFileName, masterFolderPath);
 
         // Post-upload verification with extended wait time
         console.log('🔍 DEBUG: Post-upload verification (waiting 5 seconds for OneDrive processing)...');
@@ -366,7 +367,7 @@ router.put('/master-list/lead/:email', requireDelegatedAuth, async (req, res) =>
 
         // Save updated file
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Lead updated: ${email}`);
 
@@ -576,7 +577,7 @@ router.post('/debug/test-upload-merge', requireDelegatedAuth, async (req, res) =
         // Step 4: Upload to OneDrive
         console.log('Step 4: Uploading to OneDrive...');
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         // Step 5: Verification
         console.log('Step 5: Verifying upload...');
@@ -766,7 +767,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 
         const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Email sent successfully to: ${email}`);
 
@@ -945,161 +946,10 @@ async function createOneDriveFolder(client, folderPath) {
 }
 
 // Helper function to upload file to OneDrive with retry logic and multiple methods
+// Legacy wrapper function for backward compatibility
 async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRetries = 3) {
-    console.log(`📤 Uploading file: ${filename} to ${folderPath}`);
-    console.log(`📊 File size: ${fileBuffer.length} bytes`);
-    
-    // Verify buffer integrity before upload
-    console.log(`🔍 BUFFER INTEGRITY CHECK:`);
-    console.log(`   - Buffer is Buffer: ${Buffer.isBuffer(fileBuffer)}`);
-    console.log(`   - Buffer length: ${fileBuffer.length}`);
-    console.log(`   - First 10 bytes: ${Array.from(fileBuffer.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
-    console.log(`   - Starts with Excel signature: ${fileBuffer.slice(0, 2).toString('hex') === '504b'}`); // PK signature
-    
-    // Try multiple upload methods - order matters (most reliable first)
-    const uploadMethods = [
-        {
-            name: 'Binary PUT with text/plain (Most Reliable)',
-            execute: async () => {
-                const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
-                console.log(`📤 Method 1: Binary upload with text/plain header`);
-                
-                // This is the most reliable method according to Stack Overflow
-                return await client
-                    .api(uploadUrl)
-                    .headers({
-                        'Content-Type': 'text/plain'
-                    })
-                    .put(fileBuffer);
-            }
-        },
-        {
-            name: 'Standard PUT with proper Excel Content-Type',
-            execute: async () => {
-                const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
-                console.log(`📤 Method 2: Standard PUT with Excel Content-Type`);
-                
-                return await client
-                    .api(uploadUrl)
-                    .headers({
-                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    })
-                    .put(fileBuffer);
-            }
-        },
-        {
-            name: 'Direct folder upload with text/plain',
-            execute: async () => {
-                console.log(`📤 Method 3: Direct folder upload with text/plain`);
-                
-                // First ensure folder exists and get its ID
-                let folderId;
-                try {
-                    const folderResponse = await client.api(`/me/drive/root:${folderPath}`).get();
-                    folderId = folderResponse.id;
-                } catch (error) {
-                    console.log('📂 Folder not found, creating...');
-                    await createOneDriveFolder(client, folderPath);
-                    const folderResponse = await client.api(`/me/drive/root:${folderPath}`).get();
-                    folderId = folderResponse.id;
-                }
-                
-                return await client
-                    .api(`/me/drive/items/${folderId}:/${filename}:/content`)
-                    .headers({
-                        'Content-Type': 'text/plain'
-                    })
-                    .put(fileBuffer);
-            }
-        },
-        {
-            name: 'Upload session with text/plain (for large files)',
-            execute: async () => {
-                console.log(`📤 Method 4: Upload session with text/plain`);
-                
-                const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/createUploadSession`;
-                
-                const uploadSession = await client.api(uploadUrl).post({
-                    item: {
-                        '@microsoft.graph.conflictBehavior': 'replace',
-                        name: filename
-                    }
-                });
-                
-                // Upload the file in chunks (simple implementation for files < 60MB)
-                const uploadUrlSession = uploadSession.uploadUrl;
-                const response = await axios.put(uploadUrlSession, fileBuffer, {
-                    headers: {
-                        'Content-Length': fileBuffer.length.toString(),
-                        'Content-Range': `bytes 0-${fileBuffer.length - 1}/${fileBuffer.length}`,
-                        'Content-Type': 'text/plain' // Changed from application/octet-stream
-                    }
-                });
-                
-                if (response.status !== 200 && response.status !== 201) {
-                    throw new Error(`Upload session failed: ${response.status} ${response.statusText}`);
-                }
-                
-                return response.data;
-            }
-        }
-    ];
-    
-    let lastError = null;
-    
-    for (const method of uploadMethods) {
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                console.log(`🔄 Trying ${method.name} (attempt ${attempt}/${maxRetries})`);
-                
-                const result = await method.execute();
-                
-                console.log(`✅ Successfully uploaded using ${method.name}: ${filename}`);
-                console.log(`📋 File details: ID=${result.id}, Size=${result.size} bytes`);
-                console.log(`🔗 OneDrive URL: ${result.webUrl}`);
-                
-                // Immediate verification - wait a moment for OneDrive to process
-                console.log('⏳ Waiting 2 seconds for OneDrive to process file...');
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                
-                return {
-                    id: result.id,
-                    name: result.name,
-                    webUrl: result.webUrl,
-                    size: result.size
-                };
-            } catch (error) {
-                lastError = error;
-                console.log(`❌ ${method.name} attempt ${attempt} failed:`, error.message);
-                
-                const isLockError = error.statusCode === 423 || 
-                                   error.code === 'resourceLocked' || 
-                                   error.code === 'notAllowed';
-                
-                if (isLockError && attempt < maxRetries) {
-                    const waitTime = Math.pow(2, attempt - 1) * 2000; // 2s, 4s, 8s
-                    console.log(`🔒 File is locked, waiting ${waitTime/1000}s before retry`);
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
-                    continue;
-                }
-                
-                // If not a lock error or max retries reached, try next method
-                if (!isLockError || attempt === maxRetries) {
-                    break;
-                }
-            }
-        }
-    }
-    
-    // If all methods failed, throw the last error
-    console.error('❌ All upload methods failed. Last error:', lastError);
-    if (lastError.statusCode === 423 || lastError.code === 'resourceLocked') {
-        const customError = new Error(`File is locked. Please close the Excel file in OneDrive/Excel and try again.`);
-        customError.originalError = lastError;
-        customError.isLockError = true;
-        throw customError;
-    }
-    throw lastError;
+    console.log(`📤 LEGACY WRAPPER: Redirecting to advancedExcelUpload`);
+    return await advancedExcelUpload(client, fileBuffer, filename, folderPath);
 }
 
 module.exports = router;
