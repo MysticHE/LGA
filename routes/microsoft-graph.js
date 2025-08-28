@@ -101,7 +101,7 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
         } else {
             // Table exists, append data
             console.log(`➕ Appending data to existing table '${EXCEL_CONFIG.TABLE_NAME}'`);
-            await appendDataToExcelTable(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, leads);
+            await appendDataToExcelTableWithRetry(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, leads);
         }
 
         res.json({
@@ -649,10 +649,16 @@ async function createExcelFileWithTable(client, filePath, leads) {
         // Create table in the uploaded file
         await createExcelTableInFile(client, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, normalizedLeads);
         
-        // If we have more than 5 leads, append the remaining ones
+        // If we have more than 5 leads, append the remaining ones with retry logic
         if (leads.length > 5) {
             const remainingLeads = leads.slice(5).map(lead => normalizeLeadData(lead));
-            await appendDataToExcelTable(client, fileId, EXCEL_CONFIG.TABLE_NAME, remainingLeads);
+            console.log(`⏳ Waiting briefly for table to be ready before appending ${remainingLeads.length} remaining leads...`);
+            
+            // Wait for table to be properly created and indexed by Microsoft Graph
+            await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+            
+            // Append with retry logic
+            await appendDataToExcelTableWithRetry(client, fileId, EXCEL_CONFIG.TABLE_NAME, remainingLeads);
         }
         
         return fileId;
@@ -724,10 +730,10 @@ async function createExcelTable(client, fileId, worksheetName, tableName, newLea
             // Step 2: Convert existing data to table format
             await convertExistingDataToTable(client, fileId, worksheetName, tableName, existingData);
             
-            // Step 3: Append new data to the newly created table
+            // Step 3: Append new data to the newly created table  
             if (newLeads && newLeads.length > 0) {
                 console.log(`➕ Appending ${newLeads.length} new leads to converted table`);
-                await appendDataToExcelTable(client, fileId, tableName, newLeads);
+                await appendDataToExcelTableWithRetry(client, fileId, tableName, newLeads);
             }
         } else {
             console.log(`📝 No existing data found, creating table with new data only`);
@@ -740,7 +746,9 @@ async function createExcelTable(client, fileId, worksheetName, tableName, newLea
             // Append remaining leads if any
             if (newLeads.length > 5) {
                 const remainingLeads = newLeads.slice(5).map(lead => normalizeLeadData(lead));
-                await appendDataToExcelTable(client, fileId, tableName, remainingLeads);
+                console.log(`⏳ Waiting briefly for table to be ready...`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+                await appendDataToExcelTableWithRetry(client, fileId, tableName, remainingLeads);
             }
         }
         
@@ -789,6 +797,37 @@ async function populateWorksheetWithData(client, fileId, worksheetName, data) {
     } catch (error) {
         console.error(`❌ Error populating worksheet:`, error);
         throw error;
+    }
+}
+
+/**
+ * Append data to Excel table with retry logic
+ * @param {Object} client - Microsoft Graph client
+ * @param {string} fileId - OneDrive file ID
+ * @param {string} tableName - Table name
+ * @param {Array} leads - Lead data to append
+ * @param {number} maxRetries - Maximum retry attempts
+ */
+async function appendDataToExcelTableWithRetry(client, fileId, tableName, leads, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`🔄 Append attempt ${attempt}/${maxRetries} for table '${tableName}'`);
+            await appendDataToExcelTable(client, fileId, tableName, leads);
+            console.log(`✅ Append successful on attempt ${attempt}`);
+            return;
+        } catch (error) {
+            console.log(`❌ Append attempt ${attempt} failed: ${error.message}`);
+            
+            if (attempt === maxRetries) {
+                console.error(`❌ All ${maxRetries} append attempts failed`);
+                throw error;
+            }
+            
+            // Wait longer between retries
+            const waitTime = attempt * 2000; // 2s, 4s, 6s
+            console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
     }
 }
 
