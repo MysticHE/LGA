@@ -92,10 +92,9 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 );
                 
                 if (!hasRequiredSheets) {
-                    console.log('🚨 CORRUPTION DETECTED: Master file is missing required sheets');
-                    console.log(`📊 Available sheets: [${Object.keys(masterWorkbook.Sheets).join(', ')}]`);
+                    console.log('🚨 CORRUPTION DETECTED: Rebuilding master file');
                     
-                    // Try to recover existing lead data from any sheet
+                    // Try to recover lead data from any sheet
                     let recoveredData = [];
                     const sheetNames = Object.keys(masterWorkbook.Sheets);
                     
@@ -104,49 +103,27 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                             const sheet = masterWorkbook.Sheets[sheetName];
                             const data = XLSX.utils.sheet_to_json(sheet);
                             
-                            // More comprehensive recovery - look for any rows with data that could be leads
                             if (data.length > 0) {
-                                // Check for common lead columns (more flexible)
                                 const hasLeadData = data.some(row => 
-                                    row.Email || row.email || 
-                                    row.Name || row.name ||
-                                    row.Company || row.company ||
-                                    row['Company Name'] || 
+                                    row.Email || row.email || row.Name || row.name ||
+                                    row.Company || row.company || row['Company Name'] || 
                                     row.Title || row.title
                                 );
                                 
                                 if (hasLeadData) {
-                                    console.log(`🔄 RECOVERY: Found ${data.length} potential leads in sheet "${sheetName}"`);
-                                    console.log(`🔄 RECOVERY: Sample data from ${sheetName}:`, data[0]);
+                                    console.log(`✅ RECOVERED: ${data.length} leads from ${sheetName}`);
                                     recoveredData = [...recoveredData, ...data];
                                 }
                             }
                         } catch (error) {
-                            console.error(`❌ Error reading sheet ${sheetName}: ${error.message}`);
+                            // Silent recovery - don't spam logs
                         }
                     }
                     
-                    console.log(`🔄 RECOVERY: Total recovered data: ${recoveredData.length} rows`);
-                    
-                    // IMPORTANT: If no data recovered, warn about potential data loss
-                    if (recoveredData.length === 0) {
-                        console.log('⚠️ WARNING: No existing lead data recovered from corrupted file');
-                        console.log('⚠️ This could mean:');
-                        console.log('   1. The master file was truly empty (first upload)');
-                        console.log('   2. Previous lead data was lost due to corruption');
-                        console.log('   3. The file structure changed and data needs manual recovery');
-                        
-                        // Check if this might not be the first upload by looking at file size
-                        if (fileContent && fileContent.length > 5000) { // Non-trivial file size suggests it had data
-                            console.log(`⚠️ SUSPICIOUS: File size is ${fileContent.length} bytes but no recoverable data found`);
-                            console.log(`⚠️ This suggests potential data loss - consider manual recovery`);
-                        }
-                    }
-                    
+                    console.log(`📊 TOTAL RECOVERED: ${recoveredData.length} existing leads`);
                     existingData = recoveredData;
                     
-                    // Recreate master file with proper structure
-                    console.log('🔄 REBUILDING: Creating new master file with proper structure');
+                    // Recreate with recovered data
                     masterWorkbook = excelProcessor.createMasterFile(existingData);
                 } else {
                     // File structure is good, extract existing data normally
@@ -170,8 +147,11 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             masterWorkbook = excelProcessor.createMasterFile();
         }
 
-        // Merge uploaded leads with existing data
+        // CRITICAL: Merge uploaded leads with existing data
+        console.log(`🔄 MERGE: ${uploadedLeads.length} uploaded + ${existingData.length} existing`);
         const mergeResults = excelProcessor.mergeLeadsWithMaster(uploadedLeads, existingData);
+        
+        console.log(`📊 MERGE RESULT: ${mergeResults.newLeads.length} new, ${mergeResults.duplicates.length} duplicates`);
 
         if (mergeResults.newLeads.length === 0) {
             return res.json({
@@ -184,29 +164,20 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             });
         }
 
-        // Update master file with new leads
+        // CRITICAL: Update master file - this should APPEND, not replace
+        console.log(`🔧 UPDATING: Adding ${mergeResults.newLeads.length} leads to ${existingData.length} existing`);
         const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads);
 
         // Create folder if it doesn't exist
         await createOneDriveFolder(graphClient, masterFolderPath);
 
-        // Save updated master file to OneDrive with proper headers
+        // Upload to OneDrive
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        
-        // Add debug: verify buffer contains correct data before upload
-        console.log('🔍 DEBUG: Pre-upload verification...');
-        const testWorkbook = excelProcessor.bufferToWorkbook(masterBuffer);
-        const testSheet = testWorkbook.Sheets['Leads'];
-        const testData = testSheet ? XLSX.utils.sheet_to_json(testSheet) : [];
-        console.log(`🔍 DEBUG: Pre-upload verification - ${testData.length} rows in Leads sheet`);
-        console.log(`🔍 DEBUG: Pre-upload first row:`, testData[0]);
-        console.log(`🔍 DEBUG: Pre-upload last row:`, testData[testData.length - 1]);
+        console.log(`📤 UPLOADING: ${masterBuffer.length} bytes to OneDrive`);
         
         await advancedExcelUpload(graphClient, masterBuffer, masterFileName, masterFolderPath);
 
-        // Post-upload verification with extended wait time
-        console.log('🔍 DEBUG: Post-upload verification (waiting 5 seconds for OneDrive processing)...');
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+        console.log(`✅ UPLOAD COMPLETED: Master file updated successfully`);
         
         try {
             const verificationWorkbook = await downloadMasterFile(graphClient);
