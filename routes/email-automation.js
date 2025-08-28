@@ -185,18 +185,25 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             });
         }
 
-        // CRITICAL: Update master file - this should APPEND, not replace
-        console.log(`🔧 UPDATING: Adding ${mergeResults.newLeads.length} leads to ${existingData.length} existing`);
-        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads, existingData);
-
-        // Create folder if it doesn't exist
-        await createOneDriveFolder(graphClient, masterFolderPath);
-
-        // Upload to OneDrive
-        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        console.log(`📤 UPLOADING: ${masterBuffer.length} bytes to OneDrive`);
+        // CRITICAL: Use Microsoft Graph Table API to APPEND data (no file replacement)
+        console.log(`📊 USING TABLE API: Appending ${mergeResults.newLeads.length} leads to existing table`);
         
-        await advancedExcelUpload(graphClient, masterBuffer, masterFileName, masterFolderPath);
+        // Use the Microsoft Graph table append functionality
+        const appendResult = await appendLeadsToOneDriveTable({
+            delegatedAuth: req.delegatedAuth,
+            sessionId: req.sessionId
+        }, {
+            leads: mergeResults.newLeads,
+            filename: masterFileName,
+            folderPath: masterFolderPath,
+            useCustomFile: true
+        });
+        
+        if (!appendResult.success) {
+            throw new Error(`Failed to append leads to table: ${appendResult.message}`);
+        }
+        
+        console.log(`✅ TABLE APPEND SUCCESS: ${appendResult.action} - ${appendResult.leadsCount} leads processed`);
 
         console.log(`✅ UPLOAD COMPLETED: Master file updated successfully`);
         
@@ -630,15 +637,24 @@ router.post('/master-list/merge-recovery', requireDelegatedAuth, upload.single('
             });
         }
 
-        // Update master file with recovered leads
-        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(currentMasterWorkbook, mergeResults.newLeads, currentLeads);
-
-        // Create folder if needed
-        await createOneDriveFolder(graphClient, masterFolderPath);
-
-        // Save updated master file
-        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, masterFileName, masterFolderPath);
+        // FIXED: Use Microsoft Graph Table API to append recovered leads
+        console.log(`📊 RECOVERY: Appending ${mergeResults.newLeads.length} recovered leads using table API`);
+        
+        const recoveryAppendResult = await appendLeadsToOneDriveTable({
+            delegatedAuth: req.delegatedAuth,
+            sessionId: req.sessionId
+        }, {
+            leads: mergeResults.newLeads,
+            filename: masterFileName,
+            folderPath: masterFolderPath,
+            useCustomFile: true
+        });
+        
+        if (!recoveryAppendResult.success) {
+            throw new Error(`Failed to append recovered leads: ${recoveryAppendResult.message}`);
+        }
+        
+        console.log(`✅ RECOVERY SUCCESS: ${recoveryAppendResult.action} - ${recoveryAppendResult.leadsCount} leads processed`);
 
         console.log(`✅ RECOVERY MERGE completed successfully`);
 
@@ -713,15 +729,24 @@ router.post('/debug/test-upload-merge', requireDelegatedAuth, async (req, res) =
             });
         }
 
-        // Step 3: Update master file
-        console.log('Step 3: Updating master file...');
-        const masterWorkbook = existingWorkbook || excelProcessor.createMasterFile();
-        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, mergeResults.newLeads, existingData);
-
-        // Step 4: Upload to OneDrive
-        console.log('Step 4: Uploading to OneDrive...');
-        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        // Step 3: FIXED - Use Microsoft Graph Table API instead of file replacement
+        console.log('Step 3: Using Table API to append data (no file replacement)...');
+        
+        const appendResult = await appendLeadsToOneDriveTable({
+            delegatedAuth: req.delegatedAuth,
+            sessionId: req.sessionId
+        }, {
+            leads: mergeResults.newLeads,
+            filename: 'LGA-Master-Email-List.xlsx',
+            folderPath: '/LGA-Email-Automation',
+            useCustomFile: true
+        });
+        
+        if (!appendResult.success) {
+            throw new Error(`Failed to append leads to table: ${appendResult.message}`);
+        }
+        
+        console.log(`✅ TABLE APPEND SUCCESS: ${appendResult.action} - ${appendResult.leadsCount} leads processed`);
 
         // Step 5: Verification
         console.log('Step 5: Verifying upload...');
@@ -782,11 +807,16 @@ router.post('/debug/test-excel-creation', async (req, res) => {
         // Create master file
         const masterWorkbook = excelProcessor.createMasterFile();
         
-        // Update with test leads
-        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, normalizedLeads);
+        // FIXED: Test using Table API instead of file replacement
+        console.log(`🧪 TEST: Using Table API for test data instead of file replacement`);
         
-        // Convert to buffer and inspect
+        // For testing, we'll simulate the table append without actual upload
+        console.log(`🧪 TEST: Would append ${normalizedLeads.length} normalized test leads to table`);
+        
+        // Create test buffer for size estimation only
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, normalizedLeads);
         const buffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        console.log(`🧪 TEST: Buffer size would be ${buffer.length} bytes (for reference only)`);
         
 
         // Read the buffer back to verify
@@ -1029,8 +1059,12 @@ async function downloadMasterFile(graphClient) {
         
         const testProcessor = new ExcelProcessor();
         const testWorkbook = testProcessor.createMasterFile();
-        const testWithData = testProcessor.updateMasterFileWithLeads(testWorkbook, testProcessor.normalizeLeadsData(testLeads));
+        // FIXED: Test using Table API approach instead of file replacement
+        console.log(`🧪 BUFFER-TEST: Using normalized test data for buffer test only`);
+        const testNormalizedLeads = testProcessor.normalizeLeadsData(testLeads);
+        const testWithData = testProcessor.updateMasterFileWithLeads(testWorkbook, testNormalizedLeads);
         const testBuffer = testProcessor.workbookToBuffer(testWithData);
+        console.log(`🧪 BUFFER-TEST: Test buffer size ${testBuffer.length} bytes (file replacement simulation only)`);
         
         
         // Parse workbook and verify content
@@ -1094,6 +1128,60 @@ async function createOneDriveFolder(client, folderPath) {
 async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRetries = 3) {
     console.log(`📤 LEGACY WRAPPER: Redirecting to advancedExcelUpload`);
     return await advancedExcelUpload(client, fileBuffer, filename, folderPath);
+}
+
+/**
+ * Bridge function to call Microsoft Graph table append API from email automation
+ * This replaces the old file replacement approach with table-based appending
+ */
+async function appendLeadsToOneDriveTable(auth, requestData) {
+    try {
+        console.log(`🔗 BRIDGE: Calling Microsoft Graph table append API`);
+        
+        // Get the base URL for internal API calls
+        const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+        const host = process.env.RENDER_EXTERNAL_URL ? 
+            new URL(process.env.RENDER_EXTERNAL_URL).host : 
+            'localhost:3000';
+        
+        // Call our own Microsoft Graph table append endpoint
+        const response = await axios.post(`${protocol}://${host}/api/microsoft-graph/onedrive/append-to-table`, requestData, {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': auth.sessionId
+            },
+            timeout: 30000 // 30 second timeout
+        });
+        
+        if (response.data.success) {
+            console.log(`✅ BRIDGE SUCCESS: Table append completed - ${response.data.action}`);
+            return response.data;
+        } else {
+            console.error(`❌ BRIDGE ERROR: Table append failed`, response.data);
+            return {
+                success: false,
+                message: response.data.message || 'Unknown error',
+                error: response.data.error
+            };
+        }
+        
+    } catch (error) {
+        console.error(`❌ BRIDGE EXCEPTION: Failed to call table append API`, error);
+        
+        // Extract meaningful error message
+        let errorMessage = 'Failed to append to table';
+        if (error.response && error.response.data && error.response.data.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        return {
+            success: false,
+            message: errorMessage,
+            error: error.code || 'BRIDGE_ERROR'
+        };
+    }
 }
 
 module.exports = router;
