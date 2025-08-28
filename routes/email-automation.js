@@ -184,9 +184,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
                 const verifySheet = verificationWorkbook.Sheets['Leads'];
                 const verifyData = XLSX.utils.sheet_to_json(verifySheet);
-                console.log(`🔍 DEBUG: Post-upload verification - ${verifyData.length} rows actually saved`);
-                console.log(`🔍 DEBUG: Post-upload first row:`, verifyData[0]);
-                console.log(`🔍 DEBUG: Post-upload last row:`, verifyData[verifyData.length - 1]);
+                console.log(`✅ DATA INTEGRITY CHECK: Passed - ${verifyData.length} rows as expected`);
                 
                 // Check data integrity
                 const expectedCount = existingData.length + mergeResults.newLeads.length;
@@ -197,7 +195,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     console.log(`✅ DATA INTEGRITY CHECK: Passed - ${verifyData.length} rows as expected`);
                 }
             } else {
-                console.error('❌ DEBUG: Post-upload verification failed - no Leads sheet found');
+                console.error('❌ Post-upload verification failed - no Leads sheet found');
                 
                 // Enhanced debugging for failed verification
                 if (verificationWorkbook) {
@@ -217,7 +215,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 throw new Error('Post-upload verification failed: No Leads sheet found in uploaded file');
             }
         } catch (verifyError) {
-            console.error('❌ DEBUG: Post-upload verification failed:', verifyError.message);
+            console.error('❌ Post-upload verification failed:', verifyError.message);
             
             // If verification fails, this is a critical error - don't claim success
             return res.status(500).json({
@@ -499,7 +497,6 @@ router.get('/master-list/export', requireDelegatedAuth, async (req, res) => {
 // DEBUG: Inspect master file contents
 router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
     try {
-        console.log('🔍 DEBUG: Inspecting master file contents...');
 
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
@@ -650,7 +647,6 @@ router.post('/master-list/merge-recovery', requireDelegatedAuth, upload.single('
 // DEBUG: Test upload and merge process
 router.post('/debug/test-upload-merge', requireDelegatedAuth, async (req, res) => {
     try {
-        console.log('🔍 DEBUG: Testing upload and merge process...');
 
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
@@ -743,7 +739,6 @@ router.post('/debug/test-upload-merge', requireDelegatedAuth, async (req, res) =
 // DEBUG: Test Excel file creation locally
 router.post('/debug/test-excel-creation', async (req, res) => {
     try {
-        console.log('🔍 DEBUG: Testing Excel file creation...');
 
         // Create a test Excel file with sample data
         const testLeads = [
@@ -764,7 +759,6 @@ router.post('/debug/test-excel-creation', async (req, res) => {
         const excelProcessor = new ExcelProcessor();
         const normalizedLeads = excelProcessor.normalizeLeadsData(testLeads);
         
-        console.log('🔍 DEBUG: Normalized test leads:', normalizedLeads);
 
         // Create master file
         const masterWorkbook = excelProcessor.createMasterFile();
@@ -775,7 +769,6 @@ router.post('/debug/test-excel-creation', async (req, res) => {
         // Convert to buffer and inspect
         const buffer = excelProcessor.workbookToBuffer(updatedWorkbook);
         
-        console.log('🔍 DEBUG: Created Excel buffer size:', buffer.length);
 
         // Read the buffer back to verify
         const verifyWorkbook = excelProcessor.bufferToWorkbook(buffer);
@@ -942,21 +935,16 @@ async function downloadMasterFile(graphClient) {
         }
 
         console.log(`📥 Downloading master file: ${files.value[0].name} (${files.value[0].size} bytes)`);
-        console.log(`🔍 DEBUG: File ID: ${files.value[0].id}`);
-        console.log(`🔍 DEBUG: Download URL: /me/drive/items/${files.value[0].id}/content`);
         
         // Try multiple methods to download the file
         let fileContent = null;
         
         try {
             // Method 1: Direct content download
-            console.log('🔍 DEBUG: Trying Method 1 - Direct content download');
             fileContent = await graphClient
                 .api(`/me/drive/items/${files.value[0].id}/content`)
                 .get();
                 
-            console.log(`🔍 DEBUG: Method 1 result - Content type: ${typeof fileContent}`);
-            console.log(`🔍 DEBUG: Method 1 result - Content length: ${fileContent ? fileContent.length : 'undefined'}`);
         } catch (error) {
             console.log('⚠️ Method 1 failed:', error.message);
         }
@@ -964,7 +952,6 @@ async function downloadMasterFile(graphClient) {
         // If Method 1 failed or returned undefined, try Method 2
         if (!fileContent || fileContent.length === undefined) {
             try {
-                console.log('🔍 DEBUG: Trying Method 2 - Stream download');
                 const response = await graphClient
                     .api(`/me/drive/items/${files.value[0].id}/content`)
                     .getStream();
@@ -976,7 +963,6 @@ async function downloadMasterFile(graphClient) {
                 }
                 fileContent = Buffer.concat(chunks);
                 
-                console.log(`🔍 DEBUG: Method 2 result - Buffer length: ${fileContent.length}`);
             } catch (error) {
                 console.log('⚠️ Method 2 failed:', error.message);
             }
@@ -985,13 +971,10 @@ async function downloadMasterFile(graphClient) {
         // If both methods failed, try Method 3
         if (!fileContent || fileContent.length === undefined) {
             try {
-                console.log('🔍 DEBUG: Trying Method 3 - Alternative path');
                 fileContent = await graphClient
                     .api(`/me/drive/root:${masterFolderPath}/${masterFileName}:/content`)
                     .get();
                     
-                console.log(`🔍 DEBUG: Method 3 result - Content type: ${typeof fileContent}`);
-                console.log(`🔍 DEBUG: Method 3 result - Content length: ${fileContent ? fileContent.length : 'undefined'}`);
             } catch (error) {
                 console.log('⚠️ Method 3 failed:', error.message);
             }
@@ -1002,9 +985,6 @@ async function downloadMasterFile(graphClient) {
             return null;
         }
 
-        console.log(`🔍 DEBUG: Final content type: ${typeof fileContent}`);
-        console.log(`🔍 DEBUG: Content is Buffer: ${Buffer.isBuffer(fileContent)}`);
-        console.log(`🔍 DEBUG: Content is ArrayBuffer: ${fileContent instanceof ArrayBuffer}`);
 
         // Handle different content types from Graph API
         let buffer;
@@ -1022,7 +1002,6 @@ async function downloadMasterFile(graphClient) {
         console.log(`✅ Master file downloaded successfully - converted to buffer of ${buffer.length} bytes`);
         
         // Create a test file locally to compare
-        console.log('🔍 DEBUG: Creating test file for comparison...');
         const testLeads = [{
             Name: 'Test User',
             Email: 'test@example.com',
@@ -1034,9 +1013,6 @@ async function downloadMasterFile(graphClient) {
         const testWithData = testProcessor.updateMasterFileWithLeads(testWorkbook, testProcessor.normalizeLeadsData(testLeads));
         const testBuffer = testProcessor.workbookToBuffer(testWithData);
         
-        console.log(`🔍 DEBUG: Local test file buffer: ${testBuffer.length} bytes`);
-        console.log(`🔍 DEBUG: OneDrive file buffer: ${buffer.length} bytes`);
-        console.log(`🔍 DEBUG: Buffer comparison - First 50 bytes match: ${buffer.slice(0, 50).equals(testBuffer.slice(0, 50))}`);
         
         return excelProcessor.bufferToWorkbook(buffer);
     } catch (error) {

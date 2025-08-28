@@ -105,27 +105,21 @@ class ExcelProcessor {
      */
     parseUploadedFile(fileBuffer) {
         try {
-            console.log(`🔍 DEBUG: Parsing Excel file buffer of ${fileBuffer.length} bytes`);
             
             const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-            console.log(`🔍 DEBUG: Found ${workbook.SheetNames.length} sheets:`, workbook.SheetNames);
             
             const sheetName = workbook.SheetNames[0]; // Use first sheet
             const worksheet = workbook.Sheets[sheetName];
             
-            console.log(`🔍 DEBUG: Using sheet "${sheetName}" with range:`, worksheet['!ref']);
             
             const data = XLSX.utils.sheet_to_json(worksheet);
             
             console.log(`📊 Parsed ${data.length} rows from uploaded file`);
-            console.log(`🔍 DEBUG: First row sample:`, data[0]);
-            console.log(`🔍 DEBUG: Headers in file:`, Object.keys(data[0] || {}));
             
             // Normalize and validate data
             const validLeads = data.filter(row => this.isValidLead(row));
             
             console.log(`✅ ${validLeads.length} valid leads found`);
-            console.log(`🔍 DEBUG: First valid lead:`, validLeads[0]);
             
             return validLeads;
         } catch (error) {
@@ -171,7 +165,6 @@ class ExcelProcessor {
             }
 
             if (existingEmails.has(email)) {
-                console.log(`🔍 Row ${index + 1}: Duplicate found - ${email}`);
                 results.duplicates.push({
                     email: email,
                     name: lead.Name || lead.name || '',
@@ -569,17 +562,14 @@ class ExcelProcessor {
      * DEBUG: Validate and inspect workbook contents  
      */
     debugWorkbook(workbook, description = 'Unknown') {
-        console.log(`🔍 DEBUG: Inspecting workbook - ${description}`);
         
         const sheets = Object.keys(workbook.Sheets);
-        console.log(`🔍 DEBUG: Available sheets:`, sheets);
         
         sheets.forEach(sheetName => {
             const sheet = workbook.Sheets[sheetName];
             const range = sheet['!ref'];
             const data = XLSX.utils.sheet_to_json(sheet);
             
-            console.log(`🔍 DEBUG: Sheet "${sheetName}":`);
             console.log(`   - Range: ${range}`);
             console.log(`   - Row count: ${data.length}`);
             console.log(`   - First row:`, data[0]);
@@ -600,12 +590,10 @@ class ExcelProcessor {
      * Convert workbook to buffer for saving
      */
     workbookToBuffer(workbook) {
-        console.log(`🔍 DEBUG: Converting workbook to buffer...`);
         this.debugWorkbook(workbook, 'Before buffer conversion');
         
         // Use xlsx format for better OneDrive compatibility
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-        console.log(`🔍 DEBUG: Buffer size: ${buffer.length} bytes`);
         
         return buffer;
     }
@@ -614,7 +602,6 @@ class ExcelProcessor {
      * Create workbook from buffer
      */
     bufferToWorkbook(buffer) {
-        console.log(`🔍 DEBUG: Reading workbook from buffer of ${buffer.length} bytes`);
         
         const workbook = XLSX.read(buffer, { type: 'buffer' });
         this.debugWorkbook(workbook, 'After reading from buffer');
