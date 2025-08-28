@@ -104,10 +104,22 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                             const sheet = masterWorkbook.Sheets[sheetName];
                             const data = XLSX.utils.sheet_to_json(sheet);
                             
-                            // Check if this looks like lead data (has Email column)
-                            if (data.length > 0 && (data[0].Email || data[0].email)) {
-                                console.log(`🔄 RECOVERY: Found ${data.length} potential leads in sheet "${sheetName}"`);
-                                recoveredData = [...recoveredData, ...data];
+                            // More comprehensive recovery - look for any rows with data that could be leads
+                            if (data.length > 0) {
+                                // Check for common lead columns (more flexible)
+                                const hasLeadData = data.some(row => 
+                                    row.Email || row.email || 
+                                    row.Name || row.name ||
+                                    row.Company || row.company ||
+                                    row['Company Name'] || 
+                                    row.Title || row.title
+                                );
+                                
+                                if (hasLeadData) {
+                                    console.log(`🔄 RECOVERY: Found ${data.length} potential leads in sheet "${sheetName}"`);
+                                    console.log(`🔄 RECOVERY: Sample data from ${sheetName}:`, data[0]);
+                                    recoveredData = [...recoveredData, ...data];
+                                }
                             }
                         } catch (error) {
                             console.error(`❌ Error reading sheet ${sheetName}: ${error.message}`);
@@ -115,6 +127,22 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     }
                     
                     console.log(`🔄 RECOVERY: Total recovered data: ${recoveredData.length} rows`);
+                    
+                    // IMPORTANT: If no data recovered, warn about potential data loss
+                    if (recoveredData.length === 0) {
+                        console.log('⚠️ WARNING: No existing lead data recovered from corrupted file');
+                        console.log('⚠️ This could mean:');
+                        console.log('   1. The master file was truly empty (first upload)');
+                        console.log('   2. Previous lead data was lost due to corruption');
+                        console.log('   3. The file structure changed and data needs manual recovery');
+                        
+                        // Check if this might not be the first upload by looking at file size
+                        if (fileContent && fileContent.length > 5000) { // Non-trivial file size suggests it had data
+                            console.log(`⚠️ SUSPICIOUS: File size is ${fileContent.length} bytes but no recoverable data found`);
+                            console.log(`⚠️ This suggests potential data loss - consider manual recovery`);
+                        }
+                    }
+                    
                     existingData = recoveredData;
                     
                     // Recreate master file with proper structure
@@ -547,6 +575,102 @@ router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to inspect master file',
+            error: error.message
+        });
+    }
+});
+
+// RECOVERY: Merge additional leads with existing master list (for data recovery)
+router.post('/master-list/merge-recovery', requireDelegatedAuth, upload.single('excelFile'), async (req, res) => {
+    try {
+        console.log('🔄 RECOVERY MERGE: Starting manual recovery merge process...');
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No Excel file provided for recovery merge'
+            });
+        }
+
+        console.log(`📊 Processing recovery file: ${req.file.originalname} (${req.file.size} bytes)`);
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Parse recovery Excel file
+        const recoveryLeads = excelProcessor.parseUploadedFile(req.file.buffer);
+
+        if (recoveryLeads.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid leads found in recovery file'
+            });
+        }
+
+        console.log(`📊 Found ${recoveryLeads.length} leads in recovery file`);
+
+        // Download current master file
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        let currentMasterWorkbook = await downloadMasterFile(graphClient);
+        let currentLeads = [];
+
+        if (currentMasterWorkbook && currentMasterWorkbook.Sheets['Leads']) {
+            const leadsSheet = currentMasterWorkbook.Sheets['Leads'];
+            currentLeads = XLSX.utils.sheet_to_json(leadsSheet);
+            console.log(`📊 Current master file has ${currentLeads.length} existing leads`);
+        } else {
+            console.log('📋 No current master file found or corrupted - creating new one');
+            currentMasterWorkbook = excelProcessor.createMasterFile();
+        }
+
+        // Merge recovery leads with current data (append mode)
+        const mergeResults = excelProcessor.mergeLeadsWithMaster(recoveryLeads, currentLeads);
+
+        console.log(`🔄 RECOVERY MERGE RESULTS:`);
+        console.log(`   - Current leads: ${currentLeads.length}`);
+        console.log(`   - Recovery leads provided: ${recoveryLeads.length}`);
+        console.log(`   - New unique leads to add: ${mergeResults.newLeads.length}`);
+        console.log(`   - Duplicates skipped: ${mergeResults.duplicates.length}`);
+
+        if (mergeResults.newLeads.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No new leads to recover - all leads already exist in master list',
+                currentCount: currentLeads.length,
+                recoveryAttempted: recoveryLeads.length,
+                duplicates: mergeResults.duplicates.length
+            });
+        }
+
+        // Update master file with recovered leads
+        const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(currentMasterWorkbook, mergeResults.newLeads);
+
+        // Create folder if needed
+        await createOneDriveFolder(graphClient, masterFolderPath);
+
+        // Save updated master file
+        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        await advancedExcelUpload(graphClient, masterBuffer, masterFileName, masterFolderPath);
+
+        console.log(`✅ RECOVERY MERGE completed successfully`);
+
+        res.json({
+            success: true,
+            message: `Successfully recovered ${mergeResults.newLeads.length} leads`,
+            recoveryResults: {
+                originalCount: currentLeads.length,
+                recoveredLeads: mergeResults.newLeads.length,
+                duplicatesSkipped: mergeResults.duplicates.length,
+                finalCount: currentLeads.length + mergeResults.newLeads.length
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Recovery merge error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to perform recovery merge',
             error: error.message
         });
     }
