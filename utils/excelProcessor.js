@@ -49,17 +49,27 @@ class ExcelProcessor {
         const wb = XLSX.utils.book_new();
         
         // Sheet 1: Leads (Main data)
-        const leadsData = leads.length > 0 ? this.normalizeLeadsData(leads) : [this.getEmptyLeadRow()];
-        const leadsSheet = XLSX.utils.json_to_sheet(leadsData);
+        let leadsData;
+        if (leads.length > 0) {
+            leadsData = this.normalizeLeadsData(leads);
+        } else {
+            // Create sheet with headers only (no empty row)
+            leadsData = [];
+        }
+        
+        const leadsSheet = XLSX.utils.json_to_sheet(leadsData, { 
+            header: Object.keys(this.masterFileStructure) 
+        });
         
         // Set column widths for better readability
         leadsSheet['!cols'] = this.getColumnWidths();
         
         XLSX.utils.book_append_sheet(wb, leadsSheet, 'Leads');
         
-        // Sheet 2: Templates
-        const templatesData = [this.getEmptyTemplateRow()];
-        const templatesSheet = XLSX.utils.json_to_sheet(templatesData);
+        // Sheet 2: Templates (headers only, no empty rows)
+        const templatesSheet = XLSX.utils.json_to_sheet([], {
+            header: ['Template_ID', 'Template_Name', 'Template_Type', 'Subject', 'Body', 'Active']
+        });
         templatesSheet['!cols'] = [
             {width: 20}, // Template_ID
             {width: 30}, // Template_Name
@@ -71,9 +81,10 @@ class ExcelProcessor {
         
         XLSX.utils.book_append_sheet(wb, templatesSheet, 'Templates');
         
-        // Sheet 3: Campaign History
-        const campaignData = [this.getEmptyCampaignRow()];
-        const campaignSheet = XLSX.utils.json_to_sheet(campaignData);
+        // Sheet 3: Campaign History (headers only, no empty rows)
+        const campaignSheet = XLSX.utils.json_to_sheet([], {
+            header: ['Campaign_ID', 'Campaign_Name', 'Start_Date', 'Emails_Sent', 'Emails_Read', 'Replies', 'Status']
+        });
         campaignSheet['!cols'] = [
             {width: 20}, // Campaign_ID
             {width: 30}, // Campaign_Name
@@ -231,10 +242,22 @@ class ExcelProcessor {
     updateMasterFileWithLeads(existingWorkbook, newLeads) {
         try {
             const leadsSheet = existingWorkbook.Sheets['Leads'];
-            const existingData = XLSX.utils.sheet_to_json(leadsSheet);
+            let existingData = XLSX.utils.sheet_to_json(leadsSheet);
+            
+            // Filter out empty rows (rows where all values are empty strings)
+            existingData = existingData.filter(row => {
+                // Check if the row has any non-empty values
+                return Object.values(row).some(value => 
+                    value !== null && value !== undefined && value !== ''
+                );
+            });
+            
+            console.log(`📊 Filtered existing data: ${existingData.length} valid rows (removed empty rows)`);
             
             // Combine existing and new data
             const combinedData = [...existingData, ...newLeads];
+            
+            console.log(`📊 Final combined data: ${combinedData.length} total rows`);
             
             // Create new sheet with combined data
             const newSheet = XLSX.utils.json_to_sheet(combinedData);
