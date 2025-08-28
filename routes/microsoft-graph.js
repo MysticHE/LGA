@@ -974,24 +974,39 @@ async function updateLeadTrackingInTable(client, fileId, tableName, leadEmail, t
  */
 function normalizeLeadData(lead) {
     return {
-        'Name': lead.name || '',
-        'Title': lead.title || '',
-        'Company Name': lead.organization_name || lead.company || '',
-        'Company Website': lead.organization_website_url || lead.website || '',
-        'Size': lead.estimated_num_employees || lead.size || '',
-        'Email': lead.email || '',
-        'Email Verified': lead.email_verified || 'N',
-        'LinkedIn URL': lead.linkedin_url || lead.linkedin || '',
-        'Industry': lead.industry || '',
-        'Location': lead.country || lead.location || '',
-        'Notes': lead.notes || '',
-        'Conversion Status': lead.conversion_status || 'Pending',
-        'Email Sent': '',
-        'Email Status': 'Not Sent',
-        'Sent Date': '',
-        'Read Date': '',
-        'Reply Date': '',
-        'Last Updated': new Date().toISOString()
+        // Basic lead information
+        'Name': lead['Name'] || lead.name || '',
+        'Title': lead['Title'] || lead.title || '',
+        'Company Name': lead['Company Name'] || lead.organization_name || lead.company || '',
+        'Company Website': lead['Company Website'] || lead.organization_website_url || lead.website || '',
+        'Size': lead['Size'] || lead.estimated_num_employees || lead.size || '',
+        'Email': lead['Email'] || lead.email || '',
+        'Email Verified': lead['Email Verified'] || lead.email_verified || 'Y',
+        'LinkedIn URL': lead['LinkedIn URL'] || lead.linkedin_url || lead.linkedin || '',
+        'Industry': lead['Industry'] || lead.industry || '',
+        'Location': lead['Location'] || lead.country || lead.location || '',
+        'Last Updated': lead['Last Updated'] || new Date().toISOString(),
+        
+        // Email automation columns
+        'AI_Generated_Email': lead['AI_Generated_Email'] || '',
+        'Status': lead['Status'] || 'New',
+        'Campaign_Stage': lead['Campaign_Stage'] || 'First_Contact',
+        'Email_Choice': lead['Email_Choice'] || 'AI_Generated',
+        'Template_Used': lead['Template_Used'] || '',
+        'Email_Content_Sent': lead['Email_Content_Sent'] || '',
+        'Last_Email_Date': lead['Last_Email_Date'] || '',
+        'Next_Email_Date': lead['Next_Email_Date'] || '',
+        'Follow_Up_Days': lead['Follow_Up_Days'] || 7,
+        'Email_Count': lead['Email_Count'] || 0,
+        'Max_Emails': lead['Max_Emails'] || 3,
+        'Auto_Send_Enabled': lead['Auto_Send_Enabled'] || 'Yes',
+        'Read_Date': lead['Read_Date'] || '',
+        'Reply_Date': lead['Reply_Date'] || '',
+        
+        // Legacy compatibility columns
+        'Email Sent': lead['Email Sent'] || '',
+        'Email Status': lead['Email Status'] || 'Not Sent',
+        'Sent Date': lead['Sent Date'] || ''
     };
 }
 
@@ -1162,6 +1177,7 @@ function getExcelColumnLetter(columnNumber) {
  */
 function getColumnWidths() {
     return [
+        // Basic lead information
         {width: 20}, // Name
         {width: 25}, // Title
         {width: 30}, // Company Name
@@ -1172,14 +1188,28 @@ function getColumnWidths() {
         {width: 40}, // LinkedIn URL
         {width: 20}, // Industry
         {width: 15}, // Location
-        {width: 50}, // Notes
-        {width: 18}, // Conversion Status
+        {width: 20}, // Last Updated
+        
+        // Email automation columns
+        {width: 50}, // AI_Generated_Email
+        {width: 15}, // Status
+        {width: 20}, // Campaign_Stage
+        {width: 18}, // Email_Choice
+        {width: 20}, // Template_Used
+        {width: 40}, // Email_Content_Sent
+        {width: 18}, // Last_Email_Date
+        {width: 18}, // Next_Email_Date
+        {width: 15}, // Follow_Up_Days
+        {width: 12}, // Email_Count
+        {width: 12}, // Max_Emails
+        {width: 18}, // Auto_Send_Enabled
+        {width: 18}, // Read_Date
+        {width: 18}, // Reply_Date
+        
+        // Legacy compatibility columns
         {width: 12}, // Email Sent
         {width: 15}, // Email Status
-        {width: 20}, // Sent Date
-        {width: 20}, // Read Date
-        {width: 20}, // Reply Date
-        {width: 20}  // Last Updated
+        {width: 20}  // Sent Date
     ];
 }
 
