@@ -57,3 +57,22 @@ Thumbs.db
 # Build outputs
 dist/
 build/
+
+# Python files (not needed for Node.js project)
+*.py
+*.pyc
+__pycache__/
+requirements.txt
+
+# Claude-specific files
+.claude/
+excel_append.log
+
+# Temporary files
+temp_*
+debug_*
+test_*
+
+# Backup files
+*.bak
+*.backup

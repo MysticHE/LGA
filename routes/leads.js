@@ -778,10 +778,11 @@ async function processWorkflowJob(jobId, protocol, host) {
                 const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
                 const filename = `singapore-leads-${timestamp}.xlsx`;
                 
-                const oneDriveResponse = await axios.post(`${protocol}://${host}/api/microsoft-graph/onedrive/create-excel`, {
+                const oneDriveResponse = await axios.post(`${protocol}://${host}/api/microsoft-graph/onedrive/append-to-table`, {
                     leads: processedLeads,
                     filename: filename,
-                    folderPath: '/LGA-Leads'
+                    folderPath: '/LGA-Leads',
+                    useCustomFile: true  // Allow custom filename for compatibility
                 });
                 
                 if (oneDriveResponse.data.success) {

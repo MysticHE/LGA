@@ -2950,7 +2950,7 @@ Best regards,
                     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
                     const filename = `singapore-leads-${timestamp}.xlsx`;
                     
-                    const response = await fetch('/api/microsoft-graph/onedrive/create-excel', {
+                    const response = await fetch('/api/microsoft-graph/onedrive/append-to-table', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -2958,14 +2958,16 @@ Best regards,
                         body: JSON.stringify({
                             leads: leads,
                             filename: filename,
-                            folderPath: '/LGA-Leads'
+                            folderPath: '/LGA-Leads',
+                            useCustomFile: true  // Allow custom filename for compatibility
                         })
                     });
                     
                     const result = await response.json();
                     
                     if (result.success) {
-                        this.addLog(`✅ Excel file saved to OneDrive: ${result.filename}`, 'progress');
+                        const actionText = result.action === 'created' ? 'created' : 'appended to';
+                        this.addLog(`✅ Excel data ${actionText} OneDrive: ${result.filename}`, 'progress');
                         
                         // Add OneDrive link to results
                         setTimeout(() => {
