@@ -587,10 +587,12 @@
                     document.getElementById('uploadResults').classList.remove('hidden');
                     
                     // Refresh dashboard and master list
+                    console.log('🔄 Refreshing dashboard and master list after upload...');
                     await Promise.all([
                         refreshDashboard(),
                         loadMasterList()
                     ]);
+                    console.log('✅ Dashboard and master list refresh completed');
                 } else {
                     // Handle specific error types
                     if (response.status === 401 || result.error === 'Authentication Required') {
@@ -752,6 +754,7 @@
                 
                 if (result.success) {
                     masterListData = result.data || [];
+                    console.log(`📊 Loaded ${masterListData.length} leads from master file`);
                     displayMasterList(masterListData);
                 } else {
                     document.getElementById('masterListBody').innerHTML = `
