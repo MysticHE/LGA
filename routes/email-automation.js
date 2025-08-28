@@ -89,7 +89,11 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 masterWorkbook = excelProcessor.createMasterFile();
             }
         } catch (error) {
-            console.log('📋 Creating new master file due to error:', error.message);
+            if (error.code === 'itemNotFound' || error.message.includes('not found')) {
+                console.log('📋 No existing master file found - creating new master file for first time');
+            } else {
+                console.log('📋 Creating new master file due to issue accessing existing file:', error.message);
+            }
             masterWorkbook = excelProcessor.createMasterFile();
         }
 
@@ -118,6 +122,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         await uploadToOneDrive(graphClient, masterBuffer, masterFileName, masterFolderPath);
 
         console.log(`✅ Master file updated: ${mergeResults.newLeads.length} new leads added`);
+        console.log(`🎉 Upload completed successfully - Master file ready in OneDrive`);
 
         res.json({
             success: true,
