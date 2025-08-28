@@ -164,6 +164,22 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 }
             } else {
                 console.error('❌ DEBUG: Post-upload verification failed - no Leads sheet found');
+                
+                // Enhanced debugging for failed verification
+                if (verificationWorkbook) {
+                    const availableSheets = Object.keys(verificationWorkbook.Sheets);
+                    console.error(`❌ Available sheets in downloaded file: [${availableSheets.join(', ')}]`);
+                    
+                    // Check if we have a Sheet1 with data (indicating corruption)
+                    if (availableSheets.includes('Sheet1')) {
+                        const sheet1Data = XLSX.utils.sheet_to_json(verificationWorkbook.Sheets['Sheet1']);
+                        console.error(`❌ Sheet1 has ${sheet1Data.length} rows - this indicates OneDrive corruption`);
+                        console.error(`❌ This is a known Microsoft Graph API Excel upload corruption issue`);
+                    }
+                } else {
+                    console.error(`❌ Could not download verification file at all`);
+                }
+                
                 throw new Error('Post-upload verification failed: No Leads sheet found in uploaded file');
             }
         } catch (verifyError) {
@@ -933,13 +949,35 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
     console.log(`📤 Uploading file: ${filename} to ${folderPath}`);
     console.log(`📊 File size: ${fileBuffer.length} bytes`);
     
-    // Try multiple upload methods
+    // Verify buffer integrity before upload
+    console.log(`🔍 BUFFER INTEGRITY CHECK:`);
+    console.log(`   - Buffer is Buffer: ${Buffer.isBuffer(fileBuffer)}`);
+    console.log(`   - Buffer length: ${fileBuffer.length}`);
+    console.log(`   - First 10 bytes: ${Array.from(fileBuffer.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+    console.log(`   - Starts with Excel signature: ${fileBuffer.slice(0, 2).toString('hex') === '504b'}`); // PK signature
+    
+    // Try multiple upload methods - order matters (most reliable first)
     const uploadMethods = [
         {
-            name: 'Standard PUT',
+            name: 'Binary PUT with text/plain (Most Reliable)',
             execute: async () => {
                 const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
-                console.log(`📤 Method 1: Using OneDrive API URL: ${uploadUrl}`);
+                console.log(`📤 Method 1: Binary upload with text/plain header`);
+                
+                // This is the most reliable method according to Stack Overflow
+                return await client
+                    .api(uploadUrl)
+                    .headers({
+                        'Content-Type': 'text/plain'
+                    })
+                    .put(fileBuffer);
+            }
+        },
+        {
+            name: 'Standard PUT with proper Excel Content-Type',
+            execute: async () => {
+                const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
+                console.log(`📤 Method 2: Standard PUT with Excel Content-Type`);
                 
                 return await client
                     .api(uploadUrl)
@@ -950,9 +988,9 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
             }
         },
         {
-            name: 'Direct folder upload',
+            name: 'Direct folder upload with text/plain',
             execute: async () => {
-                console.log(`📤 Method 2: Direct folder upload`);
+                console.log(`📤 Method 3: Direct folder upload with text/plain`);
                 
                 // First ensure folder exists and get its ID
                 let folderId;
@@ -969,15 +1007,15 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
                 return await client
                     .api(`/me/drive/items/${folderId}:/${filename}:/content`)
                     .headers({
-                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        'Content-Type': 'text/plain'
                     })
                     .put(fileBuffer);
             }
         },
         {
-            name: 'Upload session (for large files)',
+            name: 'Upload session with text/plain (for large files)',
             execute: async () => {
-                console.log(`📤 Method 3: Upload session`);
+                console.log(`📤 Method 4: Upload session with text/plain`);
                 
                 const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/createUploadSession`;
                 
@@ -994,7 +1032,7 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
                     headers: {
                         'Content-Length': fileBuffer.length.toString(),
                         'Content-Range': `bytes 0-${fileBuffer.length - 1}/${fileBuffer.length}`,
-                        'Content-Type': 'application/octet-stream'
+                        'Content-Type': 'text/plain' // Changed from application/octet-stream
                     }
                 });
                 
