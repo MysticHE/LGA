@@ -16,6 +16,22 @@ const rateLimiterMiddleware = async (req, res, next) => {
             return next();
         }
         
+        // Exempt authentication endpoints from rate limiting
+        if (req.path.startsWith('/auth/')) {
+            return next();
+        }
+        
+        // Exempt Microsoft Graph test endpoint from rate limiting
+        if (req.path === '/api/microsoft-graph/test') {
+            return next();
+        }
+        
+        // Exempt email automation status/stats endpoints from rate limiting
+        if (req.path.includes('/api/email-automation/master-list/stats') || 
+            req.path.includes('/api/email-automation/templates')) {
+            return next();
+        }
+        
         // Exempt static files from rate limiting
         const staticFileExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
         const isStaticFile = staticFileExtensions.some(ext => req.path.toLowerCase().endsWith(ext));
