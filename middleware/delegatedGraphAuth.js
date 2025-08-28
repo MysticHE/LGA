@@ -188,6 +188,29 @@ class DelegatedGraphAuth {
         return tokenData ? tokenData.account : null;
     }
 
+    // Get all active sessions
+    getActiveSessions() {
+        return Array.from(this.userTokens.keys());
+    }
+
+    // Clean up expired sessions
+    cleanupExpiredSessions() {
+        const now = new Date();
+        let cleanedCount = 0;
+        
+        for (const [sessionId, tokenData] of this.userTokens.entries()) {
+            const expiresOn = new Date(tokenData.expiresOn);
+            // Remove sessions that expired more than 1 hour ago (beyond refresh token validity)
+            if (expiresOn.getTime() < (now.getTime() - 60 * 60 * 1000)) {
+                this.userTokens.delete(sessionId);
+                cleanedCount++;
+                console.log(`🧹 Cleaned up expired session: ${sessionId}`);
+            }
+        }
+        
+        return cleanedCount;
+    }
+
     // Logout user
     logout(sessionId) {
         this.userTokens.delete(sessionId);

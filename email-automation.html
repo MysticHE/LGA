@@ -390,8 +390,15 @@
                 
                 if (urlSessionId) {
                     sessionId = urlSessionId;
+                    // Store in localStorage for cross-platform consistency
+                    localStorage.setItem('msGraph_sessionId', sessionId);
                     // Remove sessionId from URL
                     window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                
+                // Check for existing session in localStorage
+                if (!sessionId) {
+                    sessionId = localStorage.getItem('msGraph_sessionId');
                 }
                 
                 // Check authentication status
@@ -401,6 +408,8 @@
                 
                 if (authData.authenticated) {
                     sessionId = authData.sessionId;
+                    // Ensure sessionId is stored in localStorage
+                    localStorage.setItem('msGraph_sessionId', sessionId);
                     showAuthStatus('✅ Connected to Microsoft 365', 'success');
                     
                     // Load initial data
@@ -602,6 +611,7 @@
                             <button onclick="window.location.reload()" class="btn btn-primary" style="margin-top: 10px;">Reconnect</button>
                         `;
                         sessionId = null; // Reset session
+                        localStorage.removeItem('msGraph_sessionId'); // Clean up localStorage
                     } else if (response.status === 423 || result.errorType === 'FILE_LOCKED') {
                         document.getElementById('uploadSummary').innerHTML = `
                             <strong>🔒 File is Locked</strong><br>
