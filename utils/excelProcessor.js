@@ -604,7 +604,8 @@ class ExcelProcessor {
         console.log(`🔍 DEBUG: Converting workbook to buffer...`);
         this.debugWorkbook(workbook, 'Before buffer conversion');
         
-        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        // Use xlsm format to prevent OneDrive auto-processing
+        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsm' });
         console.log(`🔍 DEBUG: Buffer size: ${buffer.length} bytes`);
         
         return buffer;

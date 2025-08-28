@@ -57,8 +57,9 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             });
         }
 
-        // Check if master file exists, create if not
-        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        // Check if master file exists, create if not  
+        // Use .xlsm extension to prevent OneDrive auto-processing
+        const masterFileName = 'LGA-Master-Email-List.xlsm';
         const masterFolderPath = '/LGA-Email-Automation';
         
         let masterWorkbook;
@@ -304,7 +305,7 @@ router.put('/master-list/lead/:email', requireDelegatedAuth, async (req, res) =>
 
         // Save updated file
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsm', '/LGA-Email-Automation');
 
         console.log(`✅ Lead updated: ${email}`);
 
@@ -611,7 +612,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 
         const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsm', '/LGA-Email-Automation');
 
         console.log(`✅ Email sent successfully to: ${email}`);
 
@@ -639,7 +640,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 // Helper function to download master file
 async function downloadMasterFile(graphClient) {
     try {
-        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFileName = 'LGA-Master-Email-List.xlsm';
         const masterFolderPath = '/LGA-Email-Automation';
         
         console.log(`📥 Attempting to download master file from: ${masterFolderPath}`);
@@ -804,7 +805,7 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRet
             const result = await client
                 .api(uploadUrl)
                 .headers({
-                    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    'Content-Type': 'application/vnd.ms-excel.sheet.macroEnabled.12'
                 })
                 .put(fileBuffer);
             
