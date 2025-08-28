@@ -86,13 +86,47 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 
                 masterWorkbook = excelProcessor.bufferToWorkbook(fileContent);
                 
-                // Get existing leads data
-                const leadsSheet = masterWorkbook.Sheets['Leads'];
-                if (leadsSheet) {
-                    existingData = XLSX.utils.sheet_to_json(leadsSheet);
-                    console.log(`📊 Found ${existingData.length} existing leads in master file`);
+                // CORRUPTION DETECTION: Check if the file has proper structure
+                const hasRequiredSheets = ['Leads', 'Templates', 'Campaign_History'].every(
+                    sheetName => masterWorkbook.Sheets[sheetName]
+                );
+                
+                if (!hasRequiredSheets) {
+                    console.log('🚨 CORRUPTION DETECTED: Master file is missing required sheets');
+                    console.log(`📊 Available sheets: [${Object.keys(masterWorkbook.Sheets).join(', ')}]`);
+                    
+                    // Try to recover existing lead data from any sheet
+                    let recoveredData = [];
+                    const sheetNames = Object.keys(masterWorkbook.Sheets);
+                    
+                    for (const sheetName of sheetNames) {
+                        try {
+                            const sheet = masterWorkbook.Sheets[sheetName];
+                            const data = XLSX.utils.sheet_to_json(sheet);
+                            
+                            // Check if this looks like lead data (has Email column)
+                            if (data.length > 0 && (data[0].Email || data[0].email)) {
+                                console.log(`🔄 RECOVERY: Found ${data.length} potential leads in sheet "${sheetName}"`);
+                                recoveredData = [...recoveredData, ...data];
+                            }
+                        } catch (error) {
+                            console.error(`❌ Error reading sheet ${sheetName}: ${error.message}`);
+                        }
+                    }
+                    
+                    console.log(`🔄 RECOVERY: Total recovered data: ${recoveredData.length} rows`);
+                    existingData = recoveredData;
+                    
+                    // Recreate master file with proper structure
+                    console.log('🔄 REBUILDING: Creating new master file with proper structure');
+                    masterWorkbook = excelProcessor.createMasterFile(existingData);
                 } else {
-                    console.log('⚠️ Master file exists but has no Leads sheet');
+                    // File structure is good, extract existing data normally
+                    const leadsSheet = masterWorkbook.Sheets['Leads'];
+                    if (leadsSheet) {
+                        existingData = XLSX.utils.sheet_to_json(leadsSheet);
+                        console.log(`📊 Found ${existingData.length} existing leads in master file`);
+                    }
                 }
             } else {
                 console.log('📋 No master file found, creating new one...');

@@ -21,19 +21,92 @@ async function advancedExcelUpload(client, fileBuffer, filename, folderPath) {
         throw new Error('Invalid Excel file format');
     }
     
-    // Step 2: Create upload session (Microsoft's official recommendation)
-    const uploadSession = await createUploadSession(client, filename, folderPath);
-    console.log(`📋 Upload session created: ${uploadSession.uploadUrl}`);
+    // Step 2: Try multiple upload strategies with lock handling
+    return await uploadWithRetry(client, fileBuffer, filename, folderPath);
+}
+
+/**
+ * Upload with comprehensive retry logic for locked files and various strategies
+ */
+async function uploadWithRetry(client, fileBuffer, filename, folderPath, maxRetries = 5) {
+    const strategies = [
+        {
+            name: 'Upload Session (Recommended)',
+            execute: async () => {
+                const uploadSession = await createUploadSession(client, filename, folderPath);
+                console.log(`📋 Upload session created: ${uploadSession.uploadUrl}`);
+                return await uploadFileToSession(uploadSession.uploadUrl, fileBuffer);
+            }
+        },
+        {
+            name: 'Direct PUT (Fallback)',
+            execute: async () => {
+                console.log(`📤 Trying direct PUT upload as fallback`);
+                return await client
+                    .api(`/me/drive/root:${folderPath}/${filename}:/content`)
+                    .put(fileBuffer);
+            }
+        }
+    ];
     
-    // Step 3: Upload using raw HTTP request (avoids Graph SDK overhead)
-    const uploadResult = await uploadFileToSession(uploadSession.uploadUrl, fileBuffer);
-    console.log(`✅ File uploaded successfully`);
+    let lastError = null;
     
-    // Step 4: Verify upload integrity
-    await verifyUploadedExcelFile(client, fileBuffer, filename, folderPath);
-    console.log(`✅ Upload verification passed`);
+    for (const strategy of strategies) {
+        console.log(`🚀 Attempting strategy: ${strategy.name}`);
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🔄 Attempt ${attempt}/${maxRetries} for ${strategy.name}`);
+                
+                const uploadResult = await strategy.execute();
+                console.log(`✅ Upload successful with ${strategy.name}`);
+                
+                // Verify upload integrity
+                await verifyUploadedExcelFile(client, fileBuffer, filename, folderPath);
+                console.log(`✅ Upload verification passed`);
+                
+                return uploadResult;
+                
+            } catch (error) {
+                lastError = error;
+                console.error(`❌ ${strategy.name} attempt ${attempt} failed: ${error.message}`);
+                
+                // Check if it's a file lock error
+                const isLockError = error.response?.status === 423 || 
+                                   error.status === 423 ||
+                                   error.statusCode === 423 || 
+                                   (error.response?.data?.error?.code === 'resourceLocked') ||
+                                   (error.response?.data?.error?.code === 'notAllowed') ||
+                                   error.code === 'resourceLocked' || 
+                                   error.code === 'notAllowed';
+                
+                if (isLockError) {
+                    const waitTime = Math.pow(2, attempt - 1) * 3000; // 3s, 6s, 12s, 24s, 48s
+                    console.log(`🔒 File locked - waiting ${waitTime/1000}s before retry (attempt ${attempt}/${maxRetries})`);
+                    console.log(`💡 TIP: Close the Excel file in OneDrive if you have it open`);
+                    
+                    if (attempt < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, waitTime));
+                        continue;
+                    }
+                } else {
+                    console.error(`❌ Non-lock error, trying next strategy: ${error.message}`);
+                    break; // Try next strategy
+                }
+            }
+        }
+    }
     
-    return uploadResult;
+    // All strategies failed
+    console.error(`❌ All upload strategies failed. Last error:`, lastError);
+    
+    if (lastError.response?.status === 423 || 
+        lastError.response?.data?.error?.code === 'resourceLocked' ||
+        lastError.response?.data?.error?.code === 'notAllowed') {
+        throw new Error(`File is locked in OneDrive. Please close the Excel file and try again. (${lastError.message})`);
+    }
+    
+    throw lastError;
 }
 
 /**
@@ -186,6 +259,7 @@ async function verifyUploadedExcelFile(client, originalBuffer, filename, folderP
 
 module.exports = {
     advancedExcelUpload,
+    uploadWithRetry,
     validateExcelFile,
     createUploadSession,
     uploadFileToSession,
