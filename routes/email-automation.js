@@ -649,13 +649,85 @@ async function downloadMasterFile(graphClient) {
         }
 
         console.log(`📥 Downloading master file: ${files.value[0].name} (${files.value[0].size} bytes)`);
+        console.log(`🔍 DEBUG: File ID: ${files.value[0].id}`);
+        console.log(`🔍 DEBUG: Download URL: /me/drive/items/${files.value[0].id}/content`);
         
-        const fileContent = await graphClient
-            .api(`/me/drive/items/${files.value[0].id}/content`)
-            .get();
+        // Try multiple methods to download the file
+        let fileContent = null;
+        
+        try {
+            // Method 1: Direct content download
+            console.log('🔍 DEBUG: Trying Method 1 - Direct content download');
+            fileContent = await graphClient
+                .api(`/me/drive/items/${files.value[0].id}/content`)
+                .get();
+                
+            console.log(`🔍 DEBUG: Method 1 result - Content type: ${typeof fileContent}`);
+            console.log(`🔍 DEBUG: Method 1 result - Content length: ${fileContent ? fileContent.length : 'undefined'}`);
+        } catch (error) {
+            console.log('⚠️ Method 1 failed:', error.message);
+        }
+        
+        // If Method 1 failed or returned undefined, try Method 2
+        if (!fileContent || fileContent.length === undefined) {
+            try {
+                console.log('🔍 DEBUG: Trying Method 2 - Stream download');
+                const response = await graphClient
+                    .api(`/me/drive/items/${files.value[0].id}/content`)
+                    .getStream();
+                    
+                // Convert stream to buffer
+                const chunks = [];
+                for await (const chunk of response) {
+                    chunks.push(chunk);
+                }
+                fileContent = Buffer.concat(chunks);
+                
+                console.log(`🔍 DEBUG: Method 2 result - Buffer length: ${fileContent.length}`);
+            } catch (error) {
+                console.log('⚠️ Method 2 failed:', error.message);
+            }
+        }
+        
+        // If both methods failed, try Method 3
+        if (!fileContent || fileContent.length === undefined) {
+            try {
+                console.log('🔍 DEBUG: Trying Method 3 - Alternative path');
+                fileContent = await graphClient
+                    .api(`/me/drive/root:${masterFolderPath}/${masterFileName}:/content`)
+                    .get();
+                    
+                console.log(`🔍 DEBUG: Method 3 result - Content type: ${typeof fileContent}`);
+                console.log(`🔍 DEBUG: Method 3 result - Content length: ${fileContent ? fileContent.length : 'undefined'}`);
+            } catch (error) {
+                console.log('⚠️ Method 3 failed:', error.message);
+            }
+        }
 
-        console.log(`✅ Master file downloaded successfully`);
-        return excelProcessor.bufferToWorkbook(fileContent);
+        if (!fileContent) {
+            console.error('❌ All download methods failed');
+            return null;
+        }
+
+        console.log(`🔍 DEBUG: Final content type: ${typeof fileContent}`);
+        console.log(`🔍 DEBUG: Content is Buffer: ${Buffer.isBuffer(fileContent)}`);
+        console.log(`🔍 DEBUG: Content is ArrayBuffer: ${fileContent instanceof ArrayBuffer}`);
+
+        // Handle different content types from Graph API
+        let buffer;
+        if (Buffer.isBuffer(fileContent)) {
+            buffer = fileContent;
+        } else if (fileContent instanceof ArrayBuffer) {
+            buffer = Buffer.from(fileContent);
+        } else if (typeof fileContent === 'string') {
+            buffer = Buffer.from(fileContent, 'binary');
+        } else {
+            console.error('❌ Unexpected file content type:', typeof fileContent);
+            return null;
+        }
+
+        console.log(`✅ Master file downloaded successfully - converted to buffer of ${buffer.length} bytes`);
+        return excelProcessor.bufferToWorkbook(buffer);
     } catch (error) {
         console.error('❌ Master file download error:', error);
         return null;
