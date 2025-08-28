@@ -602,6 +602,18 @@
                             <button onclick="window.location.reload()" class="btn btn-primary" style="margin-top: 10px;">Reconnect</button>
                         `;
                         sessionId = null; // Reset session
+                    } else if (response.status === 423 || result.errorType === 'FILE_LOCKED') {
+                        document.getElementById('uploadSummary').innerHTML = `
+                            <strong>🔒 File is Locked</strong><br>
+                            ${result.userMessage || result.message}<br>
+                            <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; font-size: 0.9em;">
+                                <strong>💡 Quick Fix:</strong><br>
+                                1. Close the Excel file if it's open in OneDrive or Excel<br>
+                                2. Wait 30 seconds for the sync to complete<br>
+                                3. Try uploading again
+                            </div>
+                            <button onclick="handleFileUpload()" class="btn btn-primary" style="margin-top: 10px;">Try Again</button>
+                        `;
                     } else {
                         document.getElementById('uploadSummary').innerHTML = `
                             <strong>❌ Upload Failed</strong><br>

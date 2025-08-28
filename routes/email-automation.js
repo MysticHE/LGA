@@ -140,12 +140,25 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
 
     } catch (error) {
         console.error('❌ Excel upload error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to upload and process Excel file',
-            error: error.message,
-            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        });
+        
+        // Handle specific error types
+        if (error.isLockError) {
+            res.status(423).json({
+                success: false,
+                message: 'File is currently locked',
+                error: error.message,
+                errorType: 'FILE_LOCKED',
+                userMessage: 'The Excel file is currently open in OneDrive or Excel. Please close it and try again.',
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to upload and process Excel file',
+                error: error.message,
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            });
+        }
     }
 });
 
@@ -560,36 +573,55 @@ async function createOneDriveFolder(client, folderPath) {
     }
 }
 
-// Helper function to upload file to OneDrive
-async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
-    try {
-        // Handle path correctly for OneDrive API
-        let uploadUrl;
-        const cleanPath = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
-        
-        if (cleanPath) {
-            // Upload to subfolder
-            uploadUrl = `/me/drive/root:/${cleanPath}/${filename}:/content`;
-        } else {
-            // Upload to root
-            uploadUrl = `/me/drive/root:/${filename}:/content`;
+// Helper function to upload file to OneDrive with retry logic
+async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRetries = 3) {
+    // Handle path correctly for OneDrive API
+    let uploadUrl;
+    const cleanPath = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
+    
+    if (cleanPath) {
+        // Upload to subfolder
+        uploadUrl = `/me/drive/root:/${cleanPath}/${filename}:/content`;
+    } else {
+        // Upload to root
+        uploadUrl = `/me/drive/root:/${filename}:/content`;
+    }
+    
+    console.log(`📤 Uploading to URL: ${uploadUrl}`);
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const result = await client.api(uploadUrl).put(fileBuffer);
+            
+            console.log(`📤 Uploaded file: ${filename} to ${folderPath} (attempt ${attempt})`);
+            
+            return {
+                id: result.id,
+                name: result.name,
+                webUrl: result.webUrl,
+                size: result.size
+            };
+        } catch (error) {
+            const isLockError = error.statusCode === 423 || 
+                               error.code === 'resourceLocked' || 
+                               error.code === 'notAllowed';
+            
+            if (isLockError && attempt < maxRetries) {
+                const waitTime = Math.pow(2, attempt - 1) * 2000; // 2s, 4s, 8s
+                console.log(`🔒 File is locked, waiting ${waitTime/1000}s before retry (attempt ${attempt}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue;
+            }
+            
+            console.error('❌ OneDrive upload error:', error);
+            if (isLockError) {
+                const customError = new Error(`File is locked. Please close the Excel file in OneDrive/Excel and try again. (Attempted ${maxRetries} times)`);
+                customError.originalError = error;
+                customError.isLockError = true;
+                throw customError;
+            }
+            throw error;
         }
-        
-        console.log(`📤 Uploading to URL: ${uploadUrl}`);
-        
-        const result = await client.api(uploadUrl).put(fileBuffer);
-        
-        console.log(`📤 Uploaded file: ${filename} to ${folderPath}`);
-        
-        return {
-            id: result.id,
-            name: result.name,
-            webUrl: result.webUrl,
-            size: result.size
-        };
-    } catch (error) {
-        console.error('❌ OneDrive upload error:', error);
-        throw error;
     }
 }
 
