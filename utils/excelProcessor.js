@@ -250,15 +250,27 @@ class ExcelProcessor {
             // Extract existing data from the workbook
             if (leadsSheet && leadsSheet['!ref']) {
                 existingData = XLSX.utils.sheet_to_json(leadsSheet);
+                console.log(`📊 RAW EXISTING DATA: Found ${existingData.length} rows in master file`);
                 
                 // Filter out completely empty rows
                 existingData = existingData.filter(row => {
                     const email = this.normalizeEmail(row.Email || row.email || '');
                     return email && email.length > 0;
                 });
+                console.log(`📊 FILTERED EXISTING DATA: ${existingData.length} valid rows after filtering`);
+            } else {
+                console.log(`⚠️ CRITICAL: No Leads sheet found or empty sheet reference`);
+                console.log(`📊 Leads sheet exists: ${!!leadsSheet}`);
+                console.log(`📊 Sheet reference: ${leadsSheet ? leadsSheet['!ref'] : 'null'}`);
             }
             
-            console.log(`📋 APPEND: ${existingData.length} existing + ${newLeads.length} new = ${existingData.length + newLeads.length} total`);
+            console.log(`🔍 MERGE DEBUG: ${existingData.length} existing + ${newLeads.length} new = ${existingData.length + newLeads.length} total`);
+            
+            if (existingData.length === 0) {
+                console.log(`⚠️ WARNING: No existing data found - this will result in data replacement!`);
+            } else {
+                console.log(`✅ APPEND MODE: Will preserve ${existingData.length} existing leads`);
+            }
             
             // Combine existing and new data (APPEND mode)
             const combinedData = [...existingData, ...newLeads];
@@ -572,17 +584,7 @@ class ExcelProcessor {
             
             console.log(`   - Range: ${range}`);
             console.log(`   - Row count: ${data.length}`);
-            console.log(`   - First row:`, data[0]);
-            console.log(`   - Last row:`, data[data.length - 1]);
             
-            // Check some specific cells
-            if (range) {
-                console.log(`   - Cell A1:`, sheet['A1']);
-                console.log(`   - Cell B1:`, sheet['B1']);
-                if (data.length > 0) {
-                    console.log(`   - Cell A2:`, sheet['A2']);
-                }
-            }
         });
     }
 
@@ -590,7 +592,6 @@ class ExcelProcessor {
      * Convert workbook to buffer for saving
      */
     workbookToBuffer(workbook) {
-        this.debugWorkbook(workbook, 'Before buffer conversion');
         
         // Use xlsx format for better OneDrive compatibility
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
@@ -604,7 +605,6 @@ class ExcelProcessor {
     bufferToWorkbook(buffer) {
         
         const workbook = XLSX.read(buffer, { type: 'buffer' });
-        this.debugWorkbook(workbook, 'After reading from buffer');
         
         return workbook;
     }

@@ -527,9 +527,7 @@ router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
             debugInfo.sheetDetails[sheetName] = {
                 range: range,
                 rowCount: data.length,
-                firstRow: data[0] || null,
-                lastRow: data[data.length - 1] || null,
-                sampleData: data.slice(0, 3)
+                // Data content removed for privacy
             };
         });
 
@@ -1014,7 +1012,27 @@ async function downloadMasterFile(graphClient) {
         const testBuffer = testProcessor.workbookToBuffer(testWithData);
         
         
-        return excelProcessor.bufferToWorkbook(buffer);
+        // Parse workbook and verify content
+        const workbook = excelProcessor.bufferToWorkbook(buffer);
+        
+        console.log(`📊 DOWNLOAD VERIFICATION: Found ${workbook.SheetNames.length} sheets: [${workbook.SheetNames.join(', ')}]`);
+        
+        if (!workbook.SheetNames.includes('Leads')) {
+            console.error('❌ Downloaded file missing Leads sheet');
+            return null;
+        }
+        
+        // Check if Leads sheet has data
+        const leadsSheet = workbook.Sheets['Leads'];
+        if (leadsSheet && leadsSheet['!ref']) {
+            const leadCount = XLSX.utils.sheet_to_json(leadsSheet).length;
+            console.log(`📊 DOWNLOAD VERIFICATION: Leads sheet contains ${leadCount} rows`);
+        } else {
+            console.log(`⚠️ DOWNLOAD VERIFICATION: Leads sheet is empty or has no reference`);
+        }
+        
+        console.log('✅ Master file downloaded and parsed successfully');
+        return workbook;
     } catch (error) {
         console.error('❌ Master file download error:', error);
         return null;
