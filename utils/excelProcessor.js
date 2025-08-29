@@ -138,18 +138,8 @@ class ExcelProcessor {
             totalProcessed: uploadedLeads.length
         };
 
-        console.log(`🔄 Starting merge process:`);
-        console.log(`   - Uploaded leads: ${uploadedLeads.length}`);
-        console.log(`   - Existing leads in master: ${existingData.length}`);
-        
-        // DEBUG: Show sample of existing data structure if available
-        if (existingData.length > 0) {
-            console.log(`🔍 EXISTING DATA SAMPLE:`, {
-                firstEmail: existingData[0].Email || existingData[0].email,
-                firstCompany: existingData[0]['Company Name'] || existingData[0].company,
-                dataKeys: Object.keys(existingData[0]).slice(0, 10) // First 10 keys
-            });
-        }
+        console.log(`🔄 Merging uploaded and existing leads...`);
+        console.log(`📊 Found ${existingData.length} existing leads in master file`);
 
         // Create a Set of existing emails for fast lookup with better normalization
         const existingEmails = new Set();
@@ -159,8 +149,6 @@ class ExcelProcessor {
                 existingEmails.add(email);
             }
         });
-        
-        console.log(`   - Unique existing emails: ${existingEmails.size}`);
 
         uploadedLeads.forEach((lead, index) => {
             const email = this.normalizeEmail(lead.Email || lead.email || '');
@@ -180,8 +168,8 @@ class ExcelProcessor {
                     reason: 'Email already exists in master list'
                 });
             } else {
-                // Reduced logging - only log every 10th lead or summary
-                if ((index + 1) % 10 === 0 || index === 0) {
+                // Clear progress logging every 10 leads or at key milestones
+                if ((index + 1) % 10 === 0 || index + 1 === uploadedLeads.length) {
                     console.log(`✅ Processing new leads... (${index + 1}/${uploadedLeads.length})`);
                 }
                 // Normalize and add default automation settings
@@ -191,9 +179,8 @@ class ExcelProcessor {
             }
         });
 
-        console.log(`🔄 Merge results:`);
-        console.log(`   - New leads to add: ${results.newLeads.length}`);
-        console.log(`   - Duplicates found: ${results.duplicates.length}`);
+        // Final results in the requested format
+        console.log(`📊 Final count: existing ${existingData.length} + new ${results.newLeads.length} = ${existingData.length + results.newLeads.length} total records`);
         
         return results;
     }

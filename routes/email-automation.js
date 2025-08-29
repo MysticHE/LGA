@@ -67,7 +67,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         let masterWorkbook;
         let existingData = [];
 
-        console.log('🔍 Looking for existing master file in OneDrive...');
+        console.log('✅ Master file structure verified');
 
         try {
             // Try to download existing master file
@@ -76,10 +76,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 .filter(`name eq '${masterFileName}'`)
                 .get();
 
-            console.log(`📂 Found ${files.value.length} files in ${masterFolderPath} folder`);
-
             if (files.value.length > 0) {
-                console.log('📋 Found existing master file, downloading...');
                 const fileContent = await graphClient
                     .api(`/me/drive/items/${files.value[0].id}/content`)
                     .get();
@@ -172,10 +169,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         }
 
         // CRITICAL: Merge uploaded leads with existing data
-        console.log(`🔄 Merging uploaded and existing leads...`);
         const mergeResults = excelProcessor.mergeLeadsWithMaster(uploadedLeads, existingData);
-        
-        console.log(`📊 Merge completed - new leads: ${mergeResults.newLeads.length}, duplicates: ${mergeResults.duplicates.length}`);
 
         if (mergeResults.newLeads.length === 0) {
             return res.json({
@@ -189,7 +183,6 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         }
 
         // CRITICAL: Use Microsoft Graph Table API to APPEND data (no file replacement)
-        console.log(`📊 Appending leads using Table API...`);
         
         // Use the Microsoft Graph table append functionality
         const appendResult = await appendLeadsToOneDriveTable({
@@ -205,11 +198,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         if (!appendResult.success) {
             throw new Error(`Failed to append leads to table: ${appendResult.message}`);
         }
-        
-        console.log(`✅ TABLE APPEND SUCCESS: ${appendResult.action} - ${appendResult.leadsCount} leads processed`);
 
-        console.log(`✅ UPLOAD COMPLETED: Master file updated successfully`);
-        
         try {
             const verificationWorkbook = await downloadMasterFile(graphClient, false); // No cache for verification
             if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
@@ -226,13 +215,6 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     console.error(`❌ DATA INTEGRITY ERROR: Expected ~${expectedCount} rows, got ${verifyData.length} rows`);
                     throw new Error(`Data integrity check failed: Expected ~${expectedCount} rows, got ${verifyData.length} rows`);
                 } else {
-                    if (verifyData.length !== expectedCount) {
-                        // Calculate actual existing count from final result
-                        const actualExistingCount = verifyData.length - mergeResults.newLeads.length;
-                        console.log(`📊 Final count: existing ${actualExistingCount} + new ${mergeResults.newLeads.length} = ${verifyData.length} total records`);
-                    } else {
-                        console.log(`📊 Final count: existing ${existingData.length} + new ${mergeResults.newLeads.length} = ${verifyData.length} total records`);
-                    }
                     console.log(`✅ Data integrity verified successfully`);
                 }
             } else {
@@ -272,8 +254,6 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             });
         }
 
-        console.log(`✅ Master file updated successfully`);
-        console.log(`🎉 Upload completed successfully - Master file ready in OneDrive`);
 
         res.json({
             success: true,

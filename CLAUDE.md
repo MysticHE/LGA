@@ -453,6 +453,13 @@ POST /api/email/webhook/subscribe     # Create webhook subscription
 - **Comprehensive Documentation**: RENDER-SETUP.md and IMPLEMENTATION-SUMMARY.md guides
 - **Webhook System**: Real-time notifications with pixel tracking and subscription management
 
+### v1.3.3 - Enhanced Excel Upload Logging (LATEST)
+- **ENHANCED: Clean Console Output**: Streamlined Excel upload logging for better Render console visibility
+- **IMPROVED: Progress Tracking**: Clear, informative progress messages during file upload and merge operations
+- **STANDARDIZED: Logging Format**: Consistent logging format matching "📊 Final count: existing X + new Y = Z total records"
+- **OPTIMIZED: Debug Output**: Reduced verbose debug messages while maintaining essential error visibility
+- **ENHANCED: User Feedback**: Professional progress indicators for file verification, merge, and integrity checks
+
 ### v1.3.2 - Enhanced Filtering Display & Results Dashboard
 - **NEW: Filtered Leads Counter**: Results now display how many leads were filtered out by exclusion criteria
 - **Enhanced Applied Filters Display**: Shows excluded email domains and industries in results panel

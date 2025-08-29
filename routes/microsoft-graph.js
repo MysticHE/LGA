@@ -47,8 +47,6 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
             });
         }
 
-        console.log(`📊 Appending ${leads.length} leads to Excel table in OneDrive...`);
-
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
@@ -60,8 +58,6 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
         } else {
             targetFilePath = EXCEL_CONFIG.MASTER_FILE_PATH.substring(1); // Remove leading slash
         }
-
-        console.log(`📁 Target file: ${targetFilePath}`);
 
         // Check if file exists
         const fileInfo = await getOneDriveFileInfo(graphClient, targetFilePath);
@@ -693,7 +689,6 @@ router.get('/test', async (req, res) => {
 async function getOneDriveFileInfo(client, filePath) {
     try {
         const response = await client.api(`/me/drive/root:/${filePath}`).get();
-        console.log(`✅ Found file: ${filePath} (ID: ${response.id})`);
         return {
             id: response.id,
             name: response.name,
@@ -702,7 +697,6 @@ async function getOneDriveFileInfo(client, filePath) {
         };
     } catch (error) {
         if (error.code === 'itemNotFound') {
-            console.log(`⚠️ File not found: ${filePath}`);
             return null;
         }
         console.error(`❌ Error checking file ${filePath}:`, error);
@@ -1052,8 +1046,6 @@ async function appendDataToExcelTable(client, fileId, tableName, leads) {
             return;
         }
         
-        console.log(`➕ Appending ${leads.length} rows to table '${tableName}'`);
-        
         // Normalize lead data
         const normalizedLeads = leads.map(lead => normalizeLeadData(lead));
         
@@ -1064,8 +1056,6 @@ async function appendDataToExcelTable(client, fileId, tableName, leads) {
         
         const columns = columnsResponse.value;
         const headers = columns.map(col => col.name);
-        
-        console.log(`📋 Table structure confirmed with ${headers.length} columns`);
         
         // Prepare data rows in correct column order
         const tableRows = normalizedLeads.map(lead => {
@@ -1080,8 +1070,6 @@ async function appendDataToExcelTable(client, fileId, tableName, leads) {
         await client
             .api(`/me/drive/items/${fileId}/workbook/tables/${tableName}/rows/add`)
             .post(appendRequest);
-        
-        console.log(`✅ Successfully appended ${tableRows.length} rows to table '${tableName}'`);
         
     } catch (error) {
         console.error(`❌ Error appending data to table:`, error);
