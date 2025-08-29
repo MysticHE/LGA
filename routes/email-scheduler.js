@@ -443,7 +443,21 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
 
 // Helper function to get target leads based on criteria
 function getTargetLeads(masterWorkbook, targetCriteria) {
-    const leadsSheet = masterWorkbook.Sheets['Leads'];
+    // Try multiple sheet names to handle different file creation methods
+    let leadsSheet = masterWorkbook.Sheets['Leads'] || 
+                     masterWorkbook.Sheets['Sheet1'] || 
+                     masterWorkbook.Sheets[Object.keys(masterWorkbook.Sheets)[0]];
+    
+    if (!leadsSheet) {
+        console.log('❌ No lead sheet found in any format');
+        return [];
+    }
+    
+    const sheetName = Object.keys(masterWorkbook.Sheets).find(name => 
+        masterWorkbook.Sheets[name] === leadsSheet
+    );
+    console.log(`📊 Using sheet: ${sheetName} for lead data`);
+    
     const allLeads = XLSX.utils.sheet_to_json(leadsSheet);
 
     switch (targetCriteria) {
@@ -853,14 +867,44 @@ async function downloadMasterFile(graphClient, useCache = true) {
             size: fileContent?.length || fileContent?.size || 'unknown'
         });
 
+        // Debug the raw buffer to check for corruption or encoding issues
+        if (Buffer.isBuffer(fileContent)) {
+            const bufferStart = fileContent.slice(0, 100).toString('hex');
+            console.log(`🔍 Buffer start (hex):`, bufferStart.substring(0, 40) + '...');
+            
+            // Check if it starts with Excel file signature
+            const isExcelFile = bufferStart.startsWith('504b0304'); // ZIP signature for Excel
+            console.log(`📊 Is valid Excel file signature:`, isExcelFile);
+        }
+
         const workbook = excelProcessor.bufferToWorkbook(fileContent);
         
         console.log(`📊 WORKBOOK ANALYSIS:`);
         console.log(`   - Sheet names: [${Object.keys(workbook.Sheets).join(', ')}]`);
         
-        if (workbook.Sheets['Leads']) {
-            const leadsData = XLSX.utils.sheet_to_json(workbook.Sheets['Leads']);
-            console.log(`   - Leads sheet data count: ${leadsData.length}`);
+        // Enhanced debugging for sheet detection
+        const sheetNames = Object.keys(workbook.Sheets);
+        console.log(`🔍 DETAILED SHEET ANALYSIS:`);
+        sheetNames.forEach(name => {
+            const sheet = workbook.Sheets[name];
+            const data = XLSX.utils.sheet_to_json(sheet);
+            console.log(`   - Sheet "${name}": ${data.length} rows`);
+            if (data.length > 0) {
+                console.log(`     First row sample:`, Object.keys(data[0]).slice(0, 5));
+            }
+        });
+        
+        // Try multiple sheet names for lead data analysis (same logic as getTargetLeads)
+        let analysisSheet = workbook.Sheets['Leads'] || 
+                           workbook.Sheets['Sheet1'] || 
+                           workbook.Sheets[Object.keys(workbook.Sheets)[0]];
+        
+        if (analysisSheet) {
+            const sheetNameUsed = Object.keys(workbook.Sheets).find(name => 
+                workbook.Sheets[name] === analysisSheet
+            );
+            const leadsData = XLSX.utils.sheet_to_json(analysisSheet);
+            console.log(`   - Using sheet "${sheetNameUsed}" for analysis: ${leadsData.length} leads`);
             if (leadsData.length > 0) {
                 console.log(`   - First lead sample:`, {
                     Name: leadsData[0].Name,
@@ -870,7 +914,7 @@ async function downloadMasterFile(graphClient, useCache = true) {
                 });
             }
         } else {
-            console.log(`   - ❌ No 'Leads' sheet found in workbook`);
+            console.log(`   - ❌ No lead sheet found in any format`);
         }
         
         return workbook;

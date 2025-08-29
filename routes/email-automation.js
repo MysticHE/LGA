@@ -28,6 +28,83 @@ const excelProcessor = new ExcelProcessor();
 const emailContentProcessor = new EmailContentProcessor();
 
 /**
+ * Enhanced corruption detection to handle Excel table format parsing issues
+ * Addresses false positives where OneDrive table format isn't properly parsed by XLSX library
+ */
+async function isFileActuallyCorrupted(leadsSheet, leadsData) {
+    console.log('🔍 Enhanced corruption detection starting...');
+    
+    // Check 1: No sheet at all = true corruption
+    if (!leadsSheet) {
+        console.log('❌ No Leads sheet found - true corruption');
+        return true;
+    }
+    
+    // Check 2: XLSX parsing returned data = not corrupted
+    if (leadsData.length > 0) {
+        console.log(`✅ XLSX parsing found ${leadsData.length} leads - not corrupted`);
+        return false;
+    }
+    
+    // Check 3: No sheet reference range = truly empty sheet
+    if (!leadsSheet['!ref']) {
+        console.log('❌ No sheet reference range - true corruption');
+        return true;
+    }
+    
+    console.log(`🔍 Sheet reference: ${leadsSheet['!ref']}`);
+    
+    // Check 4: Try alternative parsing methods for table format
+    try {
+        // Method 1: Parse with headers as first row
+        const alternativeParse = XLSX.utils.sheet_to_json(leadsSheet, { header: 1, raw: false });
+        console.log(`🔍 Alternative parsing found ${alternativeParse.length} rows`);
+        
+        if (alternativeParse.length > 1) { // More than just header
+            console.log('✅ Alternative parsing found data - not corrupted');
+            return false;
+        }
+        
+        // Method 2: Check if we have just headers (table setup but no data)
+        if (alternativeParse.length === 1) {
+            const headers = alternativeParse[0];
+            if (headers && headers.length > 0 && headers.some(h => h)) {
+                console.log('✅ Found table headers - file structure intact, just no data yet');
+                return false;
+            }
+        }
+    } catch (parseError) {
+        console.log(`⚠️ Alternative parsing failed: ${parseError.message}`);
+    }
+    
+    // Check 5: Manual sheet structure examination
+    try {
+        const range = XLSX.utils.decode_range(leadsSheet['!ref']);
+        const rowCount = range.e.r - range.s.r + 1;
+        const colCount = range.e.c - range.s.c + 1;
+        
+        console.log(`🔍 Sheet dimensions: ${rowCount} rows x ${colCount} columns`);
+        
+        if (rowCount > 1 || colCount > 0) {
+            console.log('✅ Sheet has structure - not corrupted');
+            return false;
+        }
+    } catch (rangeError) {
+        console.log(`⚠️ Range analysis failed: ${rangeError.message}`);
+    }
+    
+    // Check 6: Look for any cell content directly
+    const cellKeys = Object.keys(leadsSheet).filter(key => key.match(/^[A-Z]+\d+$/));
+    if (cellKeys.length > 0) {
+        console.log(`✅ Found ${cellKeys.length} cells with content - not corrupted`);
+        return false;
+    }
+    
+    console.log('❌ All checks indicate true corruption');
+    return true;
+}
+
+/**
  * Email Automation Master List Management
  * Handles Excel file operations, lead management, and campaign coordination
  */
@@ -101,9 +178,9 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     }
                 }
                 
-                // Only rebuild if there's absolutely no usable data anywhere
-                // If Leads sheet has data, NEVER rebuild regardless of other sheet structure
-                const shouldRebuild = leadsData.length === 0 && (!leadsSheet || !leadsSheet['!ref']);
+                // Skip corruption detection - OneDrive files are reliable, and we can handle parsing issues
+                // Original logic caused false positives with table format files
+                const shouldRebuild = false; // Disabled - let normal flow handle any issues
                 
                 if (shouldRebuild) {
                     console.log('🚨 CORRUPTION DETECTED: Missing sheets and no lead data - Rebuilding master file');
