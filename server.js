@@ -80,7 +80,7 @@ app.use('/api/email-automation', emailAutomationRoutes);
 app.use('/api/email-automation/templates', emailTemplatesRoutes);
 app.use('/api/email-templates', emailTemplatesRoutes);
 app.use('/api/email', emailTrackingRoutes);
-app.use('/api/email-automation', emailSchedulerRoutes);
+app.use('/api/email-scheduler', emailSchedulerRoutes);  // Fixed: Use correct path
 app.use('/auth', authRoutes);
 
 // Serve the main application
