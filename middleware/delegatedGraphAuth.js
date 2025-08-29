@@ -47,7 +47,14 @@ class DelegatedGraphAuth {
         const missing = required.filter(key => !process.env[key]);
         
         if (missing.length > 0) {
-            throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+            console.error('❌ Azure Configuration Error:');
+            console.error(`   Missing environment variables: ${missing.join(', ')}`);
+            console.error('   Required for email automation:');
+            console.error('   - AZURE_TENANT_ID: Your Azure tenant ID');
+            console.error('   - AZURE_CLIENT_ID: Your app registration client ID'); 
+            console.error('   - AZURE_CLIENT_SECRET: Your app registration client secret');
+            console.error('📋 Please check your Render environment variables');
+            throw new Error(`Missing required Azure environment variables: ${missing.join(', ')}`);
         }
     }
 
@@ -252,14 +259,52 @@ function getDelegatedAuthProvider() {
 // Middleware function to check authentication
 function requireDelegatedAuth(req, res, next) {
     try {
+        // Check if Azure credentials are available
+        const requiredAzureVars = ['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET'];
+        const missingAzureVars = requiredAzureVars.filter(envVar => !process.env[envVar]);
+        
+        if (missingAzureVars.length > 0) {
+            console.error(`❌ Email automation blocked - Missing Azure credentials: ${missingAzureVars.join(', ')}`);
+            return res.status(503).json({
+                error: 'Service Unavailable',
+                message: 'Email automation is currently disabled due to missing Azure configuration',
+                missingCredentials: missingAzureVars,
+                troubleshooting: {
+                    step1: 'Check your Render environment variables',
+                    step2: 'Ensure AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET are set',
+                    step3: 'Restart the service after adding credentials'
+                }
+            });
+        }
+        
         const authProvider = getDelegatedAuthProvider();
         const sessionId = req.session?.id || req.headers['x-session-id'];
         
-        if (!sessionId || !authProvider.isAuthenticated(sessionId)) {
+        if (!sessionId) {
+            console.warn('⚠️  No session ID provided in request');
             return res.status(401).json({
                 error: 'Authentication Required',
-                message: 'Please authenticate with Microsoft 365',
-                authUrl: `/auth/login?redirect=${encodeURIComponent(req.originalUrl)}`
+                message: 'Please authenticate with Microsoft 365 - No session ID provided',
+                authUrl: `/auth/login?redirect=${encodeURIComponent(req.originalUrl)}`,
+                troubleshooting: {
+                    issue: 'No session ID found',
+                    expectedHeader: 'X-Session-Id',
+                    receivedHeaders: Object.keys(req.headers).filter(h => h.toLowerCase().includes('session'))
+                }
+            });
+        }
+        
+        if (!authProvider.isAuthenticated(sessionId)) {
+            console.warn(`⚠️  Session ${sessionId} not authenticated`);
+            return res.status(401).json({
+                error: 'Authentication Required',
+                message: 'Please authenticate with Microsoft 365 - Session not found or expired',
+                authUrl: `/auth/login?redirect=${encodeURIComponent(req.originalUrl)}`,
+                troubleshooting: {
+                    issue: 'Session not authenticated',
+                    sessionId: sessionId,
+                    activeSessions: authProvider.getActiveSessions().length
+                }
             });
         }
 
@@ -267,11 +312,17 @@ function requireDelegatedAuth(req, res, next) {
         req.sessionId = sessionId;
         next();
     } catch (error) {
-        console.error('Delegated auth middleware error:', error);
+        console.error('❌ Delegated auth middleware error:', error);
+        console.error('Stack trace:', error.stack);
         res.status(500).json({
             error: 'Authentication Error',
             message: 'Failed to validate authentication',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+            troubleshooting: {
+                error: error.message,
+                timestamp: new Date().toISOString(),
+                endpoint: req.originalUrl
+            }
         });
     }
 }

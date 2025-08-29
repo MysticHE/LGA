@@ -14,10 +14,26 @@ const emailSchedulerRoutes = require('./routes/email-scheduler');
 const authRoutes = require('./routes/auth');
 const { rateLimiter } = require('./middleware/rateLimiter');
 
-// Initialize email scheduler
-const emailScheduler = require('./jobs/emailScheduler');
-console.log('📅 Starting email scheduler...');
-emailScheduler.start();
+// Check Azure configuration before initializing email services
+const requiredAzureVars = ['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET'];
+const missingAzureVars = requiredAzureVars.filter(envVar => !process.env[envVar]);
+
+if (missingAzureVars.length > 0) {
+    console.warn('⚠️  AZURE CREDENTIALS MISSING - Email automation disabled');
+    console.warn(`📝 Missing: ${missingAzureVars.join(', ')}`);
+    console.warn('📋 Please check your Render environment variables for Azure credentials');
+} else {
+    // Initialize email scheduler only if Azure credentials are available
+    try {
+        const emailScheduler = require('./jobs/emailScheduler');
+        console.log('📅 Starting email scheduler...');
+        emailScheduler.start();
+        console.log('✅ Email automation services initialized');
+    } catch (error) {
+        console.error('❌ Failed to initialize email services:', error.message);
+        console.warn('📝 Email automation will be disabled');
+    }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;

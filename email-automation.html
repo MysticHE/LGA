@@ -615,11 +615,37 @@
                     ]);
                     console.log('✅ Dashboard and master list refresh completed');
                 } else {
-                    // Handle specific error types
-                    if (response.status === 401 || result.error === 'Authentication Required') {
+                    // Handle specific error types with detailed debugging
+                    console.error('❌ Upload failed - Full response:', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        result: result
+                    });
+                    
+                    if (response.status === 503 || result.error === 'Service Unavailable') {
                         document.getElementById('uploadSummary').innerHTML = `
-                            <strong>🔑 Authentication Expired</strong><br>
-                            Your Microsoft 365 session has expired. Please reconnect.<br>
+                            <strong>⚙️ Service Configuration Error</strong><br>
+                            Email automation is currently disabled.<br>
+                            <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; font-size: 0.9em;">
+                                <strong>🔧 Admin Action Required:</strong><br>
+                                ${result.troubleshooting ? `
+                                1. ${result.troubleshooting.step1}<br>
+                                2. ${result.troubleshooting.step2}<br>
+                                3. ${result.troubleshooting.step3}` : 'Check Azure configuration in Render environment variables'}
+                            </div>
+                            <div style="margin-top: 10px; font-size: 0.8em; color: #666;">
+                                Missing: ${result.missingCredentials ? result.missingCredentials.join(', ') : 'Azure credentials'}
+                            </div>
+                        `;
+                    } else if (response.status === 401 || result.error === 'Authentication Required') {
+                        document.getElementById('uploadSummary').innerHTML = `
+                            <strong>🔑 Authentication ${result.troubleshooting?.issue || 'Required'}</strong><br>
+                            ${result.message || 'Your Microsoft 365 session has expired. Please reconnect.'}<br>
+                            ${result.troubleshooting ? `
+                            <div style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                                Debug: ${result.troubleshooting.issue}<br>
+                                Active sessions: ${result.troubleshooting.activeSessions || 0}
+                            </div>` : ''}
                             <button onclick="window.location.reload()" class="btn btn-primary" style="margin-top: 10px;">Reconnect</button>
                         `;
                         sessionId = null; // Reset session
