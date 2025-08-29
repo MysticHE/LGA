@@ -58,34 +58,8 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Get leads based on target criteria
         const leadsData = getTargetLeads(masterWorkbook, targetLeads);
         
-        // Enhanced debugging for lead selection
         const leadsSheet = masterWorkbook.Sheets['Leads'];
         const allLeads = XLSX.utils.sheet_to_json(leadsSheet);
-        console.log(`📊 LEAD SELECTION DEBUG:`);
-        console.log(`   - Total leads in file: ${allLeads.length}`);
-        console.log(`   - Target criteria: ${targetLeads}`);
-        console.log(`   - Leads matching criteria: ${leadsData.length}`);
-        
-        if (targetLeads === 'new') {
-            const newLeads = allLeads.filter(lead => lead.Status === 'New');
-            const autoEnabledLeads = allLeads.filter(lead => lead.Auto_Send_Enabled === 'Yes');
-            const bothConditions = allLeads.filter(lead => lead.Status === 'New' && lead.Auto_Send_Enabled === 'Yes');
-            
-            console.log(`📋 NEW LEADS ANALYSIS:`);
-            console.log(`   - Leads with Status='New': ${newLeads.length}`);
-            console.log(`   - Leads with Auto_Send_Enabled='Yes': ${autoEnabledLeads.length}`);
-            console.log(`   - Leads with BOTH conditions: ${bothConditions.length}`);
-            
-            // Show sample lead for debugging
-            if (allLeads.length > 0) {
-                console.log(`📝 SAMPLE LEAD DATA:`, {
-                    Status: allLeads[0].Status,
-                    Auto_Send_Enabled: allLeads[0].Auto_Send_Enabled,
-                    Email: allLeads[0].Email,
-                    Name: allLeads[0].Name
-                });
-            }
-        }
         
         if (leadsData.length === 0) {
             return res.json({
@@ -932,55 +906,5 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
     }
 }
 
-// DEBUG: Quick master file inspection endpoint
-router.get('/debug/leads-count', requireDelegatedAuth, async (req, res) => {
-    try {
-        console.log(`🔍 QUICK DEBUG: Checking leads count...`);
-        
-        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
-        const masterWorkbook = await downloadMasterFile(graphClient, false); // Force fresh
-        
-        if (!masterWorkbook) {
-            return res.json({
-                success: false,
-                message: 'Master file not found',
-                debug: { totalLeads: 0, reason: 'file_not_found' }
-            });
-        }
-        
-        const sheets = Object.keys(masterWorkbook.Sheets);
-        let leadsCount = 0;
-        let leadsData = [];
-        
-        if (masterWorkbook.Sheets['Leads']) {
-            leadsData = XLSX.utils.sheet_to_json(masterWorkbook.Sheets['Leads']);
-            leadsCount = leadsData.length;
-        }
-        
-        console.log(`📊 QUICK DEBUG RESULTS:`);
-        console.log(`   - File found: Yes`);
-        console.log(`   - Sheets: [${sheets.join(', ')}]`);
-        console.log(`   - Total leads: ${leadsCount}`);
-        
-        res.json({
-            success: true,
-            debug: {
-                totalLeads: leadsCount,
-                sheets: sheets,
-                hasLeadsSheet: sheets.includes('Leads'),
-                sampleLead: leadsData[0] || null,
-                downloadMethod: 'fresh_no_cache'
-            }
-        });
-        
-    } catch (error) {
-        console.error('❌ Quick debug error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            debug: { totalLeads: 0, reason: 'error' }
-        });
-    }
-});
 
 module.exports = router;

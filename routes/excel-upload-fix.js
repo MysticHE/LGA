@@ -14,7 +14,6 @@ const XLSX = require('xlsx');
  * @returns {Object} Upload result
  */
 async function advancedExcelUpload(client, fileBuffer, filename, folderPath) {
-    console.log(`🚀 ADVANCED EXCEL UPLOAD: ${filename} (${fileBuffer.length} bytes)`);
     
     // Step 1: Validate Excel file integrity
     if (!validateExcelFile(fileBuffer)) {
@@ -34,15 +33,13 @@ async function uploadWithRetry(client, fileBuffer, filename, folderPath, maxRetr
             name: 'Upload Session (Recommended)',
             execute: async () => {
                 const uploadSession = await createUploadSession(client, filename, folderPath);
-                console.log(`📋 Upload session created: ${uploadSession.uploadUrl}`);
-                return await uploadFileToSession(uploadSession.uploadUrl, fileBuffer);
+                        return await uploadFileToSession(uploadSession.uploadUrl, fileBuffer);
             }
         },
         {
             name: 'Direct PUT (Fallback)',
             execute: async () => {
-                console.log(`📤 Trying direct PUT upload as fallback`);
-                return await client
+                        return await client
                     .api(`/me/drive/root:${folderPath}/${filename}:/content`)
                     .put(fileBuffer);
             }
@@ -52,22 +49,16 @@ async function uploadWithRetry(client, fileBuffer, filename, folderPath, maxRetr
     let lastError = null;
     
     for (const strategy of strategies) {
-        console.log(`🚀 Attempting strategy: ${strategy.name}`);
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`🔄 Attempt ${attempt}/${maxRetries} for ${strategy.name}`);
-                
+                    
                 const uploadResult = await strategy.execute();
-                console.log(`✅ Upload successful with ${strategy.name}`);
                 
                 // Verify upload integrity (simplified approach)
                 try {
                     await verifyUploadedExcelFile(client, fileBuffer, filename, folderPath);
-                    console.log(`✅ Upload verification passed`);
                 } catch (verifyError) {
-                    console.log(`⚠️ Upload verification failed but upload succeeded: ${verifyError.message}`);
-                    console.log(`✅ Upload completed successfully, continuing without verification`);
                     // Don't throw - the upload succeeded, verification is just a bonus check
                 }
                 
@@ -75,7 +66,7 @@ async function uploadWithRetry(client, fileBuffer, filename, folderPath, maxRetr
                 
             } catch (error) {
                 lastError = error;
-                console.error(`❌ ${strategy.name} attempt ${attempt} failed: ${error.message}`);
+                console.error(`${strategy.name} attempt ${attempt} failed: ${error.message}`);
                 
                 // Check if it's a file lock error
                 const isLockError = error.response?.status === 423 || 
@@ -88,15 +79,13 @@ async function uploadWithRetry(client, fileBuffer, filename, folderPath, maxRetr
                 
                 if (isLockError) {
                     const waitTime = Math.pow(2, attempt - 1) * 3000; // 3s, 6s, 12s, 24s, 48s
-                    console.log(`🔒 File locked - waiting ${waitTime/1000}s before retry (attempt ${attempt}/${maxRetries})`);
-                    console.log(`💡 TIP: Close the Excel file in OneDrive if you have it open`);
                     
                     if (attempt < maxRetries) {
                         await new Promise(resolve => setTimeout(resolve, waitTime));
                         continue;
                     }
                 } else {
-                    console.error(`❌ Non-lock error, trying next strategy: ${error.message}`);
+                    console.error(`Non-lock error, trying next strategy: ${error.message}`);
                     break; // Try next strategy
                 }
             }
@@ -104,7 +93,7 @@ async function uploadWithRetry(client, fileBuffer, filename, folderPath, maxRetr
     }
     
     // All strategies failed
-    console.error(`❌ All upload strategies failed. Last error:`, lastError);
+    console.error(`All upload strategies failed. Last error:`, lastError);
     
     if (lastError.response?.status === 423 || 
         lastError.response?.data?.error?.code === 'resourceLocked' ||
@@ -132,7 +121,7 @@ function validateExcelFile(fileBuffer) {
     // Check for Excel signature (ZIP file format)
     const signature = fileBuffer.slice(0, 2).toString('hex');
     if (signature !== '504b') {
-        console.error(`❌ Invalid Excel signature: ${signature} (expected: 504b)`);
+        console.error(`Invalid Excel signature: ${signature} (expected: 504b)`);
         return false;
     }
     
@@ -140,13 +129,12 @@ function validateExcelFile(fileBuffer) {
     try {
         const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
         if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-            console.error('❌ No sheets found in workbook');
+            console.error('No sheets found in workbook');
             return false;
         }
-        console.log(`✅ Valid Excel file with sheets: [${workbook.SheetNames.join(', ')}]`);
         return true;
     } catch (error) {
-        console.error(`❌ Excel validation failed: ${error.message}`);
+        console.error(`Excel validation failed: ${error.message}`);
         return false;
     }
 }
@@ -171,7 +159,7 @@ async function createUploadSession(client, filename, folderPath) {
         
         return uploadSession;
     } catch (error) {
-        console.error(`❌ Failed to create upload session: ${error.message}`);
+        console.error(`Failed to create upload session: ${error.message}`);
         throw error;
     }
 }
@@ -182,7 +170,6 @@ async function createUploadSession(client, filename, folderPath) {
  */
 async function uploadFileToSession(uploadUrl, fileBuffer) {
     try {
-        console.log(`📤 Uploading ${fileBuffer.length} bytes to session...`);
         
         const response = await axios.put(uploadUrl, fileBuffer, {
             headers: {
@@ -199,13 +186,12 @@ async function uploadFileToSession(uploadUrl, fileBuffer) {
             throw new Error(`Upload failed: HTTP ${response.status} - ${response.statusText}`);
         }
         
-        console.log(`✅ Upload completed: ${response.status} - ${response.statusText}`);
         return response.data;
         
     } catch (error) {
         if (error.response) {
-            console.error(`❌ Upload HTTP error: ${error.response.status} - ${error.response.statusText}`);
-            console.error(`❌ Response data:`, error.response.data);
+            console.error(`Upload HTTP error: ${error.response.status} - ${error.response.statusText}`);
+            console.error(`Response data:`, error.response.data);
         }
         throw new Error(`Session upload failed: ${error.message}`);
     }
@@ -217,39 +203,31 @@ async function uploadFileToSession(uploadUrl, fileBuffer) {
 async function verifyUploadedExcelFile(client, originalBuffer, filename, folderPath, maxRetries = 3) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            console.log(`🔍 Verification attempt ${attempt}/${maxRetries}...`);
             
             // Wait for OneDrive processing (increases with each attempt)
             const waitTime = attempt * 2000; // 2s, 4s, 6s
             await new Promise(resolve => setTimeout(resolve, waitTime));
             
             // Use Graph SDK with stream handling (simplified approach)
-            console.log(`📥 Downloading file for verification...`);
             const downloadedData = await client.api(`/me/drive/root:${folderPath}/${filename}:/content`).get();
             
             // Handle different response types from Microsoft Graph
             let properBuffer;
             if (Buffer.isBuffer(downloadedData)) {
                 properBuffer = downloadedData;
-                console.log(`📥 Downloaded as Buffer: ${properBuffer.length} bytes`);
             } else if (downloadedData instanceof ArrayBuffer) {
                 properBuffer = Buffer.from(downloadedData);
-                console.log(`📥 Downloaded as ArrayBuffer, converted to Buffer: ${properBuffer.length} bytes`);
             } else if (typeof downloadedData === 'string') {
                 properBuffer = Buffer.from(downloadedData, 'binary');
-                console.log(`📥 Downloaded as string, converted to Buffer: ${properBuffer.length} bytes`);
             } else if (downloadedData && typeof downloadedData.pipe === 'function') {
                 // Handle Node.js ReadableStream
-                console.log(`📥 Converting Node.js ReadableStream to Buffer...`);
                 const chunks = [];
                 for await (const chunk of downloadedData) {
                     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
                 }
                 properBuffer = Buffer.concat(chunks);
-                console.log(`📥 ReadableStream converted to Buffer: ${properBuffer.length} bytes`);
             } else if (downloadedData && downloadedData.constructor && downloadedData.constructor.name === 'ReadableStream') {
                 // Handle Web ReadableStream
-                console.log(`📥 Converting Web ReadableStream to Buffer...`);
                 const reader = downloadedData.getReader();
                 const chunks = [];
                 let done = false;
@@ -264,14 +242,12 @@ async function verifyUploadedExcelFile(client, originalBuffer, filename, folderP
                 }
                 
                 properBuffer = Buffer.concat(chunks);
-                console.log(`📥 Web ReadableStream converted to Buffer: ${properBuffer.length} bytes`);
             } else {
                 console.error(`❌ Unknown download data type: ${typeof downloadedData}`, downloadedData?.constructor?.name);
                 console.error(`❌ Data constructor:`, downloadedData?.constructor);
                 throw new Error(`Unsupported download data type: ${typeof downloadedData} (${downloadedData?.constructor?.name})`);
             }
             
-            console.log(`📥 Downloaded ${properBuffer.length} bytes (original: ${originalBuffer.length} bytes)`);
             
             // Size check
             if (properBuffer.length !== originalBuffer.length) {
@@ -280,7 +256,6 @@ async function verifyUploadedExcelFile(client, originalBuffer, filename, folderP
             
             // Structure verification
             const workbook = XLSX.read(properBuffer, { type: 'buffer' });
-            console.log(`📊 Verified sheets: [${workbook.SheetNames.join(', ')}]`);
             
             // Check required sheets
             const requiredSheets = ['Leads', 'Templates', 'Campaign_History'];
@@ -293,12 +268,11 @@ async function verifyUploadedExcelFile(client, originalBuffer, filename, folderP
             // Check Leads sheet data
             const leadsSheet = workbook.Sheets['Leads'];
             const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
-            console.log(`✅ Excel file verification successful`);
             
             return true;
             
         } catch (error) {
-            console.error(`❌ Verification attempt ${attempt} failed: ${error.message}`);
+            console.error(`Verification attempt ${attempt} failed: ${error.message}`);
             
             if (attempt === maxRetries) {
                 throw new Error(`Upload verification failed after ${maxRetries} attempts: ${error.message}`);

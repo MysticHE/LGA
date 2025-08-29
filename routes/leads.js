@@ -32,12 +32,6 @@ const contentProcessor = new PDFContentProcessor();
 const contentAnalyzer = openai ? new ContentAnalyzer(openai) : null;
 const contentCache = new ContentCache();
 
-console.log('📊 Content processing system initialized:', {
-    processor: !!contentProcessor,
-    analyzer: !!contentAnalyzer,
-    cache: !!contentCache,
-    cacheEnabled: config.cache.enabled
-});
 
 // Initialize product materials storage (in-memory, like job storage)
 global.productMaterials = global.productMaterials || new Map();
@@ -52,7 +46,6 @@ router.post('/upload-materials', upload.array('pdfs'), async (req, res) => {
             });
         }
 
-        console.log(`📄 Processing ${req.files.length} PDF materials...`);
 
         const materials = [];
         const errors = [];
@@ -82,7 +75,6 @@ router.post('/upload-materials', upload.array('pdfs'), async (req, res) => {
                     contentLength: pdfData.text.length
                 });
 
-                console.log(`✅ Processed: ${file.originalname} (${pdfData.numpages} pages, ${pdfData.text.length} characters)`);
 
             } catch (error) {
                 console.error(`❌ Error processing ${file.originalname}:`, error.message);
@@ -100,7 +92,6 @@ router.post('/upload-materials', upload.array('pdfs'), async (req, res) => {
             });
         }, 24 * 60 * 60 * 1000);
 
-        console.log(`✅ Successfully uploaded ${materials.length} materials. Errors: ${errors.length}`);
 
         res.json({
             success: true,
@@ -158,7 +149,6 @@ router.delete('/materials/:materialId', (req, res) => {
             const material = global.productMaterials.get(materialId);
             global.productMaterials.delete(materialId);
             
-            console.log(`🗑️ Deleted material: ${material.filename}`);
             
             res.json({
                 success: true,
@@ -200,7 +190,6 @@ router.post('/generate-outreach', async (req, res) => {
             });
         }
 
-        console.log(`🤖 Generating outreach for ${leads.length} leads...`);
 
         const enrichedLeads = [];
         const errors = [];
@@ -213,7 +202,6 @@ router.post('/generate-outreach', async (req, res) => {
             const batchPromises = batch.map(async (lead, index) => {
                 try {
                     const globalIndex = i + index;
-                    console.log(`📝 Processing lead ${globalIndex + 1}/${leads.length}: ${lead.name}${useProductMaterials ? ' (using product materials)' : ''}`);
 
                     // Generate personalized outreach using OpenAI
                     const outreachContent = await generateOutreachContent(lead, useProductMaterials);
@@ -249,7 +237,6 @@ router.post('/generate-outreach', async (req, res) => {
             }
         }
 
-        console.log(`✅ Completed outreach generation. Success: ${enrichedLeads.length - errors.length}, Errors: ${errors.length}`);
 
         res.json({
             success: true,
@@ -305,7 +292,6 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
                 }
 
                 if (!optimizedResult) {
-                    console.log('🔄 Processing PDF materials with content optimization...');
                     
                     // Process content with Content Processor (cleaning + intelligent extraction)
                     const processedResult = await contentProcessor.processContent(materials, leadContext);
@@ -343,22 +329,11 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
                             }
                         };
                     }
-                } else {
-                    console.log('✅ Using cached optimized content');
                 }
 
                 productContext = optimizedResult.content;
                 processingMetadata = optimizedResult.metadata;
 
-                const processingTime = Date.now() - startTime;
-                console.log(`📊 Content processing completed in ${processingTime}ms:`, {
-                    originalLength: materials.reduce((sum, m) => sum + m.content.length, 0),
-                    optimizedLength: productContext.length,
-                    compressionRatio: processingMetadata?.compressionRatio?.toFixed(2) || 'N/A',
-                    processingMethod: processingMetadata?.processingMethod || 'Content Processor',
-                    productsPreserved: processingMetadata?.productsPreserved || true,
-                    cached: !!optimizedResult
-                });
 
             } catch (error) {
                 console.error('❌ Content optimization error:', error);
@@ -473,7 +448,6 @@ router.post('/export-excel', async (req, res) => {
             });
         }
 
-        console.log(`📊 Exporting ${leads.length} leads to Excel...`);
 
         // Transform leads to Excel format (matching n8n workflow structure)
         const excelData = leads.map(lead => ({
@@ -524,7 +498,6 @@ router.post('/export-excel', async (req, res) => {
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
         const finalFilename = filename || `singapore-leads-${timestamp}.xlsx`;
 
-        console.log(`✅ Excel file generated: ${finalFilename}`);
 
         // Send file as download
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -588,7 +561,6 @@ router.post('/start-workflow-job', async (req, res) => {
             global.backgroundJobs.delete(jobId);
         }, 2 * 60 * 60 * 1000);
 
-        console.log(`🚀 Starting background job ${jobId}...`);
         
         // Return job ID immediately to avoid timeout
         res.json({
@@ -662,15 +634,13 @@ async function processWorkflowJob(jobId, protocol, host) {
         }, 30000);
         
         try {
-            // Start Web scraping asynchronously 
-            console.log(`🔄 Job ${jobId}: Starting async Web scraping for ${maxRecords} records`);
+            // Start Web scraping asynchronously
             
             const apolloJobResponse = await axios.post(`${protocol}://${host}/api/apollo/start-scrape-job`, {
                 apolloUrl, maxRecords
             });
             
             const apolloJobId = apolloJobResponse.data.jobId;
-            console.log(`✅ Job ${jobId}: Web job started: ${apolloJobId}`);
             
             // Poll Apollo job status
             scrapeData = await pollApolloJob(apolloJobId, protocol, host, jobId, progressInterval, totalSteps);
@@ -678,7 +648,6 @@ async function processWorkflowJob(jobId, protocol, host) {
             clearInterval(progressInterval);
             scrapeMetadata = scrapeData.metadata || {};
             
-            console.log(`✅ Job ${jobId}: Successfully scraped ${scrapeData.count} leads`);
             
             if (scrapeData.count === 0) {
                 job.status = 'completed';
@@ -773,7 +742,6 @@ async function processWorkflowJob(jobId, protocol, host) {
                 job.progress = { step: 5, message: 'Saving leads to OneDrive...', total: sendEmailCampaign ? 6 : 5 };
                 job.status = 'saving_onedrive';
                 
-                console.log(`📊 Job ${jobId}: Saving ${processedLeads.length} leads to OneDrive`);
                 
                 const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
                 const filename = `singapore-leads-${timestamp}.xlsx`;
@@ -787,7 +755,6 @@ async function processWorkflowJob(jobId, protocol, host) {
                 
                 if (oneDriveResponse.data.success) {
                     oneDriveFileId = oneDriveResponse.data.fileId;
-                    console.log(`✅ Job ${jobId}: Leads saved to OneDrive: ${filename}`);
                 }
             } catch (oneDriveError) {
                 console.error(`⚠️ Job ${jobId}: OneDrive save failed:`, oneDriveError.message);
@@ -803,7 +770,6 @@ async function processWorkflowJob(jobId, protocol, host) {
                 job.progress = { step: finalStep, message: 'Sending email campaign...', total: finalStep };
                 job.status = 'sending_emails';
                 
-                console.log(`📧 Job ${jobId}: Starting email campaign for ${processedLeads.length} leads`);
                 
                 const emailResponse = await axios.post(`${protocol}://${host}/api/email/send-campaign`, {
                     leads: processedLeads,
@@ -820,7 +786,6 @@ async function processWorkflowJob(jobId, protocol, host) {
                         failed: emailResponse.data.failed,
                         trackingEnabled: emailResponse.data.trackingEnabled
                     };
-                    console.log(`✅ Job ${jobId}: Email campaign completed. Sent: ${emailResponse.data.sent}, Failed: ${emailResponse.data.failed}`);
                 }
             } catch (emailError) {
                 console.error(`⚠️ Job ${jobId}: Email campaign failed:`, emailError.message);
@@ -876,10 +841,9 @@ async function processWorkflowJob(jobId, protocol, host) {
         };
         job.completedAt = new Date().toISOString();
         
-        console.log(`✅ Background job ${jobId} completed successfully with ${processedLeads.length} leads`);
         
     } catch (error) {
-        console.error(`❌ Background job ${jobId} failed:`, error);
+        console.error(`Background job ${jobId} failed:`, error);
         job.status = 'failed';
         job.error = error.message;
         job.completedAt = new Date().toISOString();
@@ -897,7 +861,6 @@ function filterLeads(leads, excludeEmailDomains = [], excludeIndustries = []) {
             if (emailDomain && excludeEmailDomains.some(domain => 
                 emailDomain === domain.toLowerCase() || emailDomain.endsWith('.' + domain.toLowerCase())
             )) {
-                console.log(`📧 Filtered out lead ${lead.name} - excluded email domain: ${emailDomain}`);
                 return false;
             }
         }
@@ -908,7 +871,6 @@ function filterLeads(leads, excludeEmailDomains = [], excludeIndustries = []) {
             if (excludeIndustries.some(industry => 
                 leadIndustry.includes(industry.toLowerCase()) || industry.toLowerCase().includes(leadIndustry)
             )) {
-                console.log(`🏭 Filtered out lead ${lead.name} - excluded industry: ${lead.industry}`);
                 return false;
             }
         }
@@ -918,7 +880,6 @@ function filterLeads(leads, excludeEmailDomains = [], excludeIndustries = []) {
     
     const filteredCount = leads.length - filteredLeads.length;
     if (filteredCount > 0) {
-        console.log(`🔍 Filtered out ${filteredCount} leads based on exclusion criteria`);
     }
     
     return { filteredLeads, filteredCount };
@@ -942,7 +903,7 @@ async function processChunk(chunk, generateOutreach, useProductMaterials, exclud
                 finalChunk = outreachResponse.data.leads;
             }
         } catch (error) {
-            console.warn(`⚠️ Outreach generation failed for chunk:`, error.message);
+            console.warn(`Outreach generation failed for chunk:`, error.message);
         }
     }
 
@@ -979,13 +940,11 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
                 };
             }
             
-            console.log(`🔄 Job ${jobId}: Web job ${apolloJobId} status: ${apolloStatus.status} (poll ${pollCount})`);
             
             if (apolloStatus.isComplete) {
                 if (apolloStatus.status === 'completed') {
                     // Get Apollo results
                     const resultResponse = await axios.get(`${protocol}://${host}/api/apollo/job-result/${apolloJobId}`);
-                    console.log(`✅ Job ${jobId}: Web job completed with ${resultResponse.data.count} leads`);
                     return resultResponse.data;
                 } else if (apolloStatus.status === 'failed') {
                     throw new Error(`Web job failed: ${apolloStatus.error || 'Unknown error'}`);
@@ -996,7 +955,7 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
             await new Promise(resolve => setTimeout(resolve, 5000));
             
         } catch (error) {
-            console.error(`❌ Job ${jobId}: Web polling error:`, error.message);
+            console.error(`Job ${jobId}: Web polling error:`, error.message);
             
             // If it's a 404, the Apollo job might not exist
             if (error.response?.status === 404) {
@@ -1005,7 +964,6 @@ async function pollApolloJob(apolloJobId, protocol, host, jobId, progressInterva
             
             // For other errors, retry a few times
             if (pollCount < 5) {
-                console.log(`⚠️ Job ${jobId}: Retrying Web status check in 10 seconds...`);
                 await new Promise(resolve => setTimeout(resolve, 10000));
                 continue;
             } else {
