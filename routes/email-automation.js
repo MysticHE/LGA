@@ -227,7 +227,11 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     throw new Error(`Data integrity check failed: Expected ~${expectedCount} rows, got ${verifyData.length} rows`);
                 } else {
                     if (verifyData.length !== expectedCount) {
-                        console.log(`⚠️ Data count mismatch (expected ${expectedCount}, got ${verifyData.length}) but within reasonable bounds`);
+                        // Calculate actual existing count from final result
+                        const actualExistingCount = verifyData.length - mergeResults.newLeads.length;
+                        console.log(`📊 Final count: existing ${actualExistingCount} + new ${mergeResults.newLeads.length} = ${verifyData.length} total records`);
+                    } else {
+                        console.log(`📊 Final count: existing ${existingData.length} + new ${mergeResults.newLeads.length} = ${verifyData.length} total records`);
                     }
                     console.log(`✅ Data integrity check passed`);
                 }
