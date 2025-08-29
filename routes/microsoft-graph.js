@@ -91,16 +91,30 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
         fileId = fileInfo.id;
         console.log(`✅ Found existing file with ID: ${fileId}`);
 
-        // Check if table exists in the worksheet
-        const tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
+        // Check if table exists in the worksheet - try different worksheet names for uploaded files
+        let tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
+        let targetWorksheet = EXCEL_CONFIG.WORKSHEET_NAME;
+        
+        // If not found in "Leads" worksheet, try "Sheet1" (common for uploaded Excel files)
+        if (!tableInfo && EXCEL_CONFIG.WORKSHEET_NAME !== 'Sheet1') {
+            console.log(`🔍 Table not found in '${EXCEL_CONFIG.WORKSHEET_NAME}', checking 'Sheet1'...`);
+            tableInfo = await getExcelTableInfo(graphClient, fileId, 'Sheet1', EXCEL_CONFIG.TABLE_NAME);
+            if (tableInfo) {
+                targetWorksheet = 'Sheet1';
+                console.log(`✅ Found table in 'Sheet1' instead`);
+            }
+        }
         
         if (!tableInfo) {
-            // Table doesn't exist, create it
-            console.log(`🆕 Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${EXCEL_CONFIG.WORKSHEET_NAME}'`);
-            await createExcelTable(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, leads);
+            // Table doesn't exist - this is the common case for uploaded Excel files
+            console.log(`🔄 Excel file found but no table structure - converting to table format`);
+            console.log(`🆕 Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${targetWorksheet}'`);
+            
+            // First, try to convert existing data to table format
+            await createExcelTable(graphClient, fileId, targetWorksheet, EXCEL_CONFIG.TABLE_NAME, leads);
         } else {
             // Table exists, append data
-            console.log(`➕ Appending data to existing table '${EXCEL_CONFIG.TABLE_NAME}'`);
+            console.log(`➕ Appending data to existing table '${EXCEL_CONFIG.TABLE_NAME}' in '${targetWorksheet}'`);
             await appendDataToExcelTableWithRetry(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, leads);
         }
 
@@ -192,7 +206,8 @@ router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => 
         const tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
         
         if (!tableInfo) {
-            // Table doesn't exist, create it
+            // Table doesn't exist - convert uploaded Excel to table format
+            console.log(`🔄 Legacy create-excel: Excel file found but no table structure - converting to table format`);
             console.log(`🆕 Legacy create-excel: Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${EXCEL_CONFIG.WORKSHEET_NAME}'`);
             await createExcelTable(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, leads);
         } else {
@@ -690,8 +705,11 @@ async function getExcelTableInfo(client, fileId, worksheetName, tableName) {
             range: response.range
         };
     } catch (error) {
-        if (error.code === 'itemNotFound' || error.code === 'InvalidArgument') {
-            console.log(`⚠️ Table '${tableName}' not found in worksheet '${worksheetName}'`);
+        if (error.code === 'itemNotFound' || 
+            error.code === 'InvalidArgument' || 
+            error.message?.includes("doesn't exist") ||
+            error.message?.includes('ItemNotFound')) {
+            console.log(`⚠️ Table '${tableName}' not found in worksheet '${worksheetName}' - will convert to table format`);
             return null;
         }
         console.error(`❌ Error checking table:`, error);
