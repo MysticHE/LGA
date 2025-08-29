@@ -572,17 +572,25 @@ router.get('/master-list/export', requireDelegatedAuth, async (req, res) => {
 // DEBUG: Inspect master file contents
 router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
     try {
+        console.log(`🔍 DEBUG ENDPOINT: Inspecting master file structure...`);
 
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Download master file with NO CACHE to get fresh data
+        const masterWorkbook = await downloadMasterFile(graphClient, false); // Force fresh download
         
         if (!masterWorkbook) {
+            console.log(`❌ DEBUG: No master workbook found`);
             return res.json({
                 success: false,
-                message: 'Master file not found'
+                message: 'Master file not found',
+                debug: {
+                    fileName: 'LGA-Master-Email-List.xlsx',
+                    folderPath: '/LGA-Email-Automation',
+                    downloadAttempted: true,
+                    result: 'null'
+                }
             });
         }
 
@@ -590,10 +598,16 @@ router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
         const sheets = Object.keys(masterWorkbook.Sheets);
         const debugInfo = {
             sheets: sheets,
-            sheetDetails: {}
+            sheetDetails: {},
+            fileInfo: {
+                totalSheets: sheets.length,
+                hasLeadsSheet: sheets.includes('Leads')
+            }
         };
 
-        // Inspect each sheet
+        console.log(`📊 DEBUG: Found ${sheets.length} sheets: [${sheets.join(', ')}]`);
+
+        // Inspect each sheet with detailed analysis
         sheets.forEach(sheetName => {
             const sheet = masterWorkbook.Sheets[sheetName];
             const range = sheet['!ref'];
@@ -602,21 +616,50 @@ router.get('/debug/master-file', requireDelegatedAuth, async (req, res) => {
             debugInfo.sheetDetails[sheetName] = {
                 range: range,
                 rowCount: data.length,
-                // Data content removed for privacy
+                hasData: data.length > 0,
+                firstRowKeys: data.length > 0 ? Object.keys(data[0]) : [],
+                sampleData: data.length > 0 ? {
+                    Name: data[0].Name,
+                    Email: data[0].Email,
+                    Status: data[0].Status,
+                    Auto_Send_Enabled: data[0].Auto_Send_Enabled
+                } : null
             };
+            
+            console.log(`📋 DEBUG: Sheet '${sheetName}':`, {
+                range: range,
+                rows: data.length,
+                hasData: data.length > 0
+            });
+            
+            if (sheetName === 'Leads' && data.length > 0) {
+                console.log(`📝 DEBUG: First lead in Leads sheet:`, data[0]);
+                console.log(`📝 DEBUG: All column names:`, Object.keys(data[0]));
+            }
         });
 
         res.json({
             success: true,
-            debugInfo: debugInfo
+            debugInfo: debugInfo,
+            timestamp: new Date().toISOString()
         });
 
     } catch (error) {
         console.error('❌ Debug inspection error:', error);
+        console.error('❌ Full debug error:', {
+            message: error.message,
+            code: error.code,
+            statusCode: error.statusCode,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : 'Hidden'
+        });
         res.status(500).json({
             success: false,
             message: 'Failed to inspect master file',
-            error: error.message
+            error: error.message,
+            errorDetails: {
+                code: error.code,
+                statusCode: error.statusCode
+            }
         });
     }
 });

@@ -39,13 +39,19 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Download master file - force fresh download for campaign operations
+        console.log(`📥 Downloading master file for campaign (bypassing cache)...`);
+        const masterWorkbook = await downloadMasterFile(graphClient, false);
         
         if (!masterWorkbook) {
+            console.error(`❌ Master file download failed for campaign`);
             return res.status(404).json({
                 success: false,
-                message: 'Master file not found'
+                message: 'Master file not found - cannot start campaign',
+                debug: {
+                    fileName: 'LGA-Master-Email-List.xlsx',
+                    folderPath: '/LGA-Email-Automation'
+                }
             });
         }
 
@@ -825,28 +831,83 @@ function getScheduledCampaignsDue(masterWorkbook) {
 }
 
 // Helper function to download master file
-async function downloadMasterFile(graphClient) {
+async function downloadMasterFile(graphClient, useCache = true) {
     try {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
+        
+        console.log(`📥 MASTER FILE DOWNLOAD DEBUG:`);
+        console.log(`   - Searching for: ${masterFileName}`);
+        console.log(`   - In folder: ${masterFolderPath}`);
         
         const files = await graphClient
             .api(`/me/drive/root:${masterFolderPath}:/children`)
             .filter(`name eq '${masterFileName}'`)
             .get();
 
-        if (files.value.length === 0) {
-            console.log('📋 Master file not found');
+        console.log(`📋 Files found in ${masterFolderPath}:`, files.value.length);
+        if (files.value.length > 0) {
+            console.log(`📄 Master file details:`, {
+                name: files.value[0].name,
+                id: files.value[0].id,
+                size: files.value[0].size,
+                lastModified: files.value[0].lastModifiedDateTime
+            });
+        } else {
+            console.log(`❌ No files found matching '${masterFileName}'`);
+            
+            // List all files in the folder for debugging
+            const allFiles = await graphClient
+                .api(`/me/drive/root:${masterFolderPath}:/children`)
+                .get();
+            
+            console.log(`📋 All files in ${masterFolderPath}:`, 
+                allFiles.value.map(f => ({ name: f.name, size: f.size }))
+            );
+            
             return null;
         }
 
+        console.log(`📥 Downloading file content...`);
         const fileContent = await graphClient
             .api(`/me/drive/items/${files.value[0].id}/content`)
             .get();
 
-        return excelProcessor.bufferToWorkbook(fileContent);
+        console.log(`📄 File content received:`, {
+            type: typeof fileContent,
+            isBuffer: Buffer.isBuffer(fileContent),
+            size: fileContent?.length || fileContent?.size || 'unknown'
+        });
+
+        const workbook = excelProcessor.bufferToWorkbook(fileContent);
+        
+        console.log(`📊 WORKBOOK ANALYSIS:`);
+        console.log(`   - Sheet names: [${Object.keys(workbook.Sheets).join(', ')}]`);
+        
+        if (workbook.Sheets['Leads']) {
+            const leadsData = XLSX.utils.sheet_to_json(workbook.Sheets['Leads']);
+            console.log(`   - Leads sheet data count: ${leadsData.length}`);
+            if (leadsData.length > 0) {
+                console.log(`   - First lead sample:`, {
+                    Name: leadsData[0].Name,
+                    Email: leadsData[0].Email,
+                    Status: leadsData[0].Status,
+                    Auto_Send_Enabled: leadsData[0].Auto_Send_Enabled
+                });
+            }
+        } else {
+            console.log(`   - ❌ No 'Leads' sheet found in workbook`);
+        }
+        
+        return workbook;
     } catch (error) {
         console.error('❌ Master file download error:', error);
+        console.error('❌ Full error details:', {
+            message: error.message,
+            code: error.code,
+            statusCode: error.statusCode,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : 'Hidden'
+        });
         return null;
     }
 }
@@ -870,5 +931,56 @@ async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
         throw error;
     }
 }
+
+// DEBUG: Quick master file inspection endpoint
+router.get('/debug/leads-count', requireDelegatedAuth, async (req, res) => {
+    try {
+        console.log(`🔍 QUICK DEBUG: Checking leads count...`);
+        
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        const masterWorkbook = await downloadMasterFile(graphClient, false); // Force fresh
+        
+        if (!masterWorkbook) {
+            return res.json({
+                success: false,
+                message: 'Master file not found',
+                debug: { totalLeads: 0, reason: 'file_not_found' }
+            });
+        }
+        
+        const sheets = Object.keys(masterWorkbook.Sheets);
+        let leadsCount = 0;
+        let leadsData = [];
+        
+        if (masterWorkbook.Sheets['Leads']) {
+            leadsData = XLSX.utils.sheet_to_json(masterWorkbook.Sheets['Leads']);
+            leadsCount = leadsData.length;
+        }
+        
+        console.log(`📊 QUICK DEBUG RESULTS:`);
+        console.log(`   - File found: Yes`);
+        console.log(`   - Sheets: [${sheets.join(', ')}]`);
+        console.log(`   - Total leads: ${leadsCount}`);
+        
+        res.json({
+            success: true,
+            debug: {
+                totalLeads: leadsCount,
+                sheets: sheets,
+                hasLeadsSheet: sheets.includes('Leads'),
+                sampleLead: leadsData[0] || null,
+                downloadMethod: 'fresh_no_cache'
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Quick debug error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            debug: { totalLeads: 0, reason: 'error' }
+        });
+    }
+});
 
 module.exports = router;
