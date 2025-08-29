@@ -66,6 +66,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         
         let masterWorkbook;
         let existingData = [];
+        let initialExistingCount = 0; // Track initial count for accurate breakdown
 
         console.log('✅ Master file structure verified');
 
@@ -135,6 +136,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     
                     console.log(`📊 Recovery completed`);
                     existingData = recoveredData;
+                    initialExistingCount = existingData.length;
                     
                     // Recreate with recovered data
                     masterWorkbook = excelProcessor.createMasterFile(existingData);
@@ -145,11 +147,13 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                         const leadsSheetData = masterWorkbook.Sheets['Leads'];
                         if (leadsSheetData) {
                             existingData = XLSX.utils.sheet_to_json(leadsSheetData);
+                            initialExistingCount = existingData.length;
                             console.log(`📊 Found ${existingData.length} existing leads in master file`);
                         }
                     } else if (leadsData.length > 0) {
                         console.log(`⚠️ Missing structure sheets but preserving ${leadsData.length} existing leads`);
                         existingData = leadsData;
+                        initialExistingCount = existingData.length;
                         // Recreate with proper structure but preserve data
                         masterWorkbook = excelProcessor.createMasterFile(existingData);
                     }
@@ -212,8 +216,19 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     console.error(`❌ DATA INTEGRITY ERROR: Expected at least ${mergeResults.newLeads.length} new leads, but file has ${verifyData.length} total rows`);
                     throw new Error(`Data integrity check failed: File contains ${verifyData.length} rows but should have at least ${mergeResults.newLeads.length} new leads`);
                 } else {
-                    console.log(`📊 Final count: ${verifyData.length} total records in master file`);
-                    console.log(`✅ Data integrity verified successfully - ${mergeResults.newLeads.length} new leads added`);
+                    // Calculate the proper breakdown
+                    const uploadedCount = uploadedLeads.length;
+                    const duplicatesCount = mergeResults.duplicates.length;
+                    const newLeadsAdded = mergeResults.newLeads.length;
+                    const finalTotalCount = verifyData.length;
+                    
+                    console.log(`📊 Upload breakdown:`);
+                    console.log(`   - Existing leads: ${initialExistingCount}`);
+                    console.log(`   - Leads uploaded: ${uploadedCount}`);
+                    console.log(`   - Duplicates skipped: ${duplicatesCount}`);
+                    console.log(`   - New leads added: ${newLeadsAdded}`);
+                    console.log(`📊 Final count: ${initialExistingCount} existing + ${newLeadsAdded} new = ${finalTotalCount} total records`);
+                    console.log(`✅ Data integrity verified successfully`);
                 }
             } else {
                 console.error('❌ Post-upload verification failed - no Leads sheet found');
@@ -268,6 +283,14 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         res.json({
             success: true,
             message: 'Excel file uploaded and merged successfully',
+            breakdown: {
+                existingLeads: initialExistingCount,
+                leadsUploaded: uploadedLeads.length,
+                duplicatesSkipped: mergeResults.duplicates.length,
+                newLeadsAdded: mergeResults.newLeads.length,
+                finalTotal: finalTotalLeads
+            },
+            // Legacy compatibility
             totalProcessed: mergeResults.totalProcessed,
             newLeads: mergeResults.newLeads.length,
             duplicates: mergeResults.duplicates.length,

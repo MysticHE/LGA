@@ -179,8 +179,8 @@ class ExcelProcessor {
             }
         });
 
-        // Merge results summary (before table append)
-        console.log(`📊 Merge summary: ${existingData.length} existing + ${results.newLeads.length} new = ${existingData.length + results.newLeads.length} expected total`);
+        // Merge results summary
+        console.log(`📊 Processing results: ${uploadedLeads.length} uploaded, ${results.duplicates.length} duplicates skipped, ${results.newLeads.length} new leads ready for upload`);
         
         return results;
     }
