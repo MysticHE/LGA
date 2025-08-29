@@ -956,43 +956,66 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
     }
 });
 
-// Cache for master file downloads (5 minute TTL)
+// Cache for master file downloads with promise-based deduplication
 const masterFileCache = new Map();
+const activeDownloads = new Map();
 
-// Helper function to download master file with caching
+// Helper function to download master file with caching and deduplication
 async function downloadMasterFile(graphClient, useCache = true) {
     try {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
+        // Create unique cache key per session to avoid cross-user conflicts
+        const cacheKey = `master_file_${graphClient.config?.authProvider?.account?.username || 'default'}`;
+        
         // Check cache first
-        const cacheKey = 'master_file';
         if (useCache && masterFileCache.has(cacheKey)) {
             const cached = masterFileCache.get(cacheKey);
             const age = Date.now() - cached.timestamp;
             if (age < 30 * 1000) { // 30 seconds
-                console.log(`📋 Using cached master file (age: ${Math.round(age/1000)}s)`);
+                console.log(`📋 Using cached master file (${Math.round(age/1000)}s old)`);
                 return cached.workbook;
             } else {
                 masterFileCache.delete(cacheKey);
             }
         }
         
-        console.log(`📥 Downloading master file from: ${masterFolderPath}`);
-        
-        const files = await graphClient
-            .api(`/me/drive/root:${masterFolderPath}:/children`)
-            .filter(`name eq '${masterFileName}'`)
-            .get();
-            
-        console.log(`📋 Found ${files.value.length} files matching master file name`);
-
-        if (files.value.length === 0) {
-            console.log('📋 Master file not found in OneDrive');
-            return null;
+        // Check if download is already in progress
+        if (activeDownloads.has(cacheKey)) {
+            console.log(`⏳ Master file download in progress, waiting...`);
+            return await activeDownloads.get(cacheKey);
         }
+        
+        // Start download and cache the promise to prevent concurrent downloads
+        const downloadPromise = performMasterFileDownload(graphClient, masterFileName, masterFolderPath, cacheKey);
+        activeDownloads.set(cacheKey, downloadPromise);
+        
+        try {
+            const workbook = await downloadPromise;
+            return workbook;
+        } finally {
+            // Clean up active download tracking
+            activeDownloads.delete(cacheKey);
+        }
+    } catch (error) {
+        console.error('❌ Master file download error:', error);
+        return null;
+    }
+}
 
-        console.log(`📥 Downloading master file: ${files.value[0].name} (${files.value[0].size} bytes)`);
+// Separate function to perform the actual download
+async function performMasterFileDownload(graphClient, masterFileName, masterFolderPath, cacheKey) {
+    console.log(`📥 Downloading master file from: ${masterFolderPath}`);
+    
+    const files = await graphClient
+        .api(`/me/drive/root:${masterFolderPath}:/children`)
+        .filter(`name eq '${masterFileName}'`)
+        .get();
+
+    if (files.value.length === 0) {
+        return null;
+    }
         
         // Try multiple methods to download the file
         let fileContent = null;
@@ -1057,54 +1080,21 @@ async function downloadMasterFile(graphClient, useCache = true) {
             return null;
         }
 
-        console.log(`✅ Master file downloaded and processed`);
-        
-        // Create a test file locally to compare
-        const testLeads = [{
-            Name: 'Test User',
-            Email: 'test@example.com',
-            'Company Name': 'Test Company'
-        }];
-        
-        const testProcessor = new ExcelProcessor();
-        const testWorkbook = testProcessor.createMasterFile();
-        // FIXED: Test using Table API approach instead of file replacement (silent testing)
-        
-        
         // Parse workbook and verify content
         const workbook = excelProcessor.bufferToWorkbook(buffer);
-        
-        console.log(`📊 DOWNLOAD VERIFICATION: Found ${workbook.SheetNames.length} sheets: [${workbook.SheetNames.join(', ')}]`);
         
         if (!workbook.SheetNames.includes('Leads')) {
             console.error('❌ Downloaded file missing Leads sheet');
             return null;
         }
         
-        // Check if Leads sheet has data
-        const leadsSheet = workbook.Sheets['Leads'];
-        if (leadsSheet && leadsSheet['!ref']) {
-            const leadCount = XLSX.utils.sheet_to_json(leadsSheet).length;
-            console.log(`📊 DOWNLOAD VERIFICATION: Leads sheet contains ${leadCount} rows`);
-        } else {
-            console.log(`⚠️ DOWNLOAD VERIFICATION: Leads sheet is empty or has no reference`);
-        }
-        
-        console.log('✅ Master file downloaded and parsed successfully');
-        
         // Cache the workbook for 30 seconds
-        if (useCache) {
-            masterFileCache.set(cacheKey, {
-                workbook: workbook,
-                timestamp: Date.now()
-            });
-        }
+        masterFileCache.set(cacheKey, {
+            workbook: workbook,
+            timestamp: Date.now()
+        });
         
         return workbook;
-    } catch (error) {
-        console.error('❌ Master file download error:', error);
-        return null;
-    }
 }
 
 // Helper function to create OneDrive folder
