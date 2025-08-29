@@ -179,8 +179,8 @@ class ExcelProcessor {
             }
         });
 
-        // Final results in the requested format
-        console.log(`📊 Final count: existing ${existingData.length} + new ${results.newLeads.length} = ${existingData.length + results.newLeads.length} total records`);
+        // Merge results summary (before table append)
+        console.log(`📊 Merge summary: ${existingData.length} existing + ${results.newLeads.length} new = ${existingData.length + results.newLeads.length} expected total`);
         
         return results;
     }

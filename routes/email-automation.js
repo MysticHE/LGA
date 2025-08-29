@@ -212,10 +212,8 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     console.error(`❌ DATA INTEGRITY ERROR: Expected at least ${mergeResults.newLeads.length} new leads, but file has ${verifyData.length} total rows`);
                     throw new Error(`Data integrity check failed: File contains ${verifyData.length} rows but should have at least ${mergeResults.newLeads.length} new leads`);
                 } else {
-                    // Calculate actual existing count from final result for logging
-                    const actualExistingCount = verifyData.length - mergeResults.newLeads.length;
-                    console.log(`📊 Final count: existing ${actualExistingCount} + new ${mergeResults.newLeads.length} = ${verifyData.length} total records`);
-                    console.log(`✅ Data integrity verified successfully`);
+                    console.log(`📊 Final count: ${verifyData.length} total records in master file`);
+                    console.log(`✅ Data integrity verified successfully - ${mergeResults.newLeads.length} new leads added`);
                 }
             } else {
                 console.error('❌ Post-upload verification failed - no Leads sheet found');
