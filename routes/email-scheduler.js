@@ -52,12 +52,46 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Get leads based on target criteria
         const leadsData = getTargetLeads(masterWorkbook, targetLeads);
         
+        // Enhanced debugging for lead selection
+        const leadsSheet = masterWorkbook.Sheets['Leads'];
+        const allLeads = XLSX.utils.sheet_to_json(leadsSheet);
+        console.log(`📊 LEAD SELECTION DEBUG:`);
+        console.log(`   - Total leads in file: ${allLeads.length}`);
+        console.log(`   - Target criteria: ${targetLeads}`);
+        console.log(`   - Leads matching criteria: ${leadsData.length}`);
+        
+        if (targetLeads === 'new') {
+            const newLeads = allLeads.filter(lead => lead.Status === 'New');
+            const autoEnabledLeads = allLeads.filter(lead => lead.Auto_Send_Enabled === 'Yes');
+            const bothConditions = allLeads.filter(lead => lead.Status === 'New' && lead.Auto_Send_Enabled === 'Yes');
+            
+            console.log(`📋 NEW LEADS ANALYSIS:`);
+            console.log(`   - Leads with Status='New': ${newLeads.length}`);
+            console.log(`   - Leads with Auto_Send_Enabled='Yes': ${autoEnabledLeads.length}`);
+            console.log(`   - Leads with BOTH conditions: ${bothConditions.length}`);
+            
+            // Show sample lead for debugging
+            if (allLeads.length > 0) {
+                console.log(`📝 SAMPLE LEAD DATA:`, {
+                    Status: allLeads[0].Status,
+                    Auto_Send_Enabled: allLeads[0].Auto_Send_Enabled,
+                    Email: allLeads[0].Email,
+                    Name: allLeads[0].Name
+                });
+            }
+        }
+        
         if (leadsData.length === 0) {
             return res.json({
                 success: true,
                 message: 'No leads match the target criteria',
                 campaignId: null,
-                emailsSent: 0
+                emailsSent: 0,
+                debug: {
+                    targetCriteria: targetLeads,
+                    totalLeads: allLeads.length,
+                    matchingLeads: leadsData.length
+                }
             });
         }
 
@@ -434,9 +468,35 @@ function getTargetLeads(masterWorkbook, targetCriteria) {
 
     switch (targetCriteria) {
         case 'new':
-            return allLeads.filter(lead => 
-                lead.Status === 'New' && lead.Auto_Send_Enabled === 'Yes'
-            );
+            // Enhanced debugging for 'new' lead filtering
+            const newLeadsFiltered = allLeads.filter(lead => {
+                const isNew = lead.Status === 'New';
+                const isAutoEnabled = lead.Auto_Send_Enabled === 'Yes';
+                
+                console.log(`🔍 LEAD FILTER DEBUG - ${lead.Email}:`, {
+                    Status: lead.Status,
+                    isNew: isNew,
+                    Auto_Send_Enabled: lead.Auto_Send_Enabled,
+                    isAutoEnabled: isAutoEnabled,
+                    willInclude: isNew && isAutoEnabled
+                });
+                
+                return isNew && isAutoEnabled;
+            });
+            
+            // TEMPORARY FIX: If no leads match strict criteria, try relaxed criteria for debugging
+            if (newLeadsFiltered.length === 0) {
+                console.log(`⚠️  No leads match strict criteria, checking with relaxed filters...`);
+                const relaxedFilter = allLeads.filter(lead => lead.Status === 'New');
+                console.log(`📋 Leads with just Status='New': ${relaxedFilter.length}`);
+                
+                if (relaxedFilter.length > 0) {
+                    console.log(`🔧 TEMPORARY: Using relaxed criteria (ignoring Auto_Send_Enabled for debugging)`);
+                    return relaxedFilter; // Return leads with just Status='New' for debugging
+                }
+            }
+            
+            return newLeadsFiltered;
 
         case 'due':
             const today = new Date().toISOString().split('T')[0];
@@ -473,18 +533,34 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
     const errors = [];
     let sent = 0;
 
+    console.log(`📧 STARTING EMAIL SEND PROCESS:`);
+    console.log(`   - Leads to process: ${leads.length}`);
+    console.log(`   - Email content type: ${emailContentType}`);
+    console.log(`   - Campaign ID: ${campaignId}`);
+    console.log(`   - Templates available: ${templates.length}`);
+
     for (const lead of leads) {
         try {
+            console.log(`🔄 Processing lead: ${lead.Email} (${lead.Name})`);
+            
             // Process email content
             const emailContent = await emailContentProcessor.processEmailContent(
                 lead, 
                 emailContentType, 
                 templates
             );
+            
+            console.log(`📝 Email content generated for ${lead.Email}:`, {
+                subject: emailContent.subject?.substring(0, 50) + '...',
+                contentType: emailContent.contentType,
+                hasBody: !!emailContent.body,
+                bodyLength: emailContent.body?.length || 0
+            });
 
             // Validate email content
             const validation = emailContentProcessor.validateEmailContent(emailContent);
             if (!validation.isValid) {
+                console.error(`❌ Email validation failed for ${lead.Email}:`, validation.errors);
                 errors.push({
                     email: lead.Email,
                     name: lead.Name,
@@ -510,10 +586,20 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 ]
             };
 
-            await graphClient.api('/me/sendMail').post({
+            console.log(`📧 Attempting to send email via Microsoft Graph to: ${lead.Email}`);
+            console.log(`📋 Email message structure:`, {
+                subject: emailMessage.subject,
+                bodyType: emailMessage.body.contentType,
+                recipientEmail: emailMessage.toRecipients[0].emailAddress.address,
+                hasContent: !!emailMessage.body.content
+            });
+
+            const sendResult = await graphClient.api('/me/sendMail').post({
                 message: emailMessage,
                 saveToSentItems: true
             });
+            
+            console.log(`✅ Microsoft Graph sendMail API response:`, sendResult || 'No response body (normal for sendMail)');
 
             results.push({
                 ...lead,
@@ -531,12 +617,27 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
 
         } catch (error) {
             console.error(`❌ Failed to send email to ${lead.Email}:`, error.message);
+            console.error(`❌ Full error details:`, {
+                code: error.code,
+                statusCode: error.statusCode,
+                message: error.message,
+                stack: process.env.NODE_ENV === 'development' ? error.stack : 'Hidden in production'
+            });
             errors.push({
                 email: lead.Email,
                 name: lead.Name,
-                error: error.message
+                error: error.message,
+                errorCode: error.code,
+                statusCode: error.statusCode
             });
         }
+    }
+
+    console.log(`📊 EMAIL SEND SUMMARY:`);
+    console.log(`   - Emails sent successfully: ${sent}`);
+    console.log(`   - Errors encountered: ${errors.length}`);
+    if (errors.length > 0) {
+        console.log(`   - Error details:`, errors.map(e => `${e.email}: ${e.error}`));
     }
 
     return { sent, results, errors };
