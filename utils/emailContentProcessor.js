@@ -128,18 +128,32 @@ class EmailContentProcessor {
     parseEmailContent(content) {
         if (!content) return { subject: '', body: '' };
 
-        // Try to extract subject line
-        const subjectMatch = content.match(/(?:Subject:|Subj:)\s*(.+?)(?:\n|$)/i);
-        let subject = subjectMatch ? subjectMatch[1].trim() : '';
-
-        // Extract body (everything after subject or full content if no subject)
+        // Try multiple subject line patterns (AI generates different formats)
+        let subject = '';
         let body = content;
+        
+        // Pattern 1: "Subject Line: ..." (most common from AI)
+        let subjectMatch = content.match(/(?:Subject Line:|1\.\s*Subject Line:)\s*(.+?)(?:\n|$)/i);
+        
+        // Pattern 2: "Subject: ..." (fallback)
+        if (!subjectMatch) {
+            subjectMatch = content.match(/(?:Subject:|Subj:)\s*(.+?)(?:\n|$)/i);
+        }
+        
         if (subjectMatch) {
+            subject = subjectMatch[1].trim();
+            // Remove the entire subject line from content
             body = content.replace(subjectMatch[0], '').trim();
         }
 
-        // Clean up body formatting
+        // Clean up body formatting (remove labels and structure)
         body = this.cleanEmailBody(body);
+
+        console.log(`📧 Parsed email content:`, {
+            subject: subject,
+            bodyLength: body.length,
+            bodyStart: body.substring(0, 50) + '...'
+        });
 
         return {
             subject: subject,
@@ -154,10 +168,15 @@ class EmailContentProcessor {
         if (!body) return '';
 
         return body
-            .replace(/^(Body:|Message:)\s*/i, '') // Remove body labels
+            // Remove AI-generated labels and formatting
+            .replace(/^(Subject Line:|Email Body:|Body:|Message:)\s*/mi, '') // Remove content labels
+            .replace(/\d+\.\s*(Subject Line:|Email Body:)/gi, '') // Remove numbered labels
+            .replace(/^(Subject:|Subj:)\s*.+$/mi, '') // Remove any remaining subject lines
+            .replace(/^Hi\s+[^,]+,\s*/mi, '$&') // Preserve greeting but clean extra spaces
             .replace(/\n{3,}/g, '\n\n') // Limit consecutive line breaks
             .replace(/^\s+|\s+$/g, '') // Trim whitespace
-            .replace(/\r\n/g, '\n'); // Normalize line endings
+            .replace(/\r\n/g, '\n') // Normalize line endings
+            .trim(); // Final trim
     }
 
     /**
