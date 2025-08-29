@@ -21,26 +21,12 @@ class EmailScheduler {
     }
 
     /**
-     * Start the automated email scheduler
+     * Start the automated email scheduler (DISABLED - Manual control only)
      */
     start() {
-        if (this.isRunning) {
-            console.log('⚠️ Email Scheduler is already running');
-            return;
-        }
-
-        console.log(`📅 Starting Email Scheduler with cron: ${this.schedule}`);
-
-        // Schedule the job to run every hour
-        this.cronJob = cron.schedule(this.schedule, async () => {
-            await this.processScheduledEmails();
-        }, {
-            scheduled: true,
-            timezone: "Asia/Singapore"
-        });
-
-        this.isRunning = true;
-        console.log('✅ Email Scheduler started successfully');
+        console.log('📅 Email Scheduler set to MANUAL MODE - automatic scheduling disabled');
+        console.log('💡 Use manual triggers via frontend or API endpoints to send emails');
+        this.isRunning = false;
     }
 
     /**
@@ -239,7 +225,7 @@ class EmailScheduler {
                     subject: emailContent.subject,
                     body: {
                         contentType: 'HTML',
-                        content: emailContentProcessor.convertToHTML(emailContent)
+                        content: emailContentProcessor.convertToHTML(emailContent, lead.Email)
                     },
                     toRecipients: [
                         {

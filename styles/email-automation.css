@@ -7,6 +7,29 @@
     box-sizing: border-box;
 }
 
+/* New Records Card Styling */
+.stat-card-new {
+    background: linear-gradient(135deg, #e8f5e8 0%, #f0fdf4 100%);
+    border: 2px solid var(--success-green);
+    box-shadow: 0 4px 12px rgba(39, 174, 96, 0.15);
+}
+
+.stat-card-new:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(39, 174, 96, 0.2);
+}
+
+.stat-action {
+    margin-top: var(--space-sm);
+    text-align: center;
+}
+
+.btn-sm {
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 0.875rem;
+    font-weight: var(--font-weight-medium);
+}
+
 :root {
     /* Enhanced Color Palette */
     --primary-blue: #3498db;

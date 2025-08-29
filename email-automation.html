@@ -38,6 +38,9 @@
                     <button class="btn btn-outline" onclick="showInsights()" title="View Analytics">
                         📈 Insights
                     </button>
+                    <button class="btn btn-outline" onclick="setupEmailTracking()" title="Setup Email Read/Reply Tracking">
+                        🔔 Setup Tracking
+                    </button>
                 </div>
             </div>
             <div class="stats-grid">
@@ -60,6 +63,15 @@
                 <div class="stat-card" onclick="showEmailStats('replies')" title="Click to view replies">
                     <div class="stat-number" id="repliesReceived">-</div>
                     <div class="stat-label">Replies Received</div>
+                </div>
+                <div class="stat-card stat-card-new" onclick="showNewRecords()" title="Click to view new records ready to send">
+                    <div class="stat-number" id="newRecords">-</div>
+                    <div class="stat-label">New Records</div>
+                    <div class="stat-action">
+                        <button class="btn btn-success btn-sm" onclick="sendNewEmails(event)" title="Send emails to all new records">
+                            📧 Send New Emails
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -673,6 +685,7 @@
                     document.getElementById('emailsSent').textContent = stats.data.emailsSent || 0;
                     document.getElementById('emailsRead').textContent = stats.data.emailsRead || 0;
                     document.getElementById('repliesReceived').textContent = stats.data.repliesReceived || 0;
+                    document.getElementById('newRecords').textContent = stats.data.newRecords || 0;
                 }
             } catch (error) {
                 console.error('❌ Dashboard refresh error:', error);
@@ -684,7 +697,7 @@
             console.log('📝 Loading templates...');
             
             try {
-                const response = await fetch('/api/email-automation/templates', {
+                const response = await fetch('/api/email-templates', {
                     headers: {
                         'X-Session-Id': sessionId
                     }
@@ -851,8 +864,9 @@
         // Modal functions
         function openTemplateModal() {
             document.getElementById('templateModal').style.display = 'block';
-            // Clear form
+            // Clear form and edit mode
             document.getElementById('templateForm').reset();
+            delete document.getElementById('templateForm').dataset.editingId;
         }
 
         function closeTemplateModal() {
@@ -881,28 +895,37 @@
                 Active: document.getElementById('templateActive').value
             };
             
+            const form = document.getElementById('templateForm');
+            const editingId = form.dataset.editingId;
+            const isEditing = !!editingId;
+            
             try {
-                const response = await fetch('/api/email-automation/templates', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Session-Id': sessionId
-                    },
-                    body: JSON.stringify(templateData)
-                });
+                const response = await fetch(
+                    isEditing 
+                        ? `/api/email-templates/${editingId}`
+                        : '/api/email-templates', 
+                    {
+                        method: isEditing ? 'PUT' : 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': sessionId
+                        },
+                        body: JSON.stringify(templateData)
+                    }
+                );
                 
                 const result = await response.json();
                 
                 if (result.success) {
                     closeTemplateModal();
                     await loadTemplates();
-                    alert('✅ Template saved successfully!');
+                    alert(`✅ Template ${isEditing ? 'updated' : 'created'} successfully!`);
                 } else {
-                    alert('❌ Failed to save template: ' + result.message);
+                    alert(`❌ Failed to ${isEditing ? 'update' : 'create'} template: ` + result.message);
                 }
             } catch (error) {
                 console.error('❌ Template save error:', error);
-                alert('❌ Failed to save template.');
+                alert(`❌ Failed to ${isEditing ? 'update' : 'create'} template.`);
             }
         }
 
@@ -920,7 +943,7 @@
             };
             
             try {
-                const response = await fetch('/api/email-automation/campaigns/start', {
+                const response = await fetch('/api/email-scheduler/campaigns/start', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -945,34 +968,259 @@
         }
 
         // Utility functions
-        function previewTemplate() {
-            alert('Template preview functionality coming soon!');
+        async function previewTemplate(templateId) {
+            try {
+                const response = await fetch(`/api/email-templates/${templateId}/preview`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': sessionId
+                    },
+                    body: JSON.stringify({
+                        sampleLead: {
+                            Name: 'John Smith',
+                            'Company Name': 'ABC Corporation', 
+                            Title: 'Marketing Manager',
+                            Email: 'john.smith@abccorp.com'
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const preview = result.preview;
+                    const previewContent = `
+📧 TEMPLATE PREVIEW
+
+Subject: ${preview.subject}
+
+Body:
+${preview.body}
+
+Variables used: ${preview.variables.join(', ')}
+Sample data: John Smith, ABC Corporation, Marketing Manager
+                    `;
+                    alert(previewContent);
+                } else {
+                    alert('❌ Failed to preview template: ' + result.message);
+                }
+            } catch (error) {
+                console.error('❌ Template preview error:', error);
+                alert('❌ Failed to preview template.');
+            }
         }
 
         function previewCampaign() {
             alert('Campaign preview functionality coming soon!');
         }
 
-        function editTemplate(templateId) {
-            alert('Template editing functionality coming soon!');
+        async function editTemplate(templateId) {
+            try {
+                // Get template data
+                const response = await fetch(`/api/email-templates/${templateId}`, {
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const template = result.template;
+                    
+                    // Populate form with template data
+                    document.getElementById('templateName').value = template.Template_Name;
+                    document.getElementById('templateType').value = template.Template_Type;
+                    document.getElementById('templateSubject').value = template.Subject;
+                    document.getElementById('templateContent').value = template.Body;
+                    document.getElementById('templateActive').value = template.Active;
+                    
+                    // Store template ID for updating
+                    document.getElementById('templateForm').dataset.editingId = templateId;
+                    
+                    // Open modal
+                    document.getElementById('templateModal').style.display = 'block';
+                } else {
+                    alert('❌ Failed to load template: ' + result.message);
+                }
+            } catch (error) {
+                console.error('❌ Template edit error:', error);
+                alert('❌ Failed to load template for editing.');
+            }
         }
 
-        function toggleTemplate(templateId) {
-            alert('Template toggle functionality coming soon!');
+        async function toggleTemplate(templateId) {
+            try {
+                const response = await fetch(`/api/email-templates/${templateId}/toggle`, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    await loadTemplates(); // Refresh template list
+                    alert(`✅ ${result.message}`);
+                } else {
+                    alert('❌ Failed to toggle template: ' + result.message);
+                }
+            } catch (error) {
+                console.error('❌ Template toggle error:', error);
+                alert('❌ Failed to toggle template status.');
+            }
         }
 
         function editLead(email) {
             alert('Lead editing functionality coming soon!');
         }
 
-        function sendNow(email) {
-            if (confirm('Send email to this lead now?')) {
-                alert('Send now functionality coming soon!');
+        async function sendNow(email) {
+            if (confirm(`Send email to ${email} now?`)) {
+                try {
+                    const response = await fetch(`/api/email-automation/send-email/${encodeURIComponent(email)}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-Id': sessionId
+                        },
+                        body: JSON.stringify({
+                            emailChoice: 'AI_Generated' // Use default, could be made configurable
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        await refreshDashboard(); // Refresh to show updated stats
+                        alert(`✅ ${result.message}`);
+                    } else {
+                        alert('❌ Failed to send email: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('❌ Send now error:', error);
+                    alert('❌ Failed to send email.');
+                }
             }
         }
 
-        function showDueLeads() {
-            alert('Due leads view coming soon!');
+        async function showDueLeads() {
+            try {
+                const response = await fetch('/api/email-automation/master-list/due-today', {
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const dueLeads = result.data;
+                    if (dueLeads.length === 0) {
+                        alert('📅 No leads due for email today.');
+                        return;
+                    }
+                    
+                    let dueLeadsMessage = `📅 LEADS DUE TODAY (${dueLeads.length})\n\n`;
+                    dueLeads.forEach((lead, index) => {
+                        dueLeadsMessage += `${index + 1}. ${lead.Name || 'Unknown'}\n`;
+                        dueLeadsMessage += `   📧 ${lead.Email}\n`;
+                        dueLeadsMessage += `   🏢 ${lead['Company Name'] || 'No company'}\n`;
+                        dueLeadsMessage += `   📄 Status: ${lead.Status || 'New'}\n`;
+                        dueLeadsMessage += `   📅 Next: ${lead.Next_Email_Date || 'Not scheduled'}\n\n`;
+                    });
+                    
+                    alert(dueLeadsMessage);
+                } else {
+                    alert('❌ Failed to load due leads: ' + result.message);
+                }
+            } catch (error) {
+                console.error('❌ Due leads error:', error);
+                alert('❌ Failed to load due leads.');
+            }
+        }
+
+        // New Records Functions
+        async function showNewRecords() {
+            try {
+                const response = await fetch('/api/email-automation/master-list/data?status=New&limit=100', {
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const newLeads = result.data;
+                    if (newLeads.length === 0) {
+                        alert('📝 No new records found.');
+                        return;
+                    }
+                    
+                    let newLeadsMessage = `📝 NEW RECORDS (${newLeads.length})\n\n`;
+                    newLeads.forEach((lead, index) => {
+                        newLeadsMessage += `${index + 1}. ${lead.Name || 'Unknown'}\n`;
+                        newLeadsMessage += `   📧 ${lead.Email}\n`;
+                        newLeadsMessage += `   🏢 ${lead['Company Name'] || 'No company'}\n`;
+                        newLeadsMessage += `   📅 Ready to send: ${lead.Auto_Send_Enabled === 'Yes' ? 'Yes' : 'No'}\n\n`;
+                    });
+                    
+                    alert(newLeadsMessage);
+                } else {
+                    alert('❌ Failed to load new records: ' + result.message);
+                }
+            } catch (error) {
+                console.error('❌ New records error:', error);
+                alert('❌ Failed to load new records.');
+            }
+        }
+
+        async function sendNewEmails(event) {
+            // Prevent parent click event
+            if (event) event.stopPropagation();
+            
+            const newRecordsCount = document.getElementById('newRecords').textContent;
+            
+            if (newRecordsCount === '0' || newRecordsCount === '-') {
+                alert('📝 No new records to send emails to.');
+                return;
+            }
+            
+            if (!confirm(`📧 Send emails to all ${newRecordsCount} new records?\n\nThis will send emails with rate limiting (5 per batch, 2s delays) to avoid being marked as spam.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/email-scheduler/campaigns/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': sessionId
+                    },
+                    body: JSON.stringify({
+                        campaignName: `Manual Send - ${new Date().toLocaleDateString()}`,
+                        emailContentType: 'AI_Generated',
+                        targetLeads: 'new', // Target only new leads
+                        sendSchedule: 'immediate',
+                        followUpDays: 7
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    await refreshDashboard(); // Refresh to show updated stats
+                    alert(`✅ Successfully started sending emails to ${result.emailsSent || newRecordsCount} new leads!\n\nEmails are being sent with proper rate limiting to maintain deliverability.`);
+                } else {
+                    alert('❌ Failed to send emails: ' + result.message);
+                }
+            } catch (error) {
+                console.error('❌ Send new emails error:', error);
+                alert('❌ Failed to send emails to new records.');
+            }
         }
 
         function showScheduledCampaigns() {
@@ -983,8 +1231,42 @@
             loadMasterList();
         }
 
-        function exportMasterList() {
-            alert('Excel export functionality coming soon!');
+        async function exportMasterList() {
+            try {
+                const response = await fetch('/api/email-automation/master-list/export', {
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                });
+                
+                if (response.ok) {
+                    // Get filename from response header or use default
+                    const contentDisposition = response.headers.get('content-disposition');
+                    const filename = contentDisposition 
+                        ? contentDisposition.split('filename=')[1].replace(/"/g, '')
+                        : `LGA-Master-Email-List-Export-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.xlsx`;
+                    
+                    // Create blob and download
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    alert('✅ Master list exported successfully!');
+                } else {
+                    const error = await response.json();
+                    alert('❌ Failed to export master list: ' + (error.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('❌ Export error:', error);
+                alert('❌ Failed to export master list.');
+            }
         }
 
         function openAutomationSettings() {
@@ -1057,6 +1339,33 @@
         // Show dashboard insights
         function showInsights() {
             alert('📈 Analytics insights coming soon!\n\n- Email performance metrics\n- Response rate analytics\n- Best performing templates\n- Lead engagement trends');
+        }
+
+        // Setup email tracking webhook
+        async function setupEmailTracking() {
+            if (!confirm('🔔 Setup Email Tracking\n\nThis will create a webhook subscription to automatically track when emails are read or replied to.\n\nProceed?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/email/webhook/subscribe', {
+                    method: 'POST',
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`✅ Email tracking setup successfully!\n\nSubscription ID: ${result.subscriptionId}\nExpires: ${new Date(result.expirationDateTime).toLocaleDateString()}\n\nEmails will now be automatically tracked for read/reply status.`);
+                } else {
+                    alert('❌ Failed to setup email tracking: ' + result.message);
+                }
+            } catch (error) {
+                console.error('❌ Tracking setup error:', error);
+                alert('❌ Failed to setup email tracking.');
+            }
         }
 
         // Show lead details by type
@@ -1146,10 +1455,28 @@
         }
 
         // Delete template (new function)
-        function deleteTemplate(templateId) {
+        async function deleteTemplate(templateId) {
             if (confirm('🗑️ Delete Template\n\nAre you sure you want to delete this template?\n\nThis action cannot be undone.')) {
-                console.log('Deleting template:', templateId);
-                alert('Delete template functionality coming soon!');
+                try {
+                    const response = await fetch(`/api/email-templates/${templateId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'X-Session-Id': sessionId
+                        }
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        await loadTemplates(); // Refresh template list
+                        alert('✅ Template deleted successfully!');
+                    } else {
+                        alert('❌ Failed to delete template: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('❌ Template delete error:', error);
+                    alert('❌ Failed to delete template.');
+                }
             }
         }
 

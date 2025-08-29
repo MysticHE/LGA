@@ -414,6 +414,7 @@ class ExcelProcessor {
                 emailsSent: 0,
                 emailsRead: 0,
                 repliesReceived: 0,
+                newRecords: 0,
                 statusBreakdown: {}
             };
             
@@ -433,6 +434,11 @@ class ExcelProcessor {
                 // Count by status
                 const status = lead.Status || 'New';
                 stats.statusBreakdown[status] = (stats.statusBreakdown[status] || 0) + 1;
+                
+                // Count new records specifically
+                if (status === 'New') {
+                    stats.newRecords++;
+                }
                 
                 // Count actions
                 if (lead.Status === 'Sent' || lead.Status === 'Read' || lead.Status === 'Replied') {
@@ -455,6 +461,7 @@ class ExcelProcessor {
                 emailsSent: 0,
                 emailsRead: 0,
                 repliesReceived: 0,
+                newRecords: 0,
                 statusBreakdown: {}
             };
         }

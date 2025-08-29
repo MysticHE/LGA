@@ -281,15 +281,23 @@ Best regards,
     }
 
     /**
-     * Convert email content to HTML format
+     * Convert email content to HTML format with tracking
      */
-    convertToHTML(emailContent) {
+    convertToHTML(emailContent, leadEmail = null) {
         let htmlBody = emailContent.body || '';
         
         // Convert line breaks to HTML
         htmlBody = htmlBody.replace(/\n/g, '<br>');
         
-        // Wrap in basic HTML structure
+        // Add tracking pixel if email is provided
+        let trackingPixel = '';
+        if (leadEmail) {
+            const trackingId = `${leadEmail}-${Date.now()}`;
+            const baseUrl = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
+            trackingPixel = `<img src="${baseUrl}/api/email/track-read?id=${encodeURIComponent(trackingId)}" width="1" height="1" style="display:none;" alt="" />`;
+        }
+        
+        // Wrap in basic HTML structure with tracking
         const html = `
 <!DOCTYPE html>
 <html>
@@ -299,6 +307,7 @@ Best regards,
 </head>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
     ${htmlBody}
+    ${trackingPixel}
 </body>
 </html>`;
 

@@ -953,7 +953,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             subject: emailContent.subject,
             body: {
                 contentType: 'HTML',
-                content: emailContentProcessor.convertToHTML(emailContent)
+                content: emailContentProcessor.convertToHTML(emailContent, lead.Email)
             },
             toRecipients: [
                 {

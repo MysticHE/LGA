@@ -498,7 +498,7 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 subject: emailContent.subject,
                 body: {
                     contentType: 'HTML',
-                    content: emailContentProcessor.convertToHTML(emailContent)
+                    content: emailContentProcessor.convertToHTML(emailContent, lead.Email)
                 },
                 toRecipients: [
                     {

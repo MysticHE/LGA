@@ -805,14 +805,17 @@ async function getExcelTableInfo(client, fileId, worksheetName, tableName) {
  */
 async function createExcelFileWithTable(client, filePath, leads) {
     try {
-        // Prepare initial data with all required columns
-        const normalizedLeads = leads.slice(0, 5).map(lead => normalizeLeadData(lead));
+        console.log(`🆕 Creating Excel file with uniform table processing for ${leads.length} leads`);
         
-        // Create Excel workbook using XLSX
+        // Create empty Excel workbook with just headers (no data rows)
         const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(normalizedLeads);
         
-        // Set column widths
+        // Get standard column structure from normalization
+        const sampleNormalized = normalizeLeadData({});
+        const headers = Object.keys(sampleNormalized);
+        
+        // Create worksheet with headers only
+        const ws = XLSX.utils.json_to_sheet([], { header: headers });
         ws['!cols'] = getColumnWidths();
         XLSX.utils.book_append_sheet(wb, ws, EXCEL_CONFIG.WORKSHEET_NAME);
         
@@ -825,39 +828,78 @@ async function createExcelFileWithTable(client, filePath, leads) {
             await createOneDriveFolder(client, '/' + folderPath);
         }
         
-        // Upload file to OneDrive
+        // Upload empty file to OneDrive
         const uploadResult = await client
             .api(`/me/drive/root:/${filePath}:/content`)
             .put(excelBuffer);
         
         const fileId = uploadResult.id;
-        console.log(`✅ Created Excel file: ${filePath} (ID: ${fileId})`);
+        console.log(`✅ Created empty Excel file: ${filePath} (ID: ${fileId})`);
         
-        // Create table in the uploaded file
-        await createExcelTableInFile(client, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, normalizedLeads);
+        // Create empty table structure with headers only
+        await createEmptyExcelTable(client, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, headers);
         
-        // If we have more than 5 leads, append the remaining ones with proper table verification
-        if (leads.length > 5) {
-            const remainingLeads = leads.slice(5).map(lead => normalizeLeadData(lead));
-            console.log(`🔍 Verifying table exists before appending ${remainingLeads.length} remaining leads...`);
+        // Now append ALL leads uniformly via Graph API table operations
+        if (leads.length > 0) {
+            console.log(`🔍 Verifying empty table exists before appending all ${leads.length} leads...`);
             
-            // Verify table existence before appending (proper solution instead of just waiting)
+            // Verify table existence 
             const verifiedTableName = await verifyTableExistsWithPolling(client, fileId, EXCEL_CONFIG.TABLE_NAME, 3);
             
             if (!verifiedTableName) {
-                throw new Error(`Table '${EXCEL_CONFIG.TABLE_NAME}' was not found after creation - possible indexing issue`);
+                throw new Error(`Table '${EXCEL_CONFIG.TABLE_NAME}' was not found after creation`);
             }
             
-            console.log(`✅ Table verified as '${verifiedTableName}' - proceeding with append`);
+            console.log(`✅ Empty table verified as '${verifiedTableName}' - proceeding with uniform append of all leads`);
             
-            // Append with the verified table name
-            await appendDataToExcelTableWithRetry(client, fileId, verifiedTableName, remainingLeads, 5);
+            // Process all leads uniformly through Graph API table append
+            await appendDataToExcelTableWithRetry(client, fileId, verifiedTableName, leads, 5);
         }
         
         return fileId;
         
     } catch (error) {
-        console.error(`❌ Error creating Excel file with table:`, error);
+        console.error(`❌ Error creating Excel file with uniform table processing:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Create empty Excel table with headers only (for uniform data processing)
+ * @param {Object} client - Microsoft Graph client
+ * @param {string} fileId - OneDrive file ID
+ * @param {string} worksheetName - Worksheet name
+ * @param {string} tableName - Table name
+ * @param {Array} headers - Column headers
+ */
+async function createEmptyExcelTable(client, fileId, worksheetName, tableName, headers) {
+    try {
+        console.log(`🗂️ Creating empty table '${tableName}' with ${headers.length} columns`);
+        
+        // Write only the header row to establish table structure
+        await client
+            .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/range(address='A1:${getExcelColumnLetter(headers.length)}1')`)
+            .patch({
+                values: [headers]
+            });
+        
+        // Create table from header row only (A1 to last header column)
+        const tableRange = `A1:${getExcelColumnLetter(headers.length)}1`;
+        
+        const tableRequest = {
+            address: tableRange,
+            hasHeaders: true,
+            name: tableName
+        };
+        
+        await client
+            .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/tables/add`)
+            .post(tableRequest);
+        
+        console.log(`✅ Created empty table '${tableName}' with headers: ${headers.join(', ')}`);
+        
+    } catch (error) {
+        console.error(`❌ Error creating empty table:`, error);
         throw error;
     }
 }
@@ -929,19 +971,20 @@ async function createExcelTable(client, fileId, worksheetName, tableName, newLea
                 await appendDataToExcelTableWithRetry(client, fileId, tableName, newLeads);
             }
         } else {
-            console.log(`📝 No existing data found, creating table with new data only`);
+            console.log(`📝 No existing data found, creating empty table and appending all leads uniformly`);
             
-            // No existing data, create table with new leads
-            const normalizedLeads = newLeads.slice(0, 5).map(lead => normalizeLeadData(lead));
-            await populateWorksheetWithData(client, fileId, worksheetName, normalizedLeads);
-            await createExcelTableInFile(client, fileId, worksheetName, tableName, normalizedLeads);
+            // Get standard column structure
+            const sampleNormalized = normalizeLeadData({});
+            const headers = Object.keys(sampleNormalized);
             
-            // Append remaining leads if any
-            if (newLeads.length > 5) {
-                const remainingLeads = newLeads.slice(5).map(lead => normalizeLeadData(lead));
-                console.log(`⏳ Waiting briefly for table to be ready...`);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
-                await appendDataToExcelTableWithRetry(client, fileId, tableName, remainingLeads);
+            // Create empty table with headers only
+            await createEmptyExcelTable(client, fileId, worksheetName, tableName, headers);
+            
+            // Append all new leads uniformly via Graph API
+            if (newLeads.length > 0) {
+                console.log(`⏳ Waiting briefly for empty table to be ready...`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                await appendDataToExcelTableWithRetry(client, fileId, tableName, newLeads);
             }
         }
         
@@ -1057,9 +1100,13 @@ async function appendDataToExcelTable(client, fileId, tableName, leads) {
         const columns = columnsResponse.value;
         const headers = columns.map(col => col.name);
         
-        // Prepare data rows in correct column order
+        // Prepare data rows in correct column order with proper data types
         const tableRows = normalizedLeads.map(lead => {
-            return headers.map(header => String(lead[header] || ''));
+            return headers.map(header => {
+                const value = lead[header];
+                // Handle different data types appropriately
+                return formatCellValueForExcel(header, value);
+            });
         });
         
         // Append rows to table using Graph API
@@ -1364,6 +1411,58 @@ function getExcelColumnLetter(columnNumber) {
         columnNumber = Math.floor((columnNumber - 1) / 26);
     }
     return result;
+}
+
+/**
+ * Format cell value with proper data type for Excel table operations
+ * @param {string} header - Column header name
+ * @param {*} value - Cell value
+ * @returns {*} Properly formatted value for Excel
+ */
+function formatCellValueForExcel(header, value) {
+    // Handle null/undefined values
+    if (value === null || value === undefined) {
+        return '';
+    }
+    
+    // Date fields - ensure proper ISO format for Excel date recognition
+    const dateFields = ['Last Updated', 'Last_Email_Date', 'Next_Email_Date', 'Read_Date', 'Reply_Date', 'Sent Date'];
+    if (dateFields.includes(header)) {
+        if (!value || value === '') return '';
+        
+        try {
+            // Ensure valid date format for Excel
+            const date = new Date(value);
+            if (isNaN(date.getTime())) return '';
+            return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+        } catch {
+            return '';
+        }
+    }
+    
+    // Number fields - ensure proper numeric type
+    const numberFields = ['Follow_Up_Days', 'Email_Count', 'Max_Emails'];
+    if (numberFields.includes(header)) {
+        const numValue = parseInt(value, 10);
+        return isNaN(numValue) ? 0 : numValue;
+    }
+    
+    // Boolean-like fields - standardize to Yes/No
+    const booleanFields = ['Auto_Send_Enabled', 'Email Verified'];
+    if (booleanFields.includes(header)) {
+        if (!value || value === '') return 'No';
+        const val = String(value).toLowerCase();
+        if (val === 'true' || val === 'yes' || val === 'y' || val === '1') return 'Yes';
+        return 'No';
+    }
+    
+    // Email fields - ensure lowercase normalization
+    if (header === 'Email') {
+        return String(value || '').toLowerCase().trim();
+    }
+    
+    // All other text fields - ensure string type and trim whitespace
+    return String(value || '').trim();
 }
 
 /**
