@@ -150,8 +150,7 @@ router.post('/scrape-leads', async (req, res) => {
                 });
                 
                 console.log('✅ Apify scraper completed successfully');
-                console.log('📊 Apify response type:', typeof apifyResponse.data);
-                console.log('📊 Apify response length/keys:', Array.isArray(apifyResponse.data) ? apifyResponse.data.length : Object.keys(apifyResponse.data || {}).slice(0, 5));
+                console.log('📊 Response data extracted');
                 break; // Success, exit retry loop
                 
             } catch (error) {
@@ -583,7 +582,7 @@ async function processApolloJob(apolloJobId) {
         let rawData = [];
         
         console.log(`🔍 Apollo job ${apolloJobId}: Analyzing Apify response...`);
-        console.log(`📊 Apollo job ${apolloJobId}: Response type: ${typeof apifyResponse.data}`);
+        console.log(`📊 Apollo job ${apolloJobId}: Processing response data`);
         
         if (!apifyResponse.data) {
             throw new Error('Apify API returned empty response');
@@ -591,7 +590,7 @@ async function processApolloJob(apolloJobId) {
         
         if (Array.isArray(apifyResponse.data)) {
             rawData = apifyResponse.data;
-            console.log(`✅ Apollo job ${apolloJobId}: Got array with ${rawData.length} items`);
+            console.log(`✅ Apollo job ${apolloJobId}: Array data extracted`);
         } else if (typeof apifyResponse.data === 'object') {
             // Log the object structure for debugging
             const keys = Object.keys(apifyResponse.data);
@@ -609,13 +608,13 @@ async function processApolloJob(apolloJobId) {
             // Try to extract data from nested structure
             if (apifyResponse.data.items) {
                 rawData = apifyResponse.data.items;
-                console.log(`✅ Apollo job ${apolloJobId}: Found ${rawData.length} items in 'items' field`);
+                console.log(`✅ Apollo job ${apolloJobId}: Items field processed`);
             } else if (apifyResponse.data.data) {
                 rawData = apifyResponse.data.data;
-                console.log(`✅ Apollo job ${apolloJobId}: Found ${rawData.length} items in 'data' field`);
+                console.log(`✅ Apollo job ${apolloJobId}: Data field processed`);
             } else if (apifyResponse.data.results) {
                 rawData = apifyResponse.data.results;
-                console.log(`✅ Apollo job ${apolloJobId}: Found ${rawData.length} items in 'results' field`);
+                console.log(`✅ Apollo job ${apolloJobId}: Results field processed`);
             } else {
                 // Log full object for debugging
                 const responseStr = JSON.stringify(apifyResponse.data, null, 2);
@@ -761,7 +760,7 @@ async function pollApifyRun(apolloJobId, apifyRunId) {
                         }
                     );
                     datasetData = datasetResponse.data;
-                    console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via direct access: ${datasetData.length} items`);
+                    console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via direct access`);
                     
                 } catch (datasetError) {
                     console.log(`⚠️ Apollo job ${apolloJobId}: Direct dataset access failed: ${datasetError.message}`);
@@ -781,7 +780,7 @@ async function pollApifyRun(apolloJobId, apifyRunId) {
                             }
                         );
                         datasetData = datasetResponse.data;
-                        console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via run endpoint: ${datasetData.length} items`);
+                        console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via run endpoint`);
                         
                     } catch (runError) {
                         console.log(`⚠️ Apollo job ${apolloJobId}: Run-based dataset access failed: ${runError.message}`);
@@ -801,7 +800,7 @@ async function pollApifyRun(apolloJobId, apifyRunId) {
                                 }
                             );
                             datasetData = datasetResponse.data;
-                            console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via alternative format: ${datasetData.length} items`);
+                            console.log(`✅ Apollo job ${apolloJobId}: Dataset retrieved via alternative format`);
                             
                         } catch (altError) {
                             console.error(`❌ Apollo job ${apolloJobId}: All dataset retrieval methods failed`);

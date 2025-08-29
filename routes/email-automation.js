@@ -97,7 +97,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 if (leadsSheet) {
                     try {
                         leadsData = XLSX.utils.sheet_to_json(leadsSheet);
-                        console.log(`🔍 CORRUPTION CHECK: Leads sheet has ${leadsData.length} rows`);
+                        console.log(`🔍 Checking data integrity...`);
                     } catch (error) {
                         console.log(`⚠️ CORRUPTION CHECK: Error reading Leads sheet:`, error.message);
                     }
@@ -124,7 +124,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                                 );
                                 
                                 if (hasLeadData) {
-                                    console.log(`✅ RECOVERED: ${data.length} leads from ${sheetName}`);
+                                    console.log(`✅ Recovered leads from ${sheetName}`);
                                     recoveredData = [...recoveredData, ...data];
                                 }
                             }
@@ -133,7 +133,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                         }
                     }
                     
-                    console.log(`📊 TOTAL RECOVERED: ${recoveredData.length} existing leads`);
+                    console.log(`📊 Recovery completed`);
                     existingData = recoveredData;
                     
                     // Recreate with recovered data
@@ -141,14 +141,14 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 } else {
                     // File structure is good OR has data, extract existing data normally
                     if (hasRequiredSheets) {
-                        console.log(`✅ STRUCTURE CHECK: All required sheets present - using existing data`);
+                        console.log(`✅ Structure check passed`);
                         const leadsSheetData = masterWorkbook.Sheets['Leads'];
                         if (leadsSheetData) {
                             existingData = XLSX.utils.sheet_to_json(leadsSheetData);
-                            console.log(`📊 PRESERVED: ${existingData.length} existing leads from master file`);
+                            console.log(`📊 Existing data preserved`);
                         }
                     } else if (leadsData.length > 0) {
-                        console.log(`✅ DATA CHECK: ${leadsData.length} leads found despite missing sheets - preserving data and rebuilding structure`);
+                        console.log(`✅ Data found - rebuilding structure`);
                         existingData = leadsData;
                         // Recreate with proper structure but preserve data
                         masterWorkbook = excelProcessor.createMasterFile(existingData);
@@ -169,10 +169,10 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         }
 
         // CRITICAL: Merge uploaded leads with existing data
-        console.log(`🔄 MERGE: ${uploadedLeads.length} uploaded + ${existingData.length} existing`);
+        console.log(`🔄 Merging uploaded and existing leads...`);
         const mergeResults = excelProcessor.mergeLeadsWithMaster(uploadedLeads, existingData);
         
-        console.log(`📊 MERGE RESULT: ${mergeResults.newLeads.length} new, ${mergeResults.duplicates.length} duplicates`);
+        console.log(`📊 Merge completed - new leads: ${mergeResults.newLeads.length}, duplicates: ${mergeResults.duplicates.length}`);
 
         if (mergeResults.newLeads.length === 0) {
             return res.json({
@@ -186,7 +186,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         }
 
         // CRITICAL: Use Microsoft Graph Table API to APPEND data (no file replacement)
-        console.log(`📊 USING TABLE API: Appending ${mergeResults.newLeads.length} leads to existing table`);
+        console.log(`📊 Appending leads using Table API...`);
         
         // Use the Microsoft Graph table append functionality
         const appendResult = await appendLeadsToOneDriveTable({
@@ -212,7 +212,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
                 const verifySheet = verificationWorkbook.Sheets['Leads'];
                 const verifyData = XLSX.utils.sheet_to_json(verifySheet);
-                console.log(`✅ DATA INTEGRITY CHECK: Passed - ${verifyData.length} rows as expected`);
+                console.log(`✅ Data integrity check passed`);
                 
                 // Check data integrity
                 const expectedCount = existingData.length + mergeResults.newLeads.length;
@@ -220,7 +220,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     console.error(`❌ DATA INTEGRITY ERROR: Expected ${expectedCount} rows, got ${verifyData.length} rows`);
                     throw new Error(`Data integrity check failed: Expected ${expectedCount} rows, got ${verifyData.length} rows`);
                 } else {
-                    console.log(`✅ DATA INTEGRITY CHECK: Passed - ${verifyData.length} rows as expected`);
+                    console.log(`✅ Data integrity check passed`);
                 }
             } else {
                 console.error('❌ Post-upload verification failed - no Leads sheet found');
@@ -233,7 +233,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     // Check if we have a Sheet1 with data (indicating corruption)
                     if (availableSheets.includes('Sheet1')) {
                         const sheet1Data = XLSX.utils.sheet_to_json(verificationWorkbook.Sheets['Sheet1']);
-                        console.error(`❌ Sheet1 has ${sheet1Data.length} rows - this indicates OneDrive corruption`);
+                        console.error(`❌ Sheet1 detected - OneDrive corruption possible`);
                         console.error(`❌ This is a known Microsoft Graph API Excel upload corruption issue`);
                     }
                 } else {
@@ -259,7 +259,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             });
         }
 
-        console.log(`✅ Master file updated: ${mergeResults.newLeads.length} new leads added`);
+        console.log(`✅ Master file updated successfully`);
         console.log(`🎉 Upload completed successfully - Master file ready in OneDrive`);
 
         res.json({
@@ -808,7 +808,7 @@ router.post('/debug/test-excel-creation', async (req, res) => {
         const masterWorkbook = excelProcessor.createMasterFile();
         
         // FIXED: Test using Table API instead of file replacement
-        console.log(`🧪 TEST: Using Table API for test data instead of file replacement`);
+        console.log(`🧪 Using Table API for test data`);
         
         // For testing, we'll simulate the table append without actual upload
         console.log(`🧪 TEST: Would append ${normalizedLeads.length} normalized test leads to table`);
@@ -816,7 +816,7 @@ router.post('/debug/test-excel-creation', async (req, res) => {
         // Create test buffer for size estimation only
         const updatedWorkbook = excelProcessor.updateMasterFileWithLeads(masterWorkbook, normalizedLeads);
         const buffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        console.log(`🧪 TEST: Buffer size would be ${buffer.length} bytes (for reference only)`);
+        console.log(`🧪 Buffer test completed`);
         
 
         // Read the buffer back to verify
@@ -1048,7 +1048,7 @@ async function downloadMasterFile(graphClient) {
             return null;
         }
 
-        console.log(`✅ Master file downloaded successfully - converted to buffer of ${buffer.length} bytes`);
+        console.log(`✅ Master file downloaded and processed`);
         
         // Create a test file locally to compare
         const testLeads = [{
@@ -1064,7 +1064,7 @@ async function downloadMasterFile(graphClient) {
         const testNormalizedLeads = testProcessor.normalizeLeadsData(testLeads);
         const testWithData = testProcessor.updateMasterFileWithLeads(testWorkbook, testNormalizedLeads);
         const testBuffer = testProcessor.workbookToBuffer(testWithData);
-        console.log(`🧪 BUFFER-TEST: Test buffer size ${testBuffer.length} bytes (file replacement simulation only)`);
+        console.log(`🧪 Buffer test simulation completed`);
         
         
         // Parse workbook and verify content

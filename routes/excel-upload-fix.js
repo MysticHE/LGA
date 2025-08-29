@@ -293,7 +293,7 @@ async function verifyUploadedExcelFile(client, originalBuffer, filename, folderP
             // Check Leads sheet data
             const leadsSheet = workbook.Sheets['Leads'];
             const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
-            console.log(`✅ Verification successful: Leads sheet has ${leadsData.length} rows`);
+            console.log(`✅ Excel file verification successful`);
             
             return true;
             

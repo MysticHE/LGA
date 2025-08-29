@@ -132,7 +132,97 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
 router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => {
     console.log('⚠️ Using legacy create-excel endpoint, redirecting to append-to-table...');
     req.body.useCustomFile = true; // Allow custom filename
-    return require('./microsoft-graph').post('/onedrive/append-to-table')(req, res);
+    
+    // Forward to append-to-table endpoint
+    try {
+        const { leads, filename, folderPath = '/LGA-Leads', useCustomFile = true } = req.body;
+
+        if (!leads || !Array.isArray(leads) || leads.length === 0) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Leads array is required and must not be empty'
+            });
+        }
+
+        console.log(`📊 Legacy create-excel: Appending ${leads.length} leads to Excel table in OneDrive...`);
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Determine target file path
+        let targetFilePath;
+        if (useCustomFile && filename) {
+            const cleanFolderPath = folderPath.startsWith('/') ? folderPath.substring(1) : folderPath;
+            targetFilePath = cleanFolderPath ? `${cleanFolderPath}/${filename}` : filename;
+        } else {
+            targetFilePath = EXCEL_CONFIG.MASTER_FILE_PATH.substring(1); // Remove leading slash
+        }
+
+        console.log(`📁 Legacy create-excel target file: ${targetFilePath}`);
+
+        // Check if file exists
+        const fileInfo = await getOneDriveFileInfo(graphClient, targetFilePath);
+        let fileId;
+        
+        if (!fileInfo) {
+            // File doesn't exist, create it with initial table
+            console.log(`🆕 Legacy create-excel: Creating new Excel file with table: ${targetFilePath}`);
+            fileId = await createExcelFileWithTable(graphClient, targetFilePath, leads);
+            
+            res.json({
+                success: true,
+                action: 'created',
+                filename: targetFilePath.split('/').pop(),
+                folderPath: '/' + targetFilePath.substring(0, targetFilePath.lastIndexOf('/')),
+                leadsCount: leads.length,
+                fileId: fileId,
+                tableCreated: true,
+                metadata: {
+                    uploadedAt: new Date().toISOString(),
+                    location: 'Microsoft OneDrive'
+                }
+            });
+            return;
+        }
+        
+        fileId = fileInfo.id;
+        console.log(`✅ Legacy create-excel: Found existing file with ID: ${fileId}`);
+
+        // Check if table exists in the worksheet
+        const tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
+        
+        if (!tableInfo) {
+            // Table doesn't exist, create it
+            console.log(`🆕 Legacy create-excel: Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${EXCEL_CONFIG.WORKSHEET_NAME}'`);
+            await createExcelTable(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, leads);
+        } else {
+            // Table exists, append data
+            console.log(`➕ Legacy create-excel: Appending data to existing table '${EXCEL_CONFIG.TABLE_NAME}'`);
+            await appendDataToExcelTableWithRetry(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, leads);
+        }
+
+        res.json({
+            success: true,
+            action: 'appended',
+            filename: targetFilePath.split('/').pop(),
+            folderPath: '/' + targetFilePath.substring(0, targetFilePath.lastIndexOf('/')),
+            leadsCount: leads.length,
+            fileId: fileId,
+            tableExists: !!tableInfo,
+            metadata: {
+                updatedAt: new Date().toISOString(),
+                location: 'Microsoft OneDrive'
+            }
+        });
+
+    } catch (error) {
+        console.error('Legacy create-excel error:', error);
+        res.status(500).json({
+            error: 'OneDrive Excel Create Error',
+            message: 'Failed to create/append data to Excel table in OneDrive',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
 });
 
 // Update Excel table with email tracking data using Graph API
@@ -655,7 +745,7 @@ async function createExcelFileWithTable(client, filePath, leads) {
             console.log(`⏳ Waiting briefly for table to be ready before appending ${remainingLeads.length} remaining leads...`);
             
             // Wait for table to be properly created and indexed by Microsoft Graph
-            await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+            await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay for table indexing
             
             // Append with retry logic
             await appendDataToExcelTableWithRetry(client, fileId, EXCEL_CONFIG.TABLE_NAME, remainingLeads);
@@ -823,8 +913,8 @@ async function appendDataToExcelTableWithRetry(client, fileId, tableName, leads,
                 throw error;
             }
             
-            // Wait longer between retries
-            const waitTime = attempt * 2000; // 2s, 4s, 6s
+            // Wait longer between retries with exponential backoff
+            const waitTime = Math.min(attempt * 3000, 10000); // 3s, 6s, 9s (max 10s)
             console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
@@ -858,7 +948,7 @@ async function appendDataToExcelTable(client, fileId, tableName, leads) {
         const columns = columnsResponse.value;
         const headers = columns.map(col => col.name);
         
-        console.log(`📋 Table headers: ${headers.join(', ')}`);
+        console.log(`📋 Table structure confirmed with ${headers.length} columns`);
         
         // Prepare data rows in correct column order
         const tableRows = normalizedLeads.map(lead => {
@@ -1032,7 +1122,7 @@ async function getWorksheetData(client, fileId, worksheetName) {
         }
         
         const values = rangeResponse.values;
-        console.log(`📊 Found ${values.length} rows with data in worksheet`);
+        console.log(`📊 Found ${values.length} rows in worksheet`);
         
         // Convert array of arrays to array of objects
         if (values.length < 2) {
@@ -1052,7 +1142,7 @@ async function getWorksheetData(client, fileId, worksheetName) {
             return dataObj;
         });
         
-        console.log(`✅ Converted ${existingData.length} existing rows to object format`);
+        console.log(`✅ Processed ${existingData.length} existing rows`);
         return existingData;
         
     } catch (error) {
@@ -1099,7 +1189,7 @@ async function convertExistingDataToTable(client, fileId, worksheetName, tableNa
         });
         
         const finalHeaders = Array.from(allHeaders);
-        console.log(`📋 Table will include columns: ${finalHeaders.join(', ')}`);
+        console.log(`📋 Table configured with ${finalHeaders.length} columns`);
         
         // Step 3: Clear the worksheet and rewrite with normalized data
         console.log(`🧹 Clearing worksheet to prepare for table creation...`);
@@ -1126,7 +1216,7 @@ async function convertExistingDataToTable(client, fileId, worksheetName, tableNa
         const endCol = getExcelColumnLetter(numCols);
         const tableRange = `A1:${endCol}${numRows}`;
         
-        console.log(`📝 Writing ${normalizedExistingData.length} rows to range ${tableRange}...`);
+        console.log(`📝 Writing ${normalizedExistingData.length} rows to table range...`);
         
         // Write the data to worksheet
         await client
