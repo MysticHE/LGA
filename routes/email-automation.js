@@ -220,8 +220,12 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             throw new Error(`Failed to append leads to table: ${appendResult.message}`);
         }
 
+        // Wait a moment for OneDrive to process the table append
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+
         try {
-            const verificationWorkbook = await downloadMasterFile(graphClient, false); // No cache for verification
+            console.log(`📋 Fetching fresh data for verification (post-append)...`);
+            const verificationWorkbook = await downloadMasterFile(graphClient, false); // Force fresh download
             if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
                 const verifySheet = verificationWorkbook.Sheets['Leads'];
                 const verifyData = XLSX.utils.sheet_to_json(verifySheet);
@@ -1031,22 +1035,26 @@ async function downloadMasterFile(graphClient, useCache = true) {
             }
         }
         
-        // Check if download is already in progress
-        if (activeDownloads.has(cacheKey)) {
+        // Check if download is already in progress (only if using cache)
+        if (useCache && activeDownloads.has(cacheKey)) {
             console.log(`⏳ Master file download in progress, waiting...`);
             return await activeDownloads.get(cacheKey);
         }
         
-        // Start download and cache the promise to prevent concurrent downloads
+        // Start download and cache the promise to prevent concurrent downloads (only if using cache)
         const downloadPromise = performMasterFileDownload(graphClient, masterFileName, masterFolderPath, cacheKey);
-        activeDownloads.set(cacheKey, downloadPromise);
+        if (useCache) {
+            activeDownloads.set(cacheKey, downloadPromise);
+        }
         
         try {
             const workbook = await downloadPromise;
             return workbook;
         } finally {
-            // Clean up active download tracking
-            activeDownloads.delete(cacheKey);
+            // Clean up active download tracking (only if we added it)
+            if (useCache) {
+                activeDownloads.delete(cacheKey);
+            }
         }
     } catch (error) {
         console.error('❌ Master file download error:', error);
