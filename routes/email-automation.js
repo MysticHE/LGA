@@ -977,7 +977,7 @@ async function downloadMasterFile(graphClient, useCache = true) {
         if (useCache && masterFileCache.has(cacheKey)) {
             const cached = masterFileCache.get(cacheKey);
             const age = Date.now() - cached.timestamp;
-            if (age < 5 * 60 * 1000) { // 5 minutes
+            if (age < 30 * 1000) { // 30 seconds
                 console.log(`📋 Using cached master file (age: ${Math.round(age/1000)}s)`);
                 return cached.workbook;
             } else {
@@ -1104,7 +1104,7 @@ async function downloadMasterFile(graphClient, useCache = true) {
         
         console.log('✅ Master file downloaded and parsed successfully');
         
-        // Cache the workbook for 5 minutes
+        // Cache the workbook for 30 seconds
         if (useCache) {
             masterFileCache.set(cacheKey, {
                 workbook: workbook,

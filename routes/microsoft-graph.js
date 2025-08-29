@@ -91,17 +91,29 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
         fileId = fileInfo.id;
         console.log(`✅ Found existing file with ID: ${fileId}`);
 
-        // Check if table exists in the worksheet - try different worksheet names for uploaded files
-        let tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
+        // Check if ANY table exists in the workbook (comprehensive check)
+        let tableInfo = null;
         let targetWorksheet = EXCEL_CONFIG.WORKSHEET_NAME;
         
-        // If not found in "Leads" worksheet, try "Sheet1" (common for uploaded Excel files)
-        if (!tableInfo && EXCEL_CONFIG.WORKSHEET_NAME !== 'Sheet1') {
-            console.log(`🔍 Table not found in '${EXCEL_CONFIG.WORKSHEET_NAME}', checking 'Sheet1'...`);
-            tableInfo = await getExcelTableInfo(graphClient, fileId, 'Sheet1', EXCEL_CONFIG.TABLE_NAME);
-            if (tableInfo) {
-                targetWorksheet = 'Sheet1';
-                console.log(`✅ Found table in 'Sheet1' instead`);
+        // First, get ALL tables in the workbook to see what exists
+        const allTablesInfo = await verifyTableExistsWithPolling(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, 1);
+        
+        if (allTablesInfo) {
+            console.log(`✅ Found existing table: '${allTablesInfo}'`);
+            // Table exists, we can use it
+            tableInfo = { name: allTablesInfo };
+        } else {
+            console.log(`🔍 No tables found - checking individual worksheets...`);
+            // Check specific worksheets for tables
+            tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
+            
+            // If not found in "Leads" worksheet, try "Sheet1"
+            if (!tableInfo && EXCEL_CONFIG.WORKSHEET_NAME !== 'Sheet1') {
+                console.log(`🔍 Checking 'Sheet1' worksheet...`);
+                tableInfo = await getExcelTableInfo(graphClient, fileId, 'Sheet1', EXCEL_CONFIG.TABLE_NAME);
+                if (tableInfo) {
+                    targetWorksheet = 'Sheet1';
+                }
             }
         }
         
