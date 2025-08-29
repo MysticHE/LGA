@@ -113,9 +113,16 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
             // First, try to convert existing data to table format
             await createExcelTable(graphClient, fileId, targetWorksheet, EXCEL_CONFIG.TABLE_NAME, leads);
         } else {
-            // Table exists, append data
-            console.log(`➕ Appending data to existing table '${EXCEL_CONFIG.TABLE_NAME}' in '${targetWorksheet}'`);
-            await appendDataToExcelTableWithRetry(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, leads);
+            // Table exists, but verify the exact name/ID before appending
+            console.log(`🔍 Verifying existing table name before appending...`);
+            const verifiedTableName = await verifyTableExistsWithPolling(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, 2);
+            
+            if (!verifiedTableName) {
+                throw new Error(`Table '${EXCEL_CONFIG.TABLE_NAME}' verification failed - table may have been renamed or corrupted`);
+            }
+            
+            console.log(`➕ Appending data to verified table '${verifiedTableName}' in '${targetWorksheet}'`);
+            await appendDataToExcelTableWithRetry(graphClient, fileId, verifiedTableName, leads);
         }
 
         res.json({
@@ -211,9 +218,16 @@ router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => 
             console.log(`🆕 Legacy create-excel: Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${EXCEL_CONFIG.WORKSHEET_NAME}'`);
             await createExcelTable(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, leads);
         } else {
-            // Table exists, append data
-            console.log(`➕ Legacy create-excel: Appending data to existing table '${EXCEL_CONFIG.TABLE_NAME}'`);
-            await appendDataToExcelTableWithRetry(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, leads);
+            // Table exists, but verify the exact name/ID before appending
+            console.log(`🔍 Legacy create-excel: Verifying existing table name before appending...`);
+            const verifiedTableName = await verifyTableExistsWithPolling(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, 2);
+            
+            if (!verifiedTableName) {
+                throw new Error(`Legacy create-excel: Table '${EXCEL_CONFIG.TABLE_NAME}' verification failed`);
+            }
+            
+            console.log(`➕ Legacy create-excel: Appending data to verified table '${verifiedTableName}'`);
+            await appendDataToExcelTableWithRetry(graphClient, fileId, verifiedTableName, leads);
         }
 
         res.json({
@@ -685,6 +699,59 @@ async function getOneDriveFileInfo(client, filePath) {
 }
 
 /**
+ * Verify table exists with polling mechanism (proper solution for table creation timing)
+ * @param {Object} client - Microsoft Graph client
+ * @param {string} fileId - OneDrive file ID
+ * @param {string} expectedTableName - Expected table name
+ * @param {number} maxAttempts - Maximum polling attempts
+ * @returns {string|null} Actual table name/ID or null if not found
+ */
+async function verifyTableExistsWithPolling(client, fileId, expectedTableName, maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            console.log(`🔍 Table verification attempt ${attempt}/${maxAttempts}...`);
+            
+            // Get all tables in the workbook
+            const tablesResponse = await client
+                .api(`/me/drive/items/${fileId}/workbook/tables`)
+                .get();
+            
+            const tables = tablesResponse.value;
+            console.log(`📊 Found ${tables.length} table(s) in workbook: ${tables.map(t => t.name).join(', ')}`);
+            
+            // Look for our expected table by name
+            const targetTable = tables.find(table => 
+                table.name === expectedTableName || 
+                table.name.toLowerCase() === expectedTableName.toLowerCase()
+            );
+            
+            if (targetTable) {
+                console.log(`✅ Table found: '${targetTable.name}' (ID: ${targetTable.id})`);
+                return targetTable.name; // Return the actual name as stored in Excel
+            }
+            
+            if (attempt < maxAttempts) {
+                const waitTime = attempt * 3000; // 3s, 6s, 9s delays
+                console.log(`⏳ Table not found yet, waiting ${waitTime/1000}s before next attempt...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+            
+        } catch (error) {
+            console.error(`❌ Table verification attempt ${attempt} failed:`, error.message);
+            
+            if (attempt < maxAttempts) {
+                const waitTime = attempt * 3000;
+                console.log(`⏳ Error occurred, waiting ${waitTime/1000}s before retry...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+    
+    console.error(`❌ Table '${expectedTableName}' not found after ${maxAttempts} verification attempts`);
+    return null;
+}
+
+/**
  * Get Excel table information from worksheet
  * @param {Object} client - Microsoft Graph client
  * @param {string} fileId - OneDrive file ID
@@ -757,16 +824,22 @@ async function createExcelFileWithTable(client, filePath, leads) {
         // Create table in the uploaded file
         await createExcelTableInFile(client, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, normalizedLeads);
         
-        // If we have more than 5 leads, append the remaining ones with retry logic
+        // If we have more than 5 leads, append the remaining ones with proper table verification
         if (leads.length > 5) {
             const remainingLeads = leads.slice(5).map(lead => normalizeLeadData(lead));
-            console.log(`⏳ Waiting briefly for table to be ready before appending ${remainingLeads.length} remaining leads...`);
+            console.log(`🔍 Verifying table exists before appending ${remainingLeads.length} remaining leads...`);
             
-            // Wait for table to be properly created and indexed by Microsoft Graph
-            await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay for table indexing
+            // Verify table existence before appending (proper solution instead of just waiting)
+            const verifiedTableName = await verifyTableExistsWithPolling(client, fileId, EXCEL_CONFIG.TABLE_NAME, 3);
             
-            // Append with retry logic
-            await appendDataToExcelTableWithRetry(client, fileId, EXCEL_CONFIG.TABLE_NAME, remainingLeads);
+            if (!verifiedTableName) {
+                throw new Error(`Table '${EXCEL_CONFIG.TABLE_NAME}' was not found after creation - possible indexing issue`);
+            }
+            
+            console.log(`✅ Table verified as '${verifiedTableName}' - proceeding with append`);
+            
+            // Append with the verified table name
+            await appendDataToExcelTableWithRetry(client, fileId, verifiedTableName, remainingLeads, 5);
         }
         
         return fileId;
@@ -931,9 +1004,17 @@ async function appendDataToExcelTableWithRetry(client, fileId, tableName, leads,
                 throw error;
             }
             
-            // Wait longer between retries with exponential backoff
-            const waitTime = Math.min(attempt * 3000, 10000); // 3s, 6s, 9s (max 10s)
-            console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
+            // For new table creation issues, wait longer between retries
+            let waitTime;
+            if (error.code === 'ItemNotFound' || error.message?.includes("doesn't exist")) {
+                // Table indexing issue - use longer delays
+                waitTime = Math.min(attempt * 5000, 15000); // 5s, 10s, 15s for table indexing
+                console.log(`🔄 Table indexing issue detected - waiting ${waitTime/1000}s before retry...`);
+            } else {
+                // Other issues - standard exponential backoff
+                waitTime = Math.min(attempt * 3000, 10000); // 3s, 6s, 9s (max 10s)
+                console.log(`⏳ Waiting ${waitTime/1000}s before retry...`);
+            }
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
     }
