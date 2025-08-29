@@ -39,12 +39,12 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file - force fresh download for campaign operations
-        console.log(`📥 Downloading master file for campaign (bypassing cache)...`);
-        const masterWorkbook = await downloadMasterFile(graphClient, false);
+        // Get master file data using Graph Workbook API (bypassing cache)
+        console.log(`📥 Getting master file data for campaign (bypassing cache)...`);
+        const masterFileData = await getMasterFileData(graphClient, false);
         
-        if (!masterWorkbook) {
-            console.error(`❌ Master file download failed for campaign`);
+        if (!masterFileData || !masterFileData.leadsData) {
+            console.error(`❌ Master file data retrieval failed for campaign`);
             return res.status(404).json({
                 success: false,
                 message: 'Master file not found - cannot start campaign',
@@ -55,11 +55,9 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
             });
         }
 
-        // Get leads based on target criteria
-        const leadsData = getTargetLeads(masterWorkbook, targetLeads);
-        
-        const leadsSheet = masterWorkbook.Sheets['Leads'];
-        const allLeads = XLSX.utils.sheet_to_json(leadsSheet);
+        // Get leads based on target criteria (now works directly with leads data)
+        const leadsData = getTargetLeadsFromData(masterFileData.leadsData, targetLeads);
+        const allLeads = masterFileData.leadsData;
         
         if (leadsData.length === 0) {
             return res.json({
@@ -78,8 +76,8 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Generate campaign ID
         const campaignId = `Campaign_${Date.now()}`;
 
-        // Get templates for content processing
-        const templates = excelProcessor.getTemplates(masterWorkbook);
+        // Get templates for content processing (fallback to empty array for now)
+        const templates = []; // TODO: Add Graph API template support
 
         // Process and send emails based on schedule
         let emailsSent = 0;
@@ -441,24 +439,9 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
     }
 });
 
-// Helper function to get target leads based on criteria
-function getTargetLeads(masterWorkbook, targetCriteria) {
-    // Try multiple sheet names to handle different file creation methods
-    let leadsSheet = masterWorkbook.Sheets['Leads'] || 
-                     masterWorkbook.Sheets['Sheet1'] || 
-                     masterWorkbook.Sheets[Object.keys(masterWorkbook.Sheets)[0]];
-    
-    if (!leadsSheet) {
-        console.log('❌ No lead sheet found in any format');
-        return [];
-    }
-    
-    const sheetName = Object.keys(masterWorkbook.Sheets).find(name => 
-        masterWorkbook.Sheets[name] === leadsSheet
-    );
-    console.log(`📊 Using sheet: ${sheetName} for lead data`);
-    
-    const allLeads = XLSX.utils.sheet_to_json(leadsSheet);
+// New function to get target leads from Graph API data (no workbook parsing needed)
+function getTargetLeadsFromData(allLeads, targetCriteria) {
+    console.log(`📊 Filtering ${allLeads.length} leads for criteria: ${targetCriteria}`);
 
     switch (targetCriteria) {
         case 'new':
@@ -818,8 +801,94 @@ function getScheduledCampaignsDue(masterWorkbook) {
     return [];
 }
 
-// Helper function to download master file
-async function downloadMasterFile(graphClient, useCache = true) {
+// Helper function to get master file data using Graph Workbook API
+async function getMasterFileData(graphClient, useCache = true) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        console.log(`📥 USING GRAPH WORKBOOK API (not raw download):`);
+        console.log(`   - Searching for: ${masterFileName}`);
+        console.log(`   - In folder: ${masterFolderPath}`);
+        
+        // First, get the file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+            
+        if (files.value.length === 0) {
+            console.log(`❌ No files found matching '${masterFileName}'`);
+            return null;
+        }
+        
+        const fileId = files.value[0].id;
+        console.log(`📄 Found file ID: ${fileId}`);
+        
+        // Get worksheets using Graph Workbook API
+        const worksheets = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+            .get();
+            
+        console.log(`📊 ACTUAL WORKSHEETS FROM GRAPH API:`);
+        worksheets.value.forEach(sheet => {
+            console.log(`   - Sheet: "${sheet.name}" (ID: ${sheet.id})`);
+        });
+        
+        // Find the Leads sheet (should now show the real name)
+        const leadsSheet = worksheets.value.find(sheet => 
+            sheet.name === 'Leads' || sheet.name.toLowerCase().includes('lead')
+        );
+        
+        if (!leadsSheet) {
+            console.log(`❌ No Leads sheet found in worksheets`);
+            return { worksheets: worksheets.value, leadsData: [] };
+        }
+        
+        console.log(`✅ Found Leads sheet: "${leadsSheet.name}"`);
+        
+        // Get the actual data from the Leads sheet
+        const tableData = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/usedRange`)
+            .get();
+            
+        // Convert Graph API table data to our expected format
+        const leadsData = convertGraphTableToLeads(tableData);
+        console.log(`📊 Leads data from Graph API: ${leadsData.length} leads`);
+        
+        return {
+            worksheets: worksheets.value,
+            leadsData: leadsData,
+            fileId: fileId
+        };
+        
+    } catch (error) {
+        console.error('❌ Graph Workbook API error:', error);
+        console.log('⚠️ Falling back to raw download method...');
+        return await downloadMasterFileRaw(graphClient, useCache);
+    }
+}
+
+// Convert Graph API table format to our lead format
+function convertGraphTableToLeads(tableData) {
+    if (!tableData || !tableData.values || tableData.values.length <= 1) {
+        return [];
+    }
+    
+    const headers = tableData.values[0];
+    const rows = tableData.values.slice(1);
+    
+    return rows.map(row => {
+        const lead = {};
+        headers.forEach((header, index) => {
+            lead[header] = row[index] || '';
+        });
+        return lead;
+    }).filter(lead => lead.Email && lead.Email.trim()); // Only include leads with emails
+}
+
+// Fallback function for raw file download (original method)
+async function downloadMasterFileRaw(graphClient, useCache = true) {
     try {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
