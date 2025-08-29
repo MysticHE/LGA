@@ -208,7 +208,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         console.log(`✅ UPLOAD COMPLETED: Master file updated successfully`);
         
         try {
-            const verificationWorkbook = await downloadMasterFile(graphClient);
+            const verificationWorkbook = await downloadMasterFile(graphClient, false); // No cache for verification
             if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
                 const verifySheet = verificationWorkbook.Sheets['Leads'];
                 const verifyData = XLSX.utils.sheet_to_json(verifySheet);
@@ -963,13 +963,29 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
     }
 });
 
-// Helper function to download master file
-async function downloadMasterFile(graphClient) {
+// Cache for master file downloads (5 minute TTL)
+const masterFileCache = new Map();
+
+// Helper function to download master file with caching
+async function downloadMasterFile(graphClient, useCache = true) {
     try {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
-        console.log(`📥 Attempting to download master file from: ${masterFolderPath}`);
+        // Check cache first
+        const cacheKey = 'master_file';
+        if (useCache && masterFileCache.has(cacheKey)) {
+            const cached = masterFileCache.get(cacheKey);
+            const age = Date.now() - cached.timestamp;
+            if (age < 5 * 60 * 1000) { // 5 minutes
+                console.log(`📋 Using cached master file (age: ${Math.round(age/1000)}s)`);
+                return cached.workbook;
+            } else {
+                masterFileCache.delete(cacheKey);
+            }
+        }
+        
+        console.log(`📥 Downloading master file from: ${masterFolderPath}`);
         
         const files = await graphClient
             .api(`/me/drive/root:${masterFolderPath}:/children`)
@@ -1087,6 +1103,15 @@ async function downloadMasterFile(graphClient) {
         }
         
         console.log('✅ Master file downloaded and parsed successfully');
+        
+        // Cache the workbook for 5 minutes
+        if (useCache) {
+            masterFileCache.set(cacheKey, {
+                workbook: workbook,
+                timestamp: Date.now()
+            });
+        }
+        
         return workbook;
     } catch (error) {
         console.error('❌ Master file download error:', error);
