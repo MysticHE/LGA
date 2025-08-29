@@ -632,17 +632,17 @@ async function updateLeadsAfterCampaign(graphClient, masterFileData, results, fo
                 console.log(`🔄 Updating lead: ${leadEmail}`);
                 
                 try {
-                    // Update individual lead using Graph API
+                    // Update individual lead using Graph API (matching exact Excel column names)
                     await updateLeadStatusViaGraph(graphClient, masterFileData.fileId, leadEmail, {
-                        Status: 'Sent',
-                        Last_Email_Date: new Date().toISOString().split('T')[0],
-                        Email_Count: (result.originalLead?.Email_Count || 0) + 1,
-                        Template_Used: result.templateUsed || 'AI_Generated',
-                        Next_Email_Date: calculateNextEmailDate(new Date(), followUpDays || 7),
-                        'Email Sent': 'Yes',
-                        'Email Status': 'Sent',
-                        'Sent Date': new Date().toISOString(),
-                        'Last Updated': new Date().toISOString()
+                        Status: 'Sent',                                               // Column M
+                        Campaign_Stage: 'Email_Sent',                                // Column N  
+                        Template_Used: result.templateUsed || 'AI_Generated',        // Column P
+                        Last_Email_Date: new Date().toISOString().split('T')[0],     // Column R
+                        Next_Email_Date: calculateNextEmailDate(new Date(), followUpDays || 7), // Column S
+                        Email_Count: (result.originalLead?.Email_Count || 0) + 1,    // Column U
+                        'Email Sent': 'Yes',                                         // Column Z
+                        'Email Status': 'Sent',                                      // Column AA
+                        'Sent Date': new Date().toISOString()                       // Column AB
                     });
                     
                     console.log(`✅ Updated lead: ${leadEmail}`);
