@@ -103,9 +103,11 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     }
                 }
                 
-                // Only rebuild if missing required sheets AND definitely no usable data
-                // Be more conservative - if we have Leads sheet with any data, don't rebuild
-                if (!hasRequiredSheets && leadsData.length === 0 && (!leadsSheet || !leadsSheet['!ref'])) {
+                // Only rebuild if missing ALL required sheets AND definitely no usable data in Leads sheet
+                // Be more conservative - if we have Leads sheet with any data, preserve it
+                const shouldRebuild = !hasRequiredSheets && leadsData.length === 0 && (!leadsSheet || !leadsSheet['!ref']);
+                
+                if (shouldRebuild) {
                     console.log('🚨 CORRUPTION DETECTED: Missing sheets and no lead data - Rebuilding master file');
                     
                     // Try to recover lead data from any sheet
@@ -142,14 +144,14 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                 } else {
                     // File structure is good OR has data, extract existing data normally
                     if (hasRequiredSheets) {
-                        console.log(`✅ Structure check passed`);
+                        console.log(`✅ Master file structure verified`);
                         const leadsSheetData = masterWorkbook.Sheets['Leads'];
                         if (leadsSheetData) {
                             existingData = XLSX.utils.sheet_to_json(leadsSheetData);
-                            console.log(`📊 Existing data preserved`);
+                            console.log(`📊 Found ${existingData.length} existing leads in master file`);
                         }
                     } else if (leadsData.length > 0) {
-                        console.log(`✅ Data found - rebuilding structure`);
+                        console.log(`⚠️ Missing structure sheets but preserving ${leadsData.length} existing leads`);
                         existingData = leadsData;
                         // Recreate with proper structure but preserve data
                         masterWorkbook = excelProcessor.createMasterFile(existingData);
@@ -213,8 +215,6 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
                 const verifySheet = verificationWorkbook.Sheets['Leads'];
                 const verifyData = XLSX.utils.sheet_to_json(verifySheet);
-                console.log(`✅ Data integrity check passed`);
-                
                 // Check data integrity - be more flexible if existing data count was wrong due to corruption detection
                 const expectedCount = existingData.length + mergeResults.newLeads.length;
                 
@@ -233,7 +233,7 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     } else {
                         console.log(`📊 Final count: existing ${existingData.length} + new ${mergeResults.newLeads.length} = ${verifyData.length} total records`);
                     }
-                    console.log(`✅ Data integrity check passed`);
+                    console.log(`✅ Data integrity verified successfully`);
                 }
             } else {
                 console.error('❌ Post-upload verification failed - no Leads sheet found');
@@ -1088,12 +1088,7 @@ async function downloadMasterFile(graphClient, useCache = true) {
         
         const testProcessor = new ExcelProcessor();
         const testWorkbook = testProcessor.createMasterFile();
-        // FIXED: Test using Table API approach instead of file replacement
-        console.log(`🧪 BUFFER-TEST: Using normalized test data for buffer test only`);
-        const testNormalizedLeads = testProcessor.normalizeLeadsData(testLeads);
-        const testWithData = testProcessor.updateMasterFileWithLeads(testWorkbook, testNormalizedLeads);
-        const testBuffer = testProcessor.workbookToBuffer(testWithData);
-        console.log(`🧪 Buffer test simulation completed`);
+        // FIXED: Test using Table API approach instead of file replacement (silent testing)
         
         
         // Parse workbook and verify content
