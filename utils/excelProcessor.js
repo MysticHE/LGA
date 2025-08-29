@@ -182,7 +182,7 @@ class ExcelProcessor {
             } else {
                 // Reduced logging - only log every 10th lead or summary
                 if ((index + 1) % 10 === 0 || index === 0) {
-                    console.log(`✅ Processing new leads... (${index + 1}/${leads.length})`);
+                    console.log(`✅ Processing new leads... (${index + 1}/${uploadedLeads.length})`);
                 }
                 // Normalize and add default automation settings
                 const normalizedLead = this.normalizeLeadData(lead);
