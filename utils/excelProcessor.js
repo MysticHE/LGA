@@ -139,7 +139,7 @@ class ExcelProcessor {
         };
 
         console.log(`🔄 Merging uploaded and existing leads...`);
-        console.log(`📊 Found ${existingData.length} existing leads in master file`);
+        console.log(`📊 Found ${existingData.length} existing leads for duplicate checking`);
 
         // Create a Set of existing emails for fast lookup with better normalization
         const existingEmails = new Set();
@@ -149,6 +149,8 @@ class ExcelProcessor {
                 existingEmails.add(email);
             }
         });
+        
+        console.log(`📧 Created lookup set with ${existingEmails.size} unique existing emails`);
 
         uploadedLeads.forEach((lead, index) => {
             const email = this.normalizeEmail(lead.Email || lead.email || '');

@@ -101,9 +101,9 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
                     }
                 }
                 
-                // Only rebuild if missing ALL required sheets AND definitely no usable data in Leads sheet
-                // Be more conservative - if we have Leads sheet with any data, preserve it
-                const shouldRebuild = !hasRequiredSheets && leadsData.length === 0 && (!leadsSheet || !leadsSheet['!ref']);
+                // Only rebuild if there's absolutely no usable data anywhere
+                // If Leads sheet has data, NEVER rebuild regardless of other sheet structure
+                const shouldRebuild = leadsData.length === 0 && (!leadsSheet || !leadsSheet['!ref']);
                 
                 if (shouldRebuild) {
                     console.log('🚨 CORRUPTION DETECTED: Missing sheets and no lead data - Rebuilding master file');
@@ -172,8 +172,25 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             masterWorkbook = excelProcessor.createMasterFile();
         }
 
-        // CRITICAL: Merge uploaded leads with existing data
-        const mergeResults = excelProcessor.mergeLeadsWithMaster(uploadedLeads, existingData);
+        // CRITICAL: Get current OneDrive data for accurate duplicate checking
+        let currentOneDriveData = [];
+        try {
+            const currentWorkbook = await downloadMasterFile(graphClient, false); // Fresh download
+            if (currentWorkbook && currentWorkbook.Sheets['Leads']) {
+                currentOneDriveData = XLSX.utils.sheet_to_json(currentWorkbook.Sheets['Leads']);
+                console.log(`📊 Current OneDrive data: ${currentOneDriveData.length} leads for duplicate checking`);
+            }
+        } catch (error) {
+            console.log(`⚠️ Could not fetch current OneDrive data for duplicate check: ${error.message}`);
+            // Fallback to locally parsed data
+            currentOneDriveData = existingData;
+        }
+
+        // CRITICAL: Merge uploaded leads with current OneDrive data for accurate duplicate detection
+        const mergeResults = excelProcessor.mergeLeadsWithMaster(uploadedLeads, currentOneDriveData);
+        
+        // Update initialExistingCount with actual current data
+        initialExistingCount = currentOneDriveData.length;
 
         if (mergeResults.newLeads.length === 0) {
             return res.json({
