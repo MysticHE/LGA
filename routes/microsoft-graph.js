@@ -719,11 +719,17 @@ async function verifyTableExistsWithPolling(client, fileId, expectedTableName, m
             const tables = tablesResponse.value;
             console.log(`📊 Found ${tables.length} table(s) in workbook: ${tables.map(t => t.name).join(', ')}`);
             
-            // Look for our expected table by name
-            const targetTable = tables.find(table => 
+            // Look for our expected table by name, or accept any table if only one exists
+            let targetTable = tables.find(table => 
                 table.name === expectedTableName || 
                 table.name.toLowerCase() === expectedTableName.toLowerCase()
             );
+            
+            // If expected table not found but exactly one table exists, use it (Graph API naming issue)
+            if (!targetTable && tables.length === 1) {
+                targetTable = tables[0];
+                console.log(`🔄 Expected '${expectedTableName}' but found '${targetTable.name}' - using actual table name`);
+            }
             
             if (targetTable) {
                 console.log(`✅ Table found: '${targetTable.name}' (ID: ${targetTable.id})`);
