@@ -1,5 +1,6 @@
 const express = require('express');
 const XLSX = require('xlsx');
+const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const { advancedExcelUpload } = require('./excel-upload-fix');
@@ -9,34 +10,68 @@ const router = express.Router();
 const excelProcessor = new ExcelProcessor();
 const authProvider = getDelegatedAuthProvider();
 
+// In-memory webhook subscription storage (for production, use database)
+const webhookSubscriptions = new Map();
+
 /**
  * Email Tracking and Webhook Integration
  * Handles email read/reply status updates from Microsoft Graph webhooks
  */
 
-// Webhook validation endpoint
+// Webhook validation endpoint with enhanced logging
 router.get('/webhook/notifications', async (req, res) => {
     const { validationToken } = req.query;
     
     if (validationToken) {
-        console.log('📧 Webhook validation requested');
+        console.log('📧 Webhook validation requested from Microsoft Graph');
+        console.log(`🔑 Validation token: ${validationToken.substring(0, 20)}...`);
+        
+        // Validate webhook URL accessibility
+        const webhookUrl = process.env.RENDER_EXTERNAL_URL || process.env.WEBHOOK_BASE_URL;
+        console.log(`🌐 Webhook URL configured: ${webhookUrl}`);
+        
         return res.status(200).send(validationToken);
     }
     
+    console.log('❌ Webhook validation failed - no token provided');
     res.status(400).json({ error: 'No validation token provided' });
 });
 
-// Webhook notification endpoint
+// Webhook notification endpoint with enhanced processing
 router.post('/webhook/notifications', async (req, res) => {
     try {
-        console.log('📧 Webhook notification received:', JSON.stringify(req.body, null, 2));
+        console.log('📧 Webhook notification received from Microsoft Graph');
+        console.log('📋 Notification payload:', JSON.stringify(req.body, null, 2));
         
+        // Validate client state for security
         const notifications = req.body.value || [];
         
-        for (const notification of notifications) {
-            await processEmailNotification(notification);
+        if (notifications.length === 0) {
+            console.log('⚠️ No notifications in webhook payload');
+            return res.status(202).send('Accepted');
         }
         
+        let processedCount = 0;
+        let errorCount = 0;
+        
+        for (const notification of notifications) {
+            try {
+                // Validate client state matches our expected value
+                const expectedClientState = process.env.WEBHOOK_CLIENT_STATE || 'lga-email-tracking';
+                if (notification.clientState && !notification.clientState.includes(expectedClientState.split('-')[0])) {
+                    console.log(`⚠️ Ignoring notification with unexpected client state: ${notification.clientState}`);
+                    continue;
+                }
+                
+                await processEmailNotification(notification);
+                processedCount++;
+            } catch (notificationError) {
+                console.error('❌ Error processing individual notification:', notificationError);
+                errorCount++;
+            }
+        }
+        
+        console.log(`✅ Webhook processing completed: ${processedCount} processed, ${errorCount} errors`);
         res.status(202).send('Accepted');
         
     } catch (error) {
@@ -45,36 +80,63 @@ router.post('/webhook/notifications', async (req, res) => {
     }
 });
 
-// Create webhook subscription
+// Create webhook subscription with automatic management
 router.post('/webhook/subscribe', requireDelegatedAuth, async (req, res) => {
     try {
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
         
+        // Check if webhook URL is properly configured
+        const webhookUrl = process.env.RENDER_EXTERNAL_URL || process.env.WEBHOOK_BASE_URL;
+        if (!webhookUrl) {
+            return res.status(400).json({
+                success: false,
+                message: 'RENDER_EXTERNAL_URL or WEBHOOK_BASE_URL environment variable is required for webhooks',
+                required: 'Set RENDER_EXTERNAL_URL to your deployed app URL (e.g., https://your-app.onrender.com)'
+            });
+        }
+        
+        const notificationUrl = `${webhookUrl}/api/email/webhook/notifications`;
+        
         // Subscribe to email read/reply events
         const subscription = {
             changeType: 'updated',
-            notificationUrl: `${process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000'}/api/email/webhook/notifications`,
+            notificationUrl: notificationUrl,
             resource: '/me/messages',
             expirationDateTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
-            clientState: 'lga-email-tracking'
+            clientState: process.env.WEBHOOK_CLIENT_STATE || 'lga-email-tracking',
+            includeResourceData: true
         };
+        
+        console.log(`📡 Creating webhook subscription: ${notificationUrl}`);
         
         const result = await graphClient.api('/subscriptions').post(subscription);
         
         console.log('✅ Webhook subscription created:', result.id);
         
+        // Store subscription ID for renewal
+        await storeWebhookSubscription(req.sessionId, result.id, result.expirationDateTime);
+        
         res.json({
             success: true,
             subscriptionId: result.id,
-            expirationDateTime: result.expirationDateTime
+            expirationDateTime: result.expirationDateTime,
+            notificationUrl: notificationUrl,
+            resource: subscription.resource
         });
         
     } catch (error) {
         console.error('❌ Webhook subscription error:', error);
+        
+        let errorMessage = 'Failed to create webhook subscription';
+        if (error.code === 'InvalidRequest' && error.message.includes('notificationUrl')) {
+            errorMessage = 'Webhook URL validation failed. Ensure RENDER_EXTERNAL_URL is accessible and uses HTTPS.';
+        }
+        
         res.status(500).json({
             success: false,
-            message: 'Failed to create webhook subscription',
-            error: error.message
+            message: errorMessage,
+            error: error.message,
+            code: error.code
         });
     }
 });
@@ -135,6 +197,381 @@ router.get('/tracking/:campaignId', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+// Test endpoint to manually trigger read status update for debugging
+router.post('/test-read-update', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { email, testType } = req.body;
+        
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email address is required'
+            });
+        }
+        
+        console.log(`🧪 TEST: Manually updating tracking for ${email} (${testType})`);
+        
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        
+        if (testType === 'read') {
+            await updateLeadEmailStatusByEmail(graphClient, email, {
+                Status: 'Read',
+                Read_Date: new Date().toISOString().split('T')[0],
+                'Last Updated': new Date().toISOString()
+            });
+        } else if (testType === 'reply') {
+            await updateLeadEmailStatusByEmail(graphClient, email, {
+                Status: 'Replied',
+                Reply_Date: new Date().toISOString().split('T')[0],
+                'Last Updated': new Date().toISOString()
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: `Test ${testType} update completed for ${email}`,
+            testType: testType,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Test tracking update error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update test tracking',
+            error: error.message
+        });
+    }
+});
+
+// Diagnostic endpoint to check master file tracking data
+router.get('/diagnostic/:email?', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { email } = req.params;
+        
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        const masterWorkbook = await downloadMasterFile(graphClient, false);
+        
+        if (!masterWorkbook) {
+            return res.json({
+                success: false,
+                message: 'No master file found'
+            });
+        }
+        
+        const leadsSheet = masterWorkbook.Sheets['Leads'];
+        const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
+        
+        // If specific email requested, return that lead's tracking data
+        if (email) {
+            const lead = leadsData.find(l => l.Email && l.Email.toLowerCase() === email.toLowerCase());
+            
+            if (lead) {
+                res.json({
+                    success: true,
+                    email: email,
+                    trackingData: {
+                        Status: lead.Status,
+                        Last_Email_Date: lead.Last_Email_Date,
+                        Read_Date: lead.Read_Date,
+                        Reply_Date: lead.Reply_Date,
+                        Email_Count: lead.Email_Count,
+                        'Last Updated': lead['Last Updated']
+                    },
+                    fullLead: lead
+                });
+            } else {
+                res.json({
+                    success: false,
+                    message: `Lead with email ${email} not found`,
+                    totalLeads: leadsData.length
+                });
+            }
+        } else {
+            // Return summary of all tracking data
+            const trackingSummary = {
+                totalLeads: leadsData.length,
+                statusCounts: {},
+                trackingStats: {
+                    withReadDate: 0,
+                    withReplyDate: 0,
+                    emailsSent: 0
+                },
+                recentActivity: []
+            };
+            
+            leadsData.forEach(lead => {
+                const status = lead.Status || 'Unknown';
+                trackingSummary.statusCounts[status] = (trackingSummary.statusCounts[status] || 0) + 1;
+                
+                if (lead.Read_Date) trackingSummary.trackingStats.withReadDate++;
+                if (lead.Reply_Date) trackingSummary.trackingStats.withReplyDate++;
+                if (lead.Last_Email_Date || lead['Email Sent'] === 'Yes') trackingSummary.trackingStats.emailsSent++;
+                
+                // Add recent activity (last 7 days)
+                if (lead['Last Updated']) {
+                    const lastUpdated = new Date(lead['Last Updated']);
+                    const sevenDaysAgo = new Date();
+                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                    
+                    if (lastUpdated >= sevenDaysAgo) {
+                        trackingSummary.recentActivity.push({
+                            email: lead.Email,
+                            status: lead.Status,
+                            lastUpdated: lead['Last Updated'],
+                            readDate: lead.Read_Date,
+                            replyDate: lead.Reply_Date
+                        });
+                    }
+                }
+            });
+            
+            // Sort recent activity by date
+            trackingSummary.recentActivity.sort((a, b) => 
+                new Date(b.lastUpdated) - new Date(a.lastUpdated)
+            );
+            
+            res.json({
+                success: true,
+                diagnostic: trackingSummary
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Diagnostic error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve diagnostic data',
+            error: error.message
+        });
+    }
+});
+
+// Webhook health check endpoint
+router.get('/webhook/health', async (req, res) => {
+    try {
+        const webhookUrl = process.env.RENDER_EXTERNAL_URL || process.env.WEBHOOK_BASE_URL;
+        const clientState = process.env.WEBHOOK_CLIENT_STATE || 'lga-email-tracking';
+        
+        const health = {
+            webhook: {
+                configured: !!webhookUrl,
+                url: webhookUrl ? `${webhookUrl}/api/email/webhook/notifications` : null,
+                clientState: clientState,
+                accessible: false
+            },
+            environment: {
+                nodeEnv: process.env.NODE_ENV || 'development',
+                renderUrl: process.env.RENDER_EXTERNAL_URL || 'Not configured',
+                webhookClientState: process.env.WEBHOOK_CLIENT_STATE || 'Default'
+            },
+            tracking: {
+                pixelEndpoint: `/api/email/track-read`,
+                webhookEndpoint: `/api/email/webhook/notifications`,
+                testEndpoint: `/api/email/test-read-update`,
+                diagnosticEndpoint: `/api/email/diagnostic`
+            }
+        };
+        
+        // Test webhook URL accessibility if configured
+        if (webhookUrl) {
+            try {
+                const testUrl = `${webhookUrl}/health`;
+                const response = await axios.get(testUrl, { timeout: 5000 });
+                health.webhook.accessible = response.status === 200;
+            } catch (accessError) {
+                health.webhook.accessible = false;
+                health.webhook.accessError = accessError.message;
+            }
+        }
+        
+        res.json({
+            success: true,
+            health: health,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Webhook health check error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to check webhook health',
+            error: error.message
+        });
+    }
+});
+
+// Webhook subscription management endpoints
+
+// Get active webhook subscriptions
+router.get('/webhook/subscriptions', requireDelegatedAuth, async (req, res) => {
+    try {
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        
+        // Get all subscriptions
+        const subscriptions = await graphClient.api('/subscriptions').get();
+        
+        // Filter for our email tracking subscriptions
+        const emailSubscriptions = subscriptions.value.filter(sub => 
+            sub.clientState && sub.clientState.includes('lga-email-tracking')
+        );
+        
+        res.json({
+            success: true,
+            subscriptions: emailSubscriptions,
+            total: emailSubscriptions.length,
+            stored: Array.from(webhookSubscriptions.values())
+        });
+        
+    } catch (error) {
+        console.error('❌ Webhook subscription list error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to retrieve webhook subscriptions',
+            error: error.message
+        });
+    }
+});
+
+// Renew webhook subscription
+router.post('/webhook/renew/:subscriptionId', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { subscriptionId } = req.params;
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        
+        // Extend expiration by 24 hours
+        const newExpiration = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        
+        const result = await graphClient.api(`/subscriptions/${subscriptionId}`).patch({
+            expirationDateTime: newExpiration
+        });
+        
+        console.log(`✅ Webhook subscription renewed: ${subscriptionId}`);
+        
+        // Update stored subscription
+        await storeWebhookSubscription(req.sessionId, subscriptionId, newExpiration);
+        
+        res.json({
+            success: true,
+            subscriptionId: subscriptionId,
+            newExpirationDateTime: result.expirationDateTime
+        });
+        
+    } catch (error) {
+        console.error('❌ Webhook renewal error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to renew webhook subscription',
+            error: error.message
+        });
+    }
+});
+
+// Delete webhook subscription
+router.delete('/webhook/subscriptions/:subscriptionId', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { subscriptionId } = req.params;
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        
+        await graphClient.api(`/subscriptions/${subscriptionId}`).delete();
+        
+        console.log(`✅ Webhook subscription deleted: ${subscriptionId}`);
+        
+        // Remove from storage
+        webhookSubscriptions.delete(`${req.sessionId}-${subscriptionId}`);
+        
+        res.json({
+            success: true,
+            message: 'Webhook subscription deleted'
+        });
+        
+    } catch (error) {
+        console.error('❌ Webhook deletion error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete webhook subscription',
+            error: error.message
+        });
+    }
+});
+
+// Auto-create webhook subscription when user logs in
+router.post('/webhook/auto-setup', requireDelegatedAuth, async (req, res) => {
+    try {
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        
+        // Check if webhook URL is configured
+        const webhookUrl = process.env.RENDER_EXTERNAL_URL || process.env.WEBHOOK_BASE_URL;
+        if (!webhookUrl) {
+            return res.status(400).json({
+                success: false,
+                message: 'Webhook URL not configured',
+                required: 'RENDER_EXTERNAL_URL environment variable'
+            });
+        }
+        
+        // Check if user already has active subscriptions
+        const existing = await graphClient.api('/subscriptions').get();
+        const emailTrackingSubscriptions = existing.value.filter(sub => 
+            sub.clientState && sub.clientState.includes('lga-email-tracking') &&
+            new Date(sub.expirationDateTime) > new Date()
+        );
+        
+        if (emailTrackingSubscriptions.length > 0) {
+            console.log(`📡 Found ${emailTrackingSubscriptions.length} existing webhook subscriptions`);
+            return res.json({
+                success: true,
+                message: 'Webhook subscriptions already active',
+                subscriptions: emailTrackingSubscriptions
+            });
+        }
+        
+        // Create new subscription
+        const subscription = {
+            changeType: 'updated',
+            notificationUrl: `${webhookUrl}/api/email/webhook/notifications`,
+            resource: '/me/messages',
+            expirationDateTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            clientState: `lga-email-tracking-${req.sessionId}`,
+            includeResourceData: true
+        };
+        
+        const result = await graphClient.api('/subscriptions').post(subscription);
+        
+        console.log('✅ Auto-setup webhook subscription created:', result.id);
+        
+        // Store subscription for management
+        await storeWebhookSubscription(req.sessionId, result.id, result.expirationDateTime);
+        
+        res.json({
+            success: true,
+            message: 'Webhook subscription auto-setup completed',
+            subscriptionId: result.id,
+            expirationDateTime: result.expirationDateTime
+        });
+        
+    } catch (error) {
+        console.error('❌ Webhook auto-setup error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to auto-setup webhook subscriptions',
+            error: error.message
+        });
+    }
+});
+
+// Helper function to store webhook subscription info
+async function storeWebhookSubscription(sessionId, subscriptionId, expirationDateTime) {
+    const key = `${sessionId}-${subscriptionId}`;
+    webhookSubscriptions.set(key, {
+        sessionId: sessionId,
+        subscriptionId: subscriptionId,
+        expirationDateTime: expirationDateTime,
+        createdAt: new Date().toISOString()
+    });
+    console.log(`📝 Stored webhook subscription: ${subscriptionId}`);
+}
+
 // Helper function to process email notifications
 async function processEmailNotification(notification) {
     try {
@@ -178,22 +615,55 @@ async function updateEmailReadStatus(trackingId) {
             return;
         }
         
-        console.log(`📧 Updating read status for email: ${email}`);
+        console.log(`📧 Tracking pixel hit - updating read status for email: ${email}`);
         
         // Get all active sessions to update across all users
         const activeSessions = authProvider.getActiveSessions();
         
-        for (const sessionId of activeSessions) {
-            try {
-                const graphClient = await authProvider.getGraphClient(sessionId);
-                await updateLeadEmailStatus(graphClient, email, 'Read', new Date().toISOString());
-            } catch (error) {
-                console.log(`⚠️ Failed to update for session ${sessionId}:`, error.message);
-            }
+        if (activeSessions.length === 0) {
+            console.log('⚠️ No active sessions found for email tracking update');
+            return;
+        }
+        
+        // Use the first available session (most likely to be valid)
+        const sessionId = activeSessions[0];
+        try {
+            const graphClient = await authProvider.getGraphClient(sessionId);
+            await updateLeadEmailStatusByEmail(graphClient, email, {
+                Status: 'Read',
+                Read_Date: new Date().toISOString().split('T')[0],
+                'Last Updated': new Date().toISOString()
+            });
+        } catch (error) {
+            console.error(`❌ Failed to update read status for ${email}:`, error.message);
         }
         
     } catch (error) {
         console.error('❌ Read status update error:', error);
+    }
+}
+
+// Helper function to update email read status by email address
+async function updateLeadEmailStatusByEmail(graphClient, email, updates) {
+    try {
+        // Use fresh download to avoid cache issues with tracking updates
+        const masterWorkbook = await downloadMasterFile(graphClient, false);
+        if (!masterWorkbook) {
+            console.log('⚠️ No master file found for tracking update');
+            return;
+        }
+
+        // Update lead in master file
+        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
+
+        // Save updated file
+        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+
+        console.log(`✅ Updated email tracking for ${email}: ${updates.Status}`);
+        
+    } catch (error) {
+        console.error('❌ Email tracking update error:', error);
     }
 }
 
@@ -202,47 +672,86 @@ async function updateMasterFileEmailStatus(emailId, subject, isRead, hasReply) {
     try {
         const activeSessions = authProvider.getActiveSessions();
         
-        for (const sessionId of activeSessions) {
-            try {
-                const graphClient = await authProvider.getGraphClient(sessionId);
+        if (activeSessions.length === 0) {
+            console.log('⚠️ No active sessions for webhook processing');
+            return;
+        }
+        
+        // Use first valid session
+        const sessionId = activeSessions[0];
+        const graphClient = await authProvider.getGraphClient(sessionId);
+        
+        // Enhanced lead matching strategy
+        const masterWorkbook = await downloadMasterFile(graphClient, false); // Fresh download
+        if (!masterWorkbook) return;
+        
+        const leadsSheet = masterWorkbook.Sheets['Leads'];
+        const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
+        
+        // Improved matching logic - try multiple approaches
+        let matchingLead = null;
+        
+        // 1. Try matching by email ID from Graph API (best match)
+        if (emailId) {
+            matchingLead = leadsData.find(lead => 
+                lead['Graph_Email_ID'] === emailId || 
+                lead['Message_ID'] === emailId
+            );
+        }
+        
+        // 2. Try matching by subject containing lead email
+        if (!matchingLead && subject) {
+            matchingLead = leadsData.find(lead => {
+                const leadEmail = lead.Email || '';
+                if (!leadEmail) return false;
                 
-                // Download master file
-                const masterWorkbook = await downloadMasterFile(graphClient);
-                if (!masterWorkbook) continue;
+                // Check if subject contains the lead's email domain or name
+                const emailDomain = leadEmail.split('@')[1];
+                const emailName = leadEmail.split('@')[0];
                 
-                // Find lead by email content or subject matching
-                const leadsSheet = masterWorkbook.Sheets['Leads'];
-                const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
-                
-                // Try to match by subject line containing email address or company name
-                const matchingLead = leadsData.find(lead => {
-                    const emailContent = lead.Email_Content_Sent || '';
-                    const leadEmail = lead.Email || '';
-                    return emailContent.includes(subject) || subject.includes(leadEmail) || 
-                           (lead['Company Name'] && subject.includes(lead['Company Name']));
-                });
-                
-                if (matchingLead) {
-                    console.log(`📧 Found matching lead: ${matchingLead.Email}`);
-                    
-                    const updates = {};
-                    if (isRead && !matchingLead.Read_Date) {
-                        updates.Status = 'Read';
-                        updates.Read_Date = new Date().toISOString().split('T')[0];
-                    }
-                    if (hasReply) {
-                        updates.Status = 'Replied';
-                        updates.Reply_Date = new Date().toISOString().split('T')[0];
-                    }
-                    
-                    if (Object.keys(updates).length > 0) {
-                        await updateLeadInMasterFile(graphClient, matchingLead.Email, updates);
-                    }
-                }
-                
-            } catch (error) {
-                console.log(`⚠️ Failed to update master file for session ${sessionId}:`, error.message);
+                return subject.toLowerCase().includes(leadEmail.toLowerCase()) ||
+                       subject.toLowerCase().includes(emailDomain.toLowerCase()) ||
+                       (lead.Name && subject.toLowerCase().includes(lead.Name.toLowerCase())) ||
+                       (lead['Company Name'] && subject.toLowerCase().includes(lead['Company Name'].toLowerCase()));
+            });
+        }
+        
+        // 3. Try matching recent sent emails (last 7 days)
+        if (!matchingLead) {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            
+            matchingLead = leadsData.find(lead => {
+                if (!lead.Last_Email_Date) return false;
+                const lastEmailDate = new Date(lead.Last_Email_Date);
+                return lastEmailDate >= sevenDaysAgo && lead.Status === 'Sent';
+            });
+        }
+        
+        if (matchingLead) {
+            console.log(`📧 Found matching lead for webhook: ${matchingLead.Email}`);
+            
+            const updates = {
+                'Last Updated': new Date().toISOString()
+            };
+            
+            if (isRead && !matchingLead.Read_Date) {
+                updates.Status = 'Read';
+                updates.Read_Date = new Date().toISOString().split('T')[0];
+                console.log(`📖 Setting read date for ${matchingLead.Email}`);
             }
+            
+            if (hasReply) {
+                updates.Status = 'Replied';
+                updates.Reply_Date = new Date().toISOString().split('T')[0];
+                console.log(`💬 Setting reply date for ${matchingLead.Email}`);
+            }
+            
+            if (Object.keys(updates).length > 1) { // More than just 'Last Updated'
+                await updateLeadInMasterFile(graphClient, matchingLead.Email, updates);
+            }
+        } else {
+            console.log(`⚠️ No matching lead found for webhook notification. Subject: ${subject?.substring(0, 50)}...`);
         }
         
     } catch (error) {

@@ -18,7 +18,10 @@ class EmailScheduler {
         this.excelProcessor = new ExcelProcessor();
         this.authProvider = getDelegatedAuthProvider();
         
-        console.log('📅 Email Scheduler initialized');
+        // Start webhook renewal job
+        this.startWebhookRenewalJob();
+        
+        console.log('📅 Email Scheduler initialized with webhook renewal');
     }
 
     /**
@@ -44,8 +47,95 @@ class EmailScheduler {
             this.cronJob.destroy();
         }
 
+        if (this.webhookRenewalJob) {
+            this.webhookRenewalJob.stop();
+            this.webhookRenewalJob.destroy();
+        }
+
         this.isRunning = false;
         console.log('🛑 Email Scheduler stopped');
+    }
+
+    /**
+     * Start webhook subscription renewal job
+     * Runs every 20 hours to renew 24-hour subscriptions before expiry
+     */
+    startWebhookRenewalJob() {
+        // Run every 20 hours (4 hours before expiry)
+        this.webhookRenewalJob = cron.schedule('0 */20 * * *', async () => {
+            await this.renewWebhookSubscriptions();
+        }, {
+            scheduled: true,
+            timezone: "Asia/Singapore"
+        });
+        
+        console.log('🔄 Webhook renewal job started (runs every 20 hours)');
+    }
+
+    /**
+     * Renew webhook subscriptions for all active sessions
+     */
+    async renewWebhookSubscriptions() {
+        try {
+            console.log('🔄 Starting webhook subscription renewal...');
+            
+            const activeSessions = this.authProvider.getActiveSessions();
+            
+            if (activeSessions.length === 0) {
+                console.log('📭 No active sessions for webhook renewal');
+                return;
+            }
+            
+            const renewalResults = [];
+            
+            for (const sessionId of activeSessions) {
+                try {
+                    const result = await this.renewSessionWebhooks(sessionId);
+                    renewalResults.push({ sessionId, success: true, ...result });
+                } catch (error) {
+                    console.error(`❌ Webhook renewal failed for session ${sessionId}:`, error.message);
+                    renewalResults.push({ sessionId, success: false, error: error.message });
+                }
+            }
+            
+            const successful = renewalResults.filter(r => r.success).length;
+            console.log(`✅ Webhook renewal completed: ${successful}/${activeSessions.length} sessions`);
+            
+        } catch (error) {
+            console.error('❌ Webhook renewal job error:', error);
+        }
+    }
+
+    /**
+     * Renew webhooks for a specific session
+     */
+    async renewSessionWebhooks(sessionId) {
+        try {
+            const response = await axios.post(`${this.baseURL}/api/email/webhook/auto-setup`, {}, {
+                headers: {
+                    'X-Session-Id': sessionId,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 10000
+            });
+            
+            if (response.data.success) {
+                console.log(`✅ Webhook renewed for session ${sessionId}: ${response.data.subscriptionId}`);
+                return {
+                    subscriptionId: response.data.subscriptionId,
+                    expirationDateTime: response.data.expirationDateTime
+                };
+            } else {
+                throw new Error(response.data.message || 'Unknown renewal error');
+            }
+            
+        } catch (error) {
+            if (error.response?.status === 400 && error.response?.data?.message?.includes('already active')) {
+                console.log(`📡 Webhook subscriptions already active for session ${sessionId}`);
+                return { message: 'Already active' };
+            }
+            throw error;
+        }
     }
 
     /**

@@ -93,6 +93,28 @@ router.get('/callback', async (req, res) => {
             
             console.log(`✅ Authentication successful for session: ${sessionId}`);
             
+            // Auto-setup webhook subscriptions for email tracking (async, don't wait)
+            setImmediate(async () => {
+                try {
+                    const webhookUrl = process.env.RENDER_EXTERNAL_URL || process.env.WEBHOOK_BASE_URL;
+                    if (webhookUrl) {
+                        console.log(`📡 Auto-setting up webhook subscriptions for ${sessionId}...`);
+                        const axios = require('axios');
+                        
+                        const response = await axios.post(`${webhookUrl}/api/email/webhook/auto-setup`, {}, {
+                            headers: { 'X-Session-Id': sessionId },
+                            timeout: 10000
+                        });
+                        
+                        if (response.data.success) {
+                            console.log(`✅ Auto-setup webhooks completed for ${sessionId}`);
+                        }
+                    }
+                } catch (webhookError) {
+                    console.log(`⚠️ Auto-setup webhooks failed for ${sessionId}:`, webhookError.message);
+                }
+            });
+            
             res.send(`
                 <html>
                 <head>
