@@ -21,7 +21,10 @@ class EmailScheduler {
         // Start webhook renewal job
         this.startWebhookRenewalJob();
         
-        console.log('📅 Email Scheduler initialized with webhook renewal');
+        // Start reply detection job
+        this.startReplyDetectionJob();
+        
+        console.log('📅 Email Scheduler initialized with webhook renewal and reply detection');
     }
 
     /**
@@ -52,6 +55,11 @@ class EmailScheduler {
             this.webhookRenewalJob.destroy();
         }
 
+        if (this.replyDetectionJob) {
+            this.replyDetectionJob.stop();
+            this.replyDetectionJob.destroy();
+        }
+
         this.isRunning = false;
         console.log('🛑 Email Scheduler stopped');
     }
@@ -70,6 +78,22 @@ class EmailScheduler {
         });
         
         console.log('🔄 Webhook renewal job started (runs every 20 hours)');
+    }
+
+    /**
+     * Start reply detection job
+     * Runs every 5 minutes to check inbox for replies to sent emails
+     */
+    startReplyDetectionJob() {
+        // Run every 5 minutes
+        this.replyDetectionJob = cron.schedule('*/5 * * * *', async () => {
+            await this.checkInboxForReplies();
+        }, {
+            scheduled: true,
+            timezone: "Asia/Singapore"
+        });
+        
+        console.log('💬 Reply detection job started (runs every 5 minutes)');
     }
 
     /**
@@ -465,6 +489,158 @@ class EmailScheduler {
         console.log(`📅 Updated scheduler to cron: ${this.schedule}`);
         
         this.start();
+    }
+
+    /**
+     * Check inbox for replies to sent emails across all active sessions
+     */
+    async checkInboxForReplies() {
+        try {
+            console.log('💬 Checking inbox for replies...');
+            
+            const activeSessions = this.authProvider.getActiveSessions();
+            
+            if (activeSessions.length === 0) {
+                console.log('📭 No active sessions for reply detection');
+                return;
+            }
+            
+            let totalRepliesFound = 0;
+            
+            for (const sessionId of activeSessions) {
+                try {
+                    const repliesFound = await this.checkSessionInboxForReplies(sessionId);
+                    totalRepliesFound += repliesFound;
+                } catch (sessionError) {
+                    console.error(`❌ Reply detection failed for session ${sessionId}:`, sessionError.message);
+                }
+            }
+            
+            if (totalRepliesFound > 0) {
+                console.log(`✅ Reply detection completed: ${totalRepliesFound} replies found`);
+            }
+            
+        } catch (error) {
+            console.error('❌ Reply detection job error:', error);
+        }
+    }
+
+    /**
+     * Check inbox for replies in a specific session
+     */
+    async checkSessionInboxForReplies(sessionId) {
+        try {
+            console.log(`💬 Checking replies for session: ${sessionId}`);
+            
+            const graphClient = await this.authProvider.getGraphClient(sessionId);
+            
+            if (!graphClient) {
+                console.log(`❌ Unable to get Graph client for session: ${sessionId}`);
+                return 0;
+            }
+            
+            // Get messages from the last 6 hours (to catch recent replies)
+            const sixHoursAgo = new Date();
+            sixHoursAgo.setHours(sixHoursAgo.getHours() - 6);
+            const filterDate = sixHoursAgo.toISOString();
+            
+            // Query inbox for received messages in the last 6 hours
+            const messages = await graphClient
+                .api('/me/messages')
+                .filter(`receivedDateTime ge ${filterDate} and isDraft eq false`)
+                .select('id,subject,from,receivedDateTime,isRead,conversationId,parentFolderId,inReplyTo')
+                .top(50)
+                .get();
+            
+            if (messages.value.length === 0) {
+                console.log(`📭 No recent messages found in session: ${sessionId}`);
+                return 0;
+            }
+            
+            console.log(`📧 Found ${messages.value.length} recent messages to check for replies`);
+            
+            // Download master file to get list of sent emails
+            const masterWorkbook = await this.downloadMasterFile(graphClient);
+            if (!masterWorkbook) {
+                console.log(`📋 No master file found for session: ${sessionId}`);
+                return 0;
+            }
+            
+            // Get leads from master file
+            const sheetInfo = this.excelProcessor.findLeadsSheet(masterWorkbook);
+            if (!sheetInfo) {
+                console.log(`📋 No valid lead data sheet found in session: ${sessionId}`);
+                return 0;
+            }
+            
+            const leadsData = require('xlsx').utils.sheet_to_json(sheetInfo.sheet);
+            const sentEmails = leadsData.filter(lead => 
+                lead.Last_Email_Date && !lead.Reply_Date
+            ).map(lead => lead.Email);
+            
+            console.log(`📧 Checking ${sentEmails.length} sent emails for replies...`);
+            
+            let repliesFound = 0;
+            
+            // Check each message to see if it's a reply to our sent emails
+            for (const message of messages.value) {
+                try {
+                    const fromEmail = message.from?.emailAddress?.address?.toLowerCase();
+                    
+                    if (!fromEmail) continue;
+                    
+                    // Check if this email is in our sent emails list
+                    const isReplyToSentEmail = sentEmails.some(sentEmail => 
+                        sentEmail && sentEmail.toLowerCase() === fromEmail
+                    );
+                    
+                    if (isReplyToSentEmail) {
+                        console.log(`💬 Reply detected from: ${fromEmail}`);
+                        
+                        // Update Excel with reply status using Graph API direct updates
+                        await this.updateReplyStatus(graphClient, fromEmail, message.receivedDateTime);
+                        repliesFound++;
+                    }
+                    
+                } catch (messageError) {
+                    console.error(`❌ Error processing message:`, messageError.message);
+                }
+            }
+            
+            console.log(`✅ Session ${sessionId}: Found ${repliesFound} new replies`);
+            return repliesFound;
+            
+        } catch (error) {
+            console.error(`❌ Session reply check error for ${sessionId}:`, error);
+            return 0;
+        }
+    }
+
+    /**
+     * Update reply status in Excel using Graph API
+     */
+    async updateReplyStatus(graphClient, email, receivedDateTime) {
+        try {
+            const { updateExcelViaGraphAPI } = require('../routes/email-tracking');
+            
+            const updates = {
+                Status: 'Replied',
+                Reply_Date: new Date(receivedDateTime).toISOString().split('T')[0],
+                'Last Updated': new Date().toISOString()
+            };
+            
+            // Use the existing Graph API update function
+            const success = await updateExcelViaGraphAPI(graphClient, email, updates);
+            
+            if (success) {
+                console.log(`✅ Reply status updated for: ${email}`);
+            } else {
+                console.log(`❌ Failed to update reply status for: ${email}`);
+            }
+            
+        } catch (error) {
+            console.error(`❌ Reply status update error for ${email}:`, error);
+        }
     }
 
     /**

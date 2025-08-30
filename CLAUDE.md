@@ -274,13 +274,14 @@ findLeadsSheet(workbook) {
 - ✅ **Email Tracking Fix:** Tracking pixels now update regardless of sheet name
 - ✅ **Better Error Handling:** Clear diagnostics when no suitable sheet found
 
-### Email Tracking Graph API Optimization (Fixed)
-**Issue:** Email tracking was using inefficient file download/upload approach, causing slow performance and potential data conflicts. System would download entire Excel files, update locally, then re-upload - causing delays and potential race conditions.
+### High-Performance Email Tracking with Reply Detection (Fixed & Enhanced)
+**Issue:** Email tracking was using inefficient file download/upload approach and had no reply detection mechanism. System would download entire Excel files, update locally, then re-upload - causing delays and potential race conditions.
 
-**Root Cause:** Original tracking implementation used `downloadMasterFile()` → `updateLeadInMaster()` → `advancedExcelUpload()` cycle, which required full file operations for simple cell updates.
+**Root Cause:** Original tracking implementation used `downloadMasterFile()` → `updateLeadInMaster()` → `advancedExcelUpload()` cycle, which required full file operations for simple cell updates. Reply detection was completely missing.
 
 **Solution Implemented:**
 - **Direct Graph API Updates:** New `updateExcelViaGraphAPI()` function uses Microsoft Graph Excel API to update specific cells directly
+- **Automated Reply Detection:** New cron job checks inbox every 5 minutes for replies to sent emails
 - **Intelligent Column Detection:** Dynamically finds email column and target fields in any Excel structure  
 - **Precise Cell Updates:** Uses `PATCH /workbook/worksheets/{sheet}/range(address='M12')` to update only changed cells
 - **Universal Sheet Support:** Works with any worksheet name (Sheet1, Leads, etc.) and column structure
@@ -294,7 +295,22 @@ await graphClient
     .patch({
         values: [[value]]
     });
+
+// NEW: Reply detection cron job (every 5 minutes)
+this.replyDetectionJob = cron.schedule('*/5 * * * *', async () => {
+    await this.checkInboxForReplies();
+}, {
+    scheduled: true,
+    timezone: "Asia/Singapore"
+});
 ```
+
+**Reply Detection Workflow:**
+1. **Cron Schedule:** Runs every 5 minutes via `jobs/emailScheduler.js`
+2. **Inbox Query:** Fetches recent messages from last 6 hours using Microsoft Graph
+3. **Email Matching:** Compares sender addresses with sent email list from Excel
+4. **Excel Update:** Uses direct Graph API to update Reply_Date and Status fields
+5. **Logging:** Comprehensive logging for monitoring and debugging
 
 **Performance Benefits:**
 - ⚡ **90%+ Faster**: No file downloads/uploads - direct cell updates only
@@ -302,13 +318,18 @@ await graphClient
 - 🔧 **No Race Conditions**: Eliminates file locking and upload conflicts
 - 📊 **Universal Compatibility**: Works with any Excel file structure or naming
 - 🚀 **Scalable**: Handles high-volume email tracking without performance degradation
+- 💬 **Automated Replies**: Detects and tracks email replies automatically every 5 minutes
 
 **Technical Implementation:**
 ```
-Tracking Pixel Hit → Parse Email → Graph API: Get Worksheets → 
-Find Email in usedRange → Calculate Cell Address → 
-PATCH Specific Cells (Status, Read_Date, Last Updated)
+Read Tracking: Pixel Hit → Parse Email → Graph API → Update Read_Date
+Reply Tracking: Cron Job → Inbox Check → Email Match → Graph API → Update Reply_Date
 ```
+
+**Testing Endpoints:**
+- `POST /api/email/test-reply-detection` - Manual reply detection trigger
+- `POST /api/email/test-read-update` - Manual read status test
+- `GET /api/email/diagnostic/:email` - Email tracking diagnostics
 
 ## Important Notes
 
@@ -320,4 +341,4 @@ PATCH Specific Cells (Status, Read_Date, Last Updated)
 - **Email Content Processing:** AI-generated content is automatically parsed to extract subjects and clean email bodies
 - **Excel Column Support:** Supports unlimited Excel columns (A-Z, AA-AB, etc.) with proper Graph API integration
 - **Excel Sheet Intelligence:** Automatically detects lead data sheets regardless of naming convention - no more Sheet1 fallback issues
-- **High-Performance Email Tracking:** Direct Graph API cell updates eliminate file download/upload cycles for 90%+ speed improvement
+- **High-Performance Email Tracking with Reply Detection:** Direct Graph API cell updates eliminate file download/upload cycles for 90%+ speed improvement. Automated reply detection runs every 5 minutes using Microsoft Graph inbox monitoring.

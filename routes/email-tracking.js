@@ -201,6 +201,32 @@ router.get('/tracking/:campaignId', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+// Test endpoint to manually trigger reply detection for debugging
+router.post('/test-reply-detection', requireDelegatedAuth, async (req, res) => {
+    try {
+        console.log('🧪 TEST: Manually triggering reply detection...');
+        
+        const emailScheduler = require('../jobs/emailScheduler');
+        
+        // Trigger reply detection check
+        await emailScheduler.checkInboxForReplies();
+        
+        res.json({
+            success: true,
+            message: 'Reply detection test completed',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Test reply detection error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to test reply detection',
+            error: error.message
+        });
+    }
+});
+
 // Test endpoint to manually trigger read status update for debugging
 router.post('/test-read-update', requireDelegatedAuth, async (req, res) => {
     try {
@@ -1043,4 +1069,6 @@ async function getCampaignTrackingStats(campaignId) {
     };
 }
 
+// Export helper functions for use by other modules
 module.exports = router;
+module.exports.updateExcelViaGraphAPI = updateExcelViaGraphAPI;
