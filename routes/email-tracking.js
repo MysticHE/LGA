@@ -264,7 +264,28 @@ router.get('/diagnostic/:email?', requireDelegatedAuth, async (req, res) => {
         
         // If specific email requested, return that lead's tracking data
         if (email) {
-            const lead = leadsData.find(l => l.Email && l.Email.toLowerCase() === email.toLowerCase());
+            console.log(`🔍 DIAGNOSTIC: Searching for "${email}" in ${leadsData.length} leads`);
+            console.log(`🔍 DIAGNOSTIC: Available columns:`, Object.keys(leadsData[0] || {}));
+            console.log(`🔍 DIAGNOSTIC: First 5 emails:`, leadsData.slice(0, 5).map(l => ({
+                Email: l.Email,
+                email: l.email,
+                allEmailFields: Object.keys(l).filter(k => k.toLowerCase().includes('email')).map(k => ({ [k]: l[k] }))
+            })));
+            
+            // Try multiple email field matching strategies
+            const lead = leadsData.find(l => {
+                const searchEmail = email.toLowerCase().trim();
+                const leadEmails = [
+                    l.Email,
+                    l.email,
+                    l['Email Address'], 
+                    l['email_address'],
+                    l.EmailAddress,
+                    l['Contact Email']
+                ].filter(Boolean).map(e => String(e).toLowerCase().trim());
+                
+                return leadEmails.includes(searchEmail);
+            });
             
             if (lead) {
                 res.json({
@@ -646,15 +667,21 @@ async function updateEmailReadStatus(trackingId) {
 // Helper function to update email read status by email address
 async function updateLeadEmailStatusByEmail(graphClient, email, updates) {
     try {
+        console.log(`📧 TRACKING UPDATE: Starting update for ${email}`);
+        
         // Use fresh download to avoid cache issues with tracking updates
-        const masterWorkbook = await downloadMasterFile(graphClient, false);
+        const masterWorkbook = await downloadMasterFile(graphClient);
         if (!masterWorkbook) {
             console.log('⚠️ No master file found for tracking update');
             return;
         }
 
+        console.log(`📊 TRACKING UPDATE: Master file downloaded, updating lead...`);
+
         // Update lead in master file
         const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
+
+        console.log(`💾 TRACKING UPDATE: Lead updated, saving to OneDrive...`);
 
         // Save updated file
         const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
@@ -664,6 +691,24 @@ async function updateLeadEmailStatusByEmail(graphClient, email, updates) {
         
     } catch (error) {
         console.error('❌ Email tracking update error:', error);
+        
+        // If lead not found, let's get more details
+        if (error.message.includes('not found')) {
+            console.error('🔍 DEBUGGING: Lead not found error occurred');
+            try {
+                const debugWorkbook = await downloadMasterFile(graphClient);
+                if (debugWorkbook) {
+                    const debugSheet = debugWorkbook.Sheets['Leads'];
+                    const debugData = XLSX.utils.sheet_to_json(debugSheet);
+                    console.error(`📊 DEBUG INFO: Total leads in file: ${debugData.length}`);
+                    console.error(`📧 DEBUG INFO: All emails in file:`, debugData.map(l => l.Email || l.email || 'NO_EMAIL').slice(0, 20));
+                }
+            } catch (debugError) {
+                console.error('❌ Debug inspection failed:', debugError.message);
+            }
+        }
+        
+        throw error;
     }
 }
 

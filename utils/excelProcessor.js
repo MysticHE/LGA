@@ -345,13 +345,49 @@ class ExcelProcessor {
      */
     updateLeadInMaster(workbook, email, updates) {
         try {
-            const leadsSheet = workbook.Sheets['Leads'];
+            console.log(`📊 DEBUG: Available sheets in workbook:`, Object.keys(workbook.Sheets || {}));
+            
+            // Try multiple possible sheet names
+            let leadsSheet = workbook.Sheets['Leads'] || 
+                           workbook.Sheets['leads'] || 
+                           workbook.Sheets['Sheet1'] ||
+                           workbook.Sheets[Object.keys(workbook.Sheets)[0]]; // First sheet as fallback
+            
+            if (!leadsSheet) {
+                throw new Error(`No valid sheet found in workbook. Available sheets: ${Object.keys(workbook.Sheets).join(', ')}`);
+            }
+            
             const data = XLSX.utils.sheet_to_json(leadsSheet);
             
-            // Find and update the lead
+            console.log(`🔍 DEBUG: Looking for email "${email}" in ${data.length} leads`);
+            console.log(`🔍 DEBUG: First 3 leads data:`, data.slice(0, 3).map(lead => ({
+                Email: lead.Email,
+                email: lead.email,
+                allKeys: Object.keys(lead).filter(k => k.toLowerCase().includes('email'))
+            })));
+            
+            // Find and update the lead - try multiple email field variations
             let updated = false;
+            const searchEmail = email.toLowerCase().trim();
+            
             for (let i = 0; i < data.length; i++) {
-                if ((data[i].Email || '').toLowerCase() === email.toLowerCase()) {
+                const lead = data[i];
+                
+                // Try multiple possible email field names
+                const leadEmails = [
+                    lead.Email,
+                    lead.email, 
+                    lead['Email Address'],
+                    lead['email_address'],
+                    lead.EmailAddress,
+                    lead['Contact Email'],
+                    lead['Primary Email']
+                ].filter(Boolean).map(e => String(e).toLowerCase().trim());
+                
+                console.log(`🔍 DEBUG: Lead ${i} emails:`, leadEmails);
+                
+                if (leadEmails.includes(searchEmail)) {
+                    console.log(`✅ FOUND: Updating lead ${i} with email ${searchEmail}`);
                     Object.assign(data[i], updates);
                     data[i]['Last Updated'] = new Date().toISOString();
                     updated = true;
@@ -360,13 +396,30 @@ class ExcelProcessor {
             }
             
             if (!updated) {
-                throw new Error(`Lead with email ${email} not found`);
+                // Enhanced error with actual data for debugging
+                const availableEmails = data.map(lead => 
+                    lead.Email || lead.email || lead['Email Address'] || 'NO_EMAIL'
+                ).slice(0, 10);
+                
+                console.error(`❌ DETAILED DEBUG: Lead not found`);
+                console.error(`   - Searching for: "${email}"`);
+                console.error(`   - Total leads in file: ${data.length}`);
+                console.error(`   - First 10 emails in file:`, availableEmails);
+                console.error(`   - Available columns:`, Object.keys(data[0] || {}));
+                
+                throw new Error(`Lead with email ${email} not found. Total leads: ${data.length}, First emails: ${availableEmails.join(', ')}`);
             }
             
-            // Recreate sheet with updated data
+            // Recreate sheet with updated data using the same sheet name that was found
+            const sheetName = Object.keys(workbook.Sheets).find(name => 
+                name === 'Leads' || name === 'leads' || name === 'Sheet1'
+            ) || Object.keys(workbook.Sheets)[0];
+            
+            console.log(`💾 DEBUG: Recreating sheet "${sheetName}" with updated data`);
+            
             const newSheet = XLSX.utils.json_to_sheet(data);
             newSheet['!cols'] = this.getColumnWidths();
-            workbook.Sheets['Leads'] = newSheet;
+            workbook.Sheets[sheetName] = newSheet;
             
             return workbook;
         } catch (error) {
