@@ -91,7 +91,10 @@ class EmailContentProcessor {
 
         // Replace variables in template
         const processedSubject = this.replaceVariables(template.Subject, lead);
-        const processedBody = this.replaceVariables(template.Body, lead);
+        let processedBody = this.replaceVariables(template.Body, lead);
+        
+        // Remove placeholder signatures from template body
+        processedBody = this.removePlaceholderSignatures(processedBody);
 
         return {
             subject: processedSubject,
@@ -158,6 +161,9 @@ class EmailContentProcessor {
 
         // Additional cleanup: remove "Email Body:" or numbered body labels
         body = body.replace(/^(?:\d+\.\s*)?Email\s*Body:\s*/im, '').trim();
+        
+        // Remove placeholder signatures from parsed content
+        body = this.removePlaceholderSignatures(body);
 
         console.log(`📧 Parsed email content:`, {
             subject: subject,
@@ -186,6 +192,11 @@ class EmailContentProcessor {
             .replace(/^Email Body:\s*/mi, '') // Remove "Email Body:" prefix if it exists
             .replace(/^Dear\s+[^,]+,\s*/mi, '$&') // Preserve greeting but clean extra spaces
             .replace(/^Hi\s+[^,]+,\s*/mi, '$&') // Preserve greeting but clean extra spaces
+            // Remove placeholder signature components
+            .replace(/\[Your Name\]/gi, '') // Remove placeholder name
+            .replace(/\[Your Position\]/gi, '') // Remove placeholder position
+            .replace(/\[Your Contact Information\]/gi, '') // Remove placeholder contact
+            .replace(/Inspro Insurance Brokers(?:\s*\n)?/gi, '') // Remove standalone company name
             .replace(/^\s*\n+/g, '') // Remove leading empty lines
             .replace(/\n{3,}/g, '\n\n') // Limit consecutive line breaks
             .replace(/^\s+|\s+$/g, '') // Trim whitespace
@@ -228,7 +239,7 @@ I hope this email finds you well. I'm reaching out because ${companyName} could 
 I'd love to schedule a brief call to discuss how we can help ${companyName} achieve its goals.
 
 Best regards,
-[Your Name]`;
+Joel Lee`;
 
         return {
             subject: fallbackSubject,
@@ -314,13 +325,19 @@ Best regards,
     }
 
     /**
-     * Convert email content to HTML format with tracking
+     * Convert email content to HTML format with tracking and professional signature
      */
     convertToHTML(emailContent, leadEmail = null) {
         let htmlBody = emailContent.body || '';
         
+        // Clean placeholder signatures from body
+        htmlBody = this.removePlaceholderSignatures(htmlBody);
+        
         // Convert line breaks to HTML
         htmlBody = htmlBody.replace(/\n/g, '<br>');
+        
+        // Add professional Inspro signature
+        const professionalSignature = this.generateProfessionalSignature();
         
         // Add tracking pixel if email is provided
         let trackingPixel = '';
@@ -330,21 +347,83 @@ Best regards,
             trackingPixel = `<img src="${baseUrl}/api/email/track-read?id=${encodeURIComponent(trackingId)}" width="1" height="1" style="display:none;" alt="" />`;
         }
         
-        // Wrap in basic HTML structure with tracking
+        // Wrap in enhanced HTML structure with professional signature
         const html = `
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${emailContent.subject || 'Email'}</title>
+    <style>
+        .email-container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .email-body { margin-bottom: 30px; }
+        .signature { border-top: 1px solid #e0e0e0; padding-top: 20px; margin-top: 30px; }
+        .logo { margin-bottom: 10px; }
+        .contact-info { font-size: 13px; color: #666; }
+        .legal-text { font-size: 11px; color: #999; margin-top: 15px; border-top: 1px solid #f0f0f0; padding-top: 10px; }
+    </style>
 </head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-    ${htmlBody}
-    ${trackingPixel}
+<body>
+    <div class="email-container">
+        <div class="email-body">
+            ${htmlBody}
+        </div>
+        ${professionalSignature}
+        ${trackingPixel}
+    </div>
 </body>
 </html>`;
 
         return html;
+    }
+
+    /**
+     * Remove placeholder signature components from email body
+     */
+    removePlaceholderSignatures(body) {
+        if (!body) return '';
+        
+        return body
+            // Remove common placeholder patterns
+            .replace(/\[Your Name\]\s*/gi, '')
+            .replace(/\[Your Position\]\s*/gi, '')  
+            .replace(/\[Your Contact Information\]\s*/gi, '')
+            .replace(/Inspro Insurance Brokers(?:\s*\n)?\s*/gi, '')
+            // Remove "Best regards," if followed by placeholders
+            .replace(/Best regards,\s*\n\s*\[Your Name\]/gi, '')
+            // Clean up extra whitespace
+            .replace(/\n\s*\n\s*\n/g, '\n\n')
+            .trim();
+    }
+
+    /**
+     * Generate professional Inspro Insurance Brokers signature
+     */
+    generateProfessionalSignature() {
+        return `
+        <div class="signature">
+            <div class="logo">
+                <img src="https://ik.imagekit.io/ofkmpd3cb/inspro%20logo.jpg?updatedAt=1756520750006" 
+                     alt="Inspro Insurance Brokers" 
+                     style="height: 40px; max-width: 200px;" />
+            </div>
+            
+            <div class="contact-info">
+                <strong>Joel Lee – Client Relations Manager</strong><br>
+                <strong>Inspro Insurance Brokers Pte Ltd (199307139Z)</strong><br><br>
+                
+                38 Jalan Pemimpin M38 #02-08 Singapore 577178<br>
+                M: 9627 0143 E: <a href="mailto:joellee@inspro.com.sg" style="color: #0066cc;">joellee@inspro.com.sg</a> 
+                W: <a href="https://www.inspro.com.sg" style="color: #0066cc;">www.inspro.com.sg</a>
+            </div>
+            
+            <div class="legal-text">
+                <p><strong>Privacy Statement:</strong> In accordance with data protection law we do not use or disclose personal information for any purpose that is unrelated to our services. In providing your data you have agreed to the use of this related to our services. A copy of our Privacy statement is available on request.</p>
+                
+                <p><strong>Confidentiality Notice:</strong> This e-mail is intended for the named addressee only. It contains information which may be privileged and confidential. Unless you are the named addressee you may neither use it, copy it nor disclose it to anyone else. If you have received it in error please notify the sender immediately by email or telephone. Thank You.</p>
+            </div>
+        </div>`;
     }
 
     /**
