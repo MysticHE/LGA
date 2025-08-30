@@ -331,13 +331,42 @@ Reply Tracking: Cron Job → Inbox Check → Email Match → Graph API → Updat
 - `POST /api/email/test-read-update` - Manual read status test
 - `GET /api/email/diagnostic/:email` - Email tracking diagnostics
 
+### System Simplification (Completed)
+**Removed Components for Streamlined Operation:**
+
+**Rate Limiting Removed:**
+- Eliminated `middleware/rateLimiter.js` 
+- Removed rate limiting middleware from all API routes
+- Simplified error handling in server.js
+- No more MAX_REQUESTS_PER_MINUTE configuration needed
+
+**Webhook System Removed:**
+- Removed all webhook-related endpoints from `routes/email-tracking.js`
+- Eliminated webhook subscription management, renewal, and auto-setup
+- Removed webhook storage and processing functions
+- Cleaned up webhook renewal jobs from `jobs/emailScheduler.js`
+- No more webhook URL configuration or validation needed
+
+**Benefits of Simplified System:**
+- ✅ **Fewer Dependencies**: No rate-limiter-flexible package needed
+- ✅ **Reduced Complexity**: Eliminates webhook validation failures and renewal issues  
+- ✅ **Reliable Operation**: Uses proven tracking pixels + cron-based reply detection
+- ✅ **Easier Deployment**: No webhook URL configuration or HTTPS requirements
+- ✅ **Better Performance**: Direct Graph API updates without webhook overhead
+- ✅ **Simplified Debugging**: Fewer moving parts and error sources
+
+**Current Tracking Methods:**
+- **Read Tracking**: 1x1 pixel images embedded in emails (immediate detection)
+- **Reply Tracking**: Cron job every 5 minutes checking inbox via Microsoft Graph
+- **Excel Updates**: Direct Graph API cell updates for maximum performance
+
 ## Important Notes
 
 - **No Test Framework:** This project has no automated tests. Manual testing required.
 - **Environment Dependencies:** Azure credentials required for full functionality - system gracefully degrades without them
 - **Excel Integration:** Uses table append operations to prevent data loss
 - **Authentication Flow:** Uses delegated permissions (user auth) not application permissions
-- **Rate Limiting:** Built-in protection - adjust MAX_REQUESTS_PER_MINUTE if needed
+- **Simplified System:** Rate limiting and webhooks removed for streamlined operation
 - **Email Content Processing:** AI-generated content is automatically parsed to extract subjects and clean email bodies
 - **Excel Column Support:** Supports unlimited Excel columns (A-Z, AA-AB, etc.) with proper Graph API integration
 - **Excel Sheet Intelligence:** Automatically detects lead data sheets regardless of naming convention - no more Sheet1 fallback issues

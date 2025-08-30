@@ -12,7 +12,6 @@ const emailTemplatesRoutes = require('./routes/email-templates');
 const emailTrackingRoutes = require('./routes/email-tracking');
 const emailSchedulerRoutes = require('./routes/email-scheduler');
 const authRoutes = require('./routes/auth');
-const { rateLimiter } = require('./middleware/rateLimiter');
 
 // Check Azure configuration before initializing email services
 const requiredAzureVars = ['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET'];
@@ -68,9 +67,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname)); // Serve files from root directory (for styles, etc.)
 
-// Rate limiting for API routes only
-app.use('/api', rateLimiter);
-app.use('/auth', rateLimiter);
+// No rate limiting - removed for simplified system
 
 // API Routes
 app.use('/api/apollo', apolloRoutes);
@@ -111,12 +108,6 @@ app.get('/health', (req, res) => {
 app.use((err, req, res, next) => {
     console.error('Error:', err);
     
-    if (err.type === 'rate_limit') {
-        return res.status(429).json({
-            error: 'Rate limit exceeded',
-            message: 'Too many requests. Please try again later.'
-        });
-    }
     
     if (err.name === 'ValidationError') {
         return res.status(400).json({

@@ -18,13 +18,10 @@ class EmailScheduler {
         this.excelProcessor = new ExcelProcessor();
         this.authProvider = getDelegatedAuthProvider();
         
-        // Start webhook renewal job
-        this.startWebhookRenewalJob();
-        
         // Start reply detection job
         this.startReplyDetectionJob();
         
-        console.log('📅 Email Scheduler initialized with webhook renewal and reply detection');
+        console.log('📅 Email Scheduler initialized with reply detection');
     }
 
     /**
@@ -50,11 +47,6 @@ class EmailScheduler {
             this.cronJob.destroy();
         }
 
-        if (this.webhookRenewalJob) {
-            this.webhookRenewalJob.stop();
-            this.webhookRenewalJob.destroy();
-        }
-
         if (this.replyDetectionJob) {
             this.replyDetectionJob.stop();
             this.replyDetectionJob.destroy();
@@ -64,21 +56,6 @@ class EmailScheduler {
         console.log('🛑 Email Scheduler stopped');
     }
 
-    /**
-     * Start webhook subscription renewal job
-     * Runs every 20 hours to renew 24-hour subscriptions before expiry
-     */
-    startWebhookRenewalJob() {
-        // Run every 20 hours (4 hours before expiry)
-        this.webhookRenewalJob = cron.schedule('0 */20 * * *', async () => {
-            await this.renewWebhookSubscriptions();
-        }, {
-            scheduled: true,
-            timezone: "Asia/Singapore"
-        });
-        
-        console.log('🔄 Webhook renewal job started (runs every 20 hours)');
-    }
 
     /**
      * Start reply detection job
@@ -96,71 +73,7 @@ class EmailScheduler {
         console.log('💬 Reply detection job started (runs every 5 minutes)');
     }
 
-    /**
-     * Renew webhook subscriptions for all active sessions
-     */
-    async renewWebhookSubscriptions() {
-        try {
-            console.log('🔄 Starting webhook subscription renewal...');
-            
-            const activeSessions = this.authProvider.getActiveSessions();
-            
-            if (activeSessions.length === 0) {
-                console.log('📭 No active sessions for webhook renewal');
-                return;
-            }
-            
-            const renewalResults = [];
-            
-            for (const sessionId of activeSessions) {
-                try {
-                    const result = await this.renewSessionWebhooks(sessionId);
-                    renewalResults.push({ sessionId, success: true, ...result });
-                } catch (error) {
-                    console.error(`❌ Webhook renewal failed for session ${sessionId}:`, error.message);
-                    renewalResults.push({ sessionId, success: false, error: error.message });
-                }
-            }
-            
-            const successful = renewalResults.filter(r => r.success).length;
-            console.log(`✅ Webhook renewal completed: ${successful}/${activeSessions.length} sessions`);
-            
-        } catch (error) {
-            console.error('❌ Webhook renewal job error:', error);
-        }
-    }
 
-    /**
-     * Renew webhooks for a specific session
-     */
-    async renewSessionWebhooks(sessionId) {
-        try {
-            const response = await axios.post(`${this.baseURL}/api/email/webhook/auto-setup`, {}, {
-                headers: {
-                    'X-Session-Id': sessionId,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 10000
-            });
-            
-            if (response.data.success) {
-                console.log(`✅ Webhook renewed for session ${sessionId}: ${response.data.subscriptionId}`);
-                return {
-                    subscriptionId: response.data.subscriptionId,
-                    expirationDateTime: response.data.expirationDateTime
-                };
-            } else {
-                throw new Error(response.data.message || 'Unknown renewal error');
-            }
-            
-        } catch (error) {
-            if (error.response?.status === 400 && error.response?.data?.message?.includes('already active')) {
-                console.log(`📡 Webhook subscriptions already active for session ${sessionId}`);
-                return { message: 'Already active' };
-            }
-            throw error;
-        }
-    }
 
     /**
      * Process scheduled emails for all authenticated sessions
@@ -559,24 +472,12 @@ class EmailScheduler {
             
             console.log(`📧 Found ${messages.value.length} recent messages to check for replies`);
             
-            // Download master file to get list of sent emails
-            const masterWorkbook = await this.downloadMasterFile(graphClient);
-            if (!masterWorkbook) {
-                console.log(`📋 No master file found for session: ${sessionId}`);
+            // Get sent emails directly from Excel via Graph API (no file download needed)
+            const sentEmails = await this.getSentEmailsViaGraphAPI(graphClient);
+            if (sentEmails.length === 0) {
+                console.log(`📋 No sent emails found for session: ${sessionId}`);
                 return 0;
             }
-            
-            // Get leads from master file
-            const sheetInfo = this.excelProcessor.findLeadsSheet(masterWorkbook);
-            if (!sheetInfo) {
-                console.log(`📋 No valid lead data sheet found in session: ${sessionId}`);
-                return 0;
-            }
-            
-            const leadsData = require('xlsx').utils.sheet_to_json(sheetInfo.sheet);
-            const sentEmails = leadsData.filter(lead => 
-                lead.Last_Email_Date && !lead.Reply_Date
-            ).map(lead => lead.Email);
             
             console.log(`📧 Checking ${sentEmails.length} sent emails for replies...`);
             
@@ -793,6 +694,108 @@ class EmailScheduler {
         } catch (error) {
             console.error(`❌ Graph API Excel update failed:`, error);
             return false;
+        }
+    }
+
+    /**
+     * Get sent emails list directly via Graph API (no file download needed)
+     */
+    async getSentEmailsViaGraphAPI(graphClient) {
+        try {
+            const masterFileName = 'LGA-Master-Email-List.xlsx';
+            const masterFolderPath = '/LGA-Email-Automation';
+            
+            console.log(`📧 Getting sent emails list via Graph API...`);
+            
+            // Get the Excel file ID
+            const files = await graphClient
+                .api(`/me/drive/root:${masterFolderPath}:/children`)
+                .filter(`name eq '${masterFileName}'`)
+                .get();
+
+            if (files.value.length === 0) {
+                console.log(`❌ Master file not found: ${masterFileName}`);
+                return [];
+            }
+
+            const fileId = files.value[0].id;
+            
+            // Get worksheet info - use first available worksheet
+            const worksheets = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+                .get();
+                
+            if (worksheets.value.length === 0) {
+                console.log(`❌ No worksheets found in Excel file`);
+                return [];
+            }
+            
+            const worksheetName = worksheets.value[0].name;
+            console.log(`📊 Using worksheet: ${worksheetName}`);
+            
+            // Get all data from the worksheet
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/usedRange`)
+                .get();
+            
+            if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+                console.log(`❌ No data found in worksheet`);
+                return [];
+            }
+            
+            const headers = usedRange.values[0];
+            const rows = usedRange.values.slice(1); // Skip header row
+            
+            console.log(`🔍 Found ${rows.length} data rows in Excel`);
+            
+            // Find email column index
+            const emailColumnIndex = headers.findIndex(header => 
+                header && typeof header === 'string' && 
+                header.toLowerCase().includes('email') && 
+                !header.toLowerCase().includes('date') &&
+                !header.toLowerCase().includes('count')
+            );
+            
+            // Find Last_Email_Date column index
+            const lastEmailDateIndex = headers.findIndex(header => 
+                header && typeof header === 'string' && 
+                header.replace(/[_\s]/g, '').toLowerCase().includes('lastemaildate')
+            );
+            
+            // Find Reply_Date column index
+            const replyDateIndex = headers.findIndex(header => 
+                header && typeof header === 'string' && 
+                header.replace(/[_\s]/g, '').toLowerCase().includes('replydate')
+            );
+            
+            if (emailColumnIndex === -1) {
+                console.log(`❌ Email column not found in headers`);
+                return [];
+            }
+            
+            console.log(`📧 Email column found at index: ${emailColumnIndex} (${headers[emailColumnIndex]})`);
+            console.log(`📅 Last Email Date column at index: ${lastEmailDateIndex}`);
+            console.log(`💬 Reply Date column at index: ${replyDateIndex}`);
+            
+            // Extract emails that have been sent but haven't replied yet
+            const sentEmails = [];
+            for (let i = 0; i < rows.length; i++) {
+                const email = rows[i][emailColumnIndex];
+                const lastEmailDate = lastEmailDateIndex !== -1 ? rows[i][lastEmailDateIndex] : null;
+                const replyDate = replyDateIndex !== -1 ? rows[i][replyDateIndex] : null;
+                
+                // Include emails that have Last_Email_Date but no Reply_Date
+                if (email && typeof email === 'string' && lastEmailDate && !replyDate) {
+                    sentEmails.push(email.toLowerCase().trim());
+                }
+            }
+            
+            console.log(`📧 Found ${sentEmails.length} sent emails without replies`);
+            return sentEmails;
+            
+        } catch (error) {
+            console.error(`❌ Failed to get sent emails via Graph API:`, error);
+            return [];
         }
     }
 
