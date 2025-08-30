@@ -387,11 +387,13 @@ Joel Lee`;
         return body
             // Remove common placeholder patterns
             .replace(/\[Your Name\]\s*/gi, '')
+            .replace(/\[Your Title\]\s*/gi, '')
             .replace(/\[Your Position\]\s*/gi, '')  
             .replace(/\[Your Contact Information\]\s*/gi, '')
             .replace(/Inspro Insurance Brokers(?:\s*\n)?\s*/gi, '')
             // Remove "Best regards," if followed by placeholders
             .replace(/Best regards,\s*\n\s*\[Your Name\]/gi, '')
+            .replace(/Best regards,\s*\n\s*\[Your Title\]/gi, '')
             // Clean up extra whitespace
             .replace(/\n\s*\n\s*\n/g, '\n\n')
             .trim();
