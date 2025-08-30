@@ -51,9 +51,34 @@ class EmailContentProcessor {
         // Parse AI content to extract subject and body
         const parsed = this.parseEmailContent(aiContent);
         
+        // CRITICAL FIX: Ensure we always have a valid subject
+        let finalSubject = parsed.subject;
+        if (!finalSubject || finalSubject.trim() === '') {
+            // If parsing failed, try to extract from the very first line
+            const firstLine = aiContent.split('\n')[0];
+            if (firstLine && !firstLine.toLowerCase().includes('subject')) {
+                finalSubject = firstLine.trim();
+            } else {
+                finalSubject = `Connecting with ${lead['Company Name'] || 'your company'}`;
+            }
+        }
+
+        // CRITICAL FIX: Clean body to remove any subject duplication
+        let cleanBody = parsed.body || aiContent;
+        if (finalSubject && cleanBody.includes(finalSubject)) {
+            // Remove subject from beginning of body (more aggressive cleaning)
+            cleanBody = cleanBody.replace(new RegExp(`^.*${finalSubject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*\n?`, 'mi'), '').trim();
+        }
+
+        console.log(`📧 Final email structure for ${lead.Email}:`, {
+            subject: finalSubject,
+            bodyStart: cleanBody.substring(0, 100) + '...',
+            subjectInBody: cleanBody.includes(finalSubject)
+        });
+        
         return {
-            subject: parsed.subject || `Connecting with ${lead['Company Name'] || 'your company'}`,
-            body: parsed.body || aiContent,
+            subject: finalSubject,
+            body: cleanBody,
             contentType: 'AI_Generated',
             variables: this.extractVariables(aiContent)
         };
