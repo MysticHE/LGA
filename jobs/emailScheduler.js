@@ -548,7 +548,7 @@ class EmailScheduler {
             const messages = await graphClient
                 .api('/me/messages')
                 .filter(`receivedDateTime ge ${filterDate} and isDraft eq false`)
-                .select('id,subject,from,receivedDateTime,isRead,conversationId,parentFolderId,inReplyTo')
+                .select('id,subject,from,receivedDateTime,isRead,conversationId,parentFolderId')
                 .top(50)
                 .get();
             
@@ -586,16 +586,29 @@ class EmailScheduler {
             for (const message of messages.value) {
                 try {
                     const fromEmail = message.from?.emailAddress?.address?.toLowerCase();
+                    const subject = message.subject || '';
                     
                     if (!fromEmail) continue;
                     
-                    // Check if this email is in our sent emails list
-                    const isReplyToSentEmail = sentEmails.some(sentEmail => 
+                    // Check if this email is from someone we sent emails to
+                    const isFromSentEmail = sentEmails.some(sentEmail => 
                         sentEmail && sentEmail.toLowerCase() === fromEmail
                     );
                     
-                    if (isReplyToSentEmail) {
-                        console.log(`💬 Reply detected from: ${fromEmail}`);
+                    // Additional checks to confirm it's likely a reply:
+                    // 1. It's from someone we emailed
+                    // 2. Subject might contain "Re:" or similar reply indicators
+                    const subjectIndicatesReply = subject.toLowerCase().includes('re:') || 
+                                                 subject.toLowerCase().includes('reply') ||
+                                                 subject.toLowerCase().includes('response');
+                    
+                    if (isFromSentEmail) {
+                        console.log(`💬 Potential reply detected from: ${fromEmail}`);
+                        console.log(`📧 Subject: "${subject}"`);
+                        console.log(`🔍 Subject indicates reply: ${subjectIndicatesReply}`);
+                        
+                        // For now, consider any email from someone we contacted as a potential reply
+                        // This is a conservative approach to catch replies
                         
                         // Update Excel with reply status using Graph API direct updates
                         await this.updateReplyStatus(graphClient, fromEmail, message.receivedDateTime);
@@ -621,16 +634,14 @@ class EmailScheduler {
      */
     async updateReplyStatus(graphClient, email, receivedDateTime) {
         try {
-            const { updateExcelViaGraphAPI } = require('../routes/email-tracking');
-            
             const updates = {
                 Status: 'Replied',
                 Reply_Date: new Date(receivedDateTime).toISOString().split('T')[0],
                 'Last Updated': new Date().toISOString()
             };
             
-            // Use the existing Graph API update function
-            const success = await updateExcelViaGraphAPI(graphClient, email, updates);
+            // Use direct Graph API update method
+            const success = await this.updateExcelViaGraphAPI(graphClient, email, updates);
             
             if (success) {
                 console.log(`✅ Reply status updated for: ${email}`);
@@ -641,6 +652,163 @@ class EmailScheduler {
         } catch (error) {
             console.error(`❌ Reply status update error for ${email}:`, error);
         }
+    }
+
+    /**
+     * Direct Graph API Excel update - find email and update cells
+     */
+    async updateExcelViaGraphAPI(graphClient, email, updates) {
+        try {
+            const masterFileName = 'LGA-Master-Email-List.xlsx';
+            const masterFolderPath = '/LGA-Email-Automation';
+            
+            console.log(`🔍 Graph API: Searching for ${email} in Excel file...`);
+            
+            // Get the Excel file ID
+            const files = await graphClient
+                .api(`/me/drive/root:${masterFolderPath}:/children`)
+                .filter(`name eq '${masterFileName}'`)
+                .get();
+
+            if (files.value.length === 0) {
+                console.log(`❌ Master file not found: ${masterFileName}`);
+                return false;
+            }
+
+            const fileId = files.value[0].id;
+            
+            // Get worksheet info
+            const worksheets = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+                .get();
+                
+            if (worksheets.value.length === 0) {
+                console.log(`❌ No worksheets found in Excel file`);
+                return false;
+            }
+            
+            const worksheetName = worksheets.value[0].name;
+            console.log(`📊 Using worksheet: ${worksheetName}`);
+            
+            // Get all data from the worksheet to find the email
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/usedRange`)
+                .get();
+            
+            if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+                console.log(`❌ No data found in worksheet`);
+                return false;
+            }
+            
+            const headers = usedRange.values[0];
+            const rows = usedRange.values.slice(1); // Skip header row
+            
+            console.log(`🔍 Found ${rows.length} data rows, searching for email: ${email}`);
+            
+            // Find email column index
+            const emailColumnIndex = headers.findIndex(header => 
+                header && typeof header === 'string' && 
+                header.toLowerCase().includes('email') && 
+                !header.toLowerCase().includes('date') &&
+                !header.toLowerCase().includes('count')
+            );
+            
+            if (emailColumnIndex === -1) {
+                console.log(`❌ Email column not found in headers`);
+                return false;
+            }
+            
+            console.log(`📧 Email column found at index: ${emailColumnIndex} (${headers[emailColumnIndex]})`);
+            
+            // Find the row with matching email
+            let targetRowIndex = -1;
+            for (let i = 0; i < rows.length; i++) {
+                const rowEmail = rows[i][emailColumnIndex];
+                if (rowEmail && typeof rowEmail === 'string' && rowEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
+                    targetRowIndex = i;
+                    console.log(`✅ Found matching email in row ${i + 2} (Excel row, including header)`);
+                    break;
+                }
+            }
+            
+            if (targetRowIndex === -1) {
+                console.log(`❌ Email ${email} not found in Excel file`);
+                return false;
+            }
+            
+            // Excel row number (1-based, including header)
+            const excelRowNumber = targetRowIndex + 2;
+            
+            // Find column indices for fields we want to update
+            const fieldColumnMap = {};
+            for (const field of Object.keys(updates)) {
+                const columnIndex = headers.findIndex(header => 
+                    header && typeof header === 'string' && 
+                    (header === field || header.replace(/[_\s]/g, '').toLowerCase() === field.replace(/[_\s]/g, '').toLowerCase())
+                );
+                
+                if (columnIndex !== -1) {
+                    // Convert column index to Excel column letter
+                    const columnLetter = this.getExcelColumnLetter(columnIndex);
+                    fieldColumnMap[field] = { index: columnIndex, letter: columnLetter };
+                    console.log(`📍 Field '${field}' found at column ${columnIndex} (${columnLetter}): ${headers[columnIndex]}`);
+                } else {
+                    console.log(`⚠️ Field '${field}' not found in headers`);
+                }
+            }
+            
+            // Update each field directly via Graph API
+            let updatedCount = 0;
+            for (const [field, value] of Object.entries(updates)) {
+                if (fieldColumnMap[field]) {
+                    const columnLetter = fieldColumnMap[field].letter;
+                    const cellAddress = `${columnLetter}${excelRowNumber}`;
+                    
+                    try {
+                        console.log(`🔄 Updating cell ${cellAddress} with '${value}'`);
+                        
+                        await graphClient
+                            .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/range(address='${cellAddress}')`)
+                            .patch({
+                                values: [[value]]
+                            });
+                        
+                        console.log(`✅ Updated ${field} in cell ${cellAddress}`);
+                        updatedCount++;
+                        
+                    } catch (cellUpdateError) {
+                        console.error(`❌ Failed to update cell ${cellAddress}:`, cellUpdateError.message);
+                    }
+                }
+            }
+            
+            if (updatedCount > 0) {
+                console.log(`🎉 Successfully updated ${updatedCount} fields for ${email} via Graph API!`);
+                return true;
+            } else {
+                console.log(`❌ No fields were successfully updated for ${email}`);
+                return false;
+            }
+            
+        } catch (error) {
+            console.error(`❌ Graph API Excel update failed:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Helper function to convert column index to Excel column letter
+     */
+    getExcelColumnLetter(columnIndex) {
+        let result = '';
+        let index = columnIndex;
+        
+        while (index >= 0) {
+            result = String.fromCharCode(65 + (index % 26)) + result;
+            index = Math.floor(index / 26) - 1;
+        }
+        
+        return result;
     }
 
     /**
