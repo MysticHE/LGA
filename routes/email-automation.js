@@ -1043,12 +1043,6 @@ async function createOneDriveFolder(client, folderPath) {
     }
 }
 
-// Helper function to upload file to OneDrive with retry logic and multiple methods
-// Legacy wrapper function for backward compatibility
-async function uploadToOneDrive(client, fileBuffer, filename, folderPath, maxRetries = 3) {
-    console.log(`📤 LEGACY WRAPPER: Redirecting to advancedExcelUpload`);
-    return await advancedExcelUpload(client, fileBuffer, filename, folderPath);
-}
 
 /**
  * Bridge function to call Microsoft Graph table append API from email automation

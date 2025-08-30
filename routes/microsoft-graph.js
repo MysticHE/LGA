@@ -159,7 +159,7 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
 
 // Legacy endpoint - redirects to new append functionality
 router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => {
-    console.log('⚠️ Using legacy create-excel endpoint, redirecting to append-to-table...');
+    console.log('📊 Creating Excel file with table structure...');
     req.body.useCustomFile = true; // Allow custom filename
     
     // Forward to append-to-table endpoint
@@ -173,7 +173,7 @@ router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => 
             });
         }
 
-        console.log(`📊 Legacy create-excel: Appending ${leads.length} leads to Excel table in OneDrive...`);
+        console.log(`📊 Appending ${leads.length} leads to Excel table in OneDrive...`);
 
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
@@ -187,7 +187,7 @@ router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => 
             targetFilePath = EXCEL_CONFIG.MASTER_FILE_PATH.substring(1); // Remove leading slash
         }
 
-        console.log(`📁 Legacy create-excel target file: ${targetFilePath}`);
+        console.log(`📁 Target file: ${targetFilePath}`);
 
         // Check if file exists
         const fileInfo = await getOneDriveFileInfo(graphClient, targetFilePath);
@@ -195,7 +195,7 @@ router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => 
         
         if (!fileInfo) {
             // File doesn't exist, create it with initial table
-            console.log(`🆕 Legacy create-excel: Creating new Excel file with table: ${targetFilePath}`);
+            console.log(`🆕 Creating new Excel file with table: ${targetFilePath}`);
             fileId = await createExcelFileWithTable(graphClient, targetFilePath, leads);
             
             res.json({
@@ -215,26 +215,26 @@ router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => 
         }
         
         fileId = fileInfo.id;
-        console.log(`✅ Legacy create-excel: Found existing file with ID: ${fileId}`);
+        console.log(`✅ Found existing file with ID: ${fileId}`);
 
         // Check if table exists in the worksheet
         const tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
         
         if (!tableInfo) {
             // Table doesn't exist - convert uploaded Excel to table format
-            console.log(`🔄 Legacy create-excel: Excel file found but no table structure - converting to table format`);
-            console.log(`🆕 Legacy create-excel: Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${EXCEL_CONFIG.WORKSHEET_NAME}'`);
+            console.log(`🔄 Excel file found but no table structure - converting to table format`);
+            console.log(`🆕 Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${EXCEL_CONFIG.WORKSHEET_NAME}'`);
             await createExcelTable(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME, leads);
         } else {
             // Table exists, but verify the exact name/ID before appending
-            console.log(`🔍 Legacy create-excel: Verifying existing table name before appending...`);
+            console.log(`🔍 Verifying existing table name before appending...`);
             const verifiedTableName = await verifyTableExistsWithPolling(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, 2);
             
             if (!verifiedTableName) {
-                throw new Error(`Legacy create-excel: Table '${EXCEL_CONFIG.TABLE_NAME}' verification failed`);
+                throw new Error(`Table '${EXCEL_CONFIG.TABLE_NAME}' verification failed`);
             }
             
-            console.log(`➕ Legacy create-excel: Appending data to verified table '${verifiedTableName}'`);
+            console.log(`➕ Appending data to verified table '${verifiedTableName}'`);
             await appendDataToExcelTableWithRetry(graphClient, fileId, verifiedTableName, leads);
         }
 
@@ -253,7 +253,7 @@ router.post('/onedrive/create-excel', requireDelegatedAuth, async (req, res) => 
         });
 
     } catch (error) {
-        console.error('Legacy create-excel error:', error);
+        console.error('Excel creation error:', error);
         res.status(500).json({
             error: 'OneDrive Excel Create Error',
             message: 'Failed to create/append data to Excel table in OneDrive',

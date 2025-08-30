@@ -3,6 +3,7 @@ const XLSX = require('xlsx');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
+const { advancedExcelUpload } = require('./excel-upload-fix');
 const router = express.Router();
 
 // Initialize processors
@@ -760,7 +761,7 @@ async function updateCampaignStatus(graphClient, masterWorkbook, campaignId, new
             masterWorkbook.Sheets['Campaign_History'] = newSheet;
             
             const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-            await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+            await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
         }
         
         return found;
@@ -988,25 +989,6 @@ async function downloadMasterFileRaw(graphClient, useCache = true) {
     }
 }
 
-// Helper function to upload file to OneDrive
-async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
-    try {
-        const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
-        const result = await client.api(uploadUrl).put(fileBuffer);
-        
-        console.log(`📤 Uploaded file: ${filename} to ${folderPath}`);
-        
-        return {
-            id: result.id,
-            name: result.name,
-            webUrl: result.webUrl,
-            size: result.size
-        };
-    } catch (error) {
-        console.error('❌ OneDrive upload error:', error);
-        throw error;
-    }
-}
 
 // Helper function to update individual lead via Graph API
 async function updateLeadStatusViaGraph(graphClient, fileId, leadEmail, updates) {

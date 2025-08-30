@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const axios = require('axios');
 const { getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
+const { advancedExcelUpload } = require('../routes/excel-upload-fix');
 
 /**
  * Background Email Scheduler
@@ -298,7 +299,7 @@ class EmailScheduler {
 
             // Save updated master file
             const masterBuffer = this.excelProcessor.workbookToBuffer(masterWorkbook);
-            await this.uploadToOneDrive(
+            await advancedExcelUpload(
                 graphClient, 
                 masterBuffer, 
                 'LGA-Master-Email-List.xlsx', 
@@ -341,25 +342,6 @@ class EmailScheduler {
         }
     }
 
-    /**
-     * Upload file to OneDrive
-     */
-    async uploadToOneDrive(client, fileBuffer, filename, folderPath) {
-        try {
-            const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
-            const result = await client.api(uploadUrl).put(fileBuffer);
-            
-            return {
-                id: result.id,
-                name: result.name,
-                webUrl: result.webUrl,
-                size: result.size
-            };
-        } catch (error) {
-            console.error('❌ OneDrive upload error:', error);
-            throw error;
-        }
-    }
 
     /**
      * Manual trigger for scheduled email processing

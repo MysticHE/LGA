@@ -3,6 +3,7 @@ const XLSX = require('xlsx');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
+const { advancedExcelUpload } = require('./excel-upload-fix');
 const router = express.Router();
 
 // Initialize processors
@@ -131,7 +132,7 @@ router.post('/', requireDelegatedAuth, async (req, res) => {
 
         // Save updated master file
         const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Template created: ${templateId}`);
 
@@ -205,7 +206,7 @@ router.put('/:templateId', requireDelegatedAuth, async (req, res) => {
 
         // Save updated master file
         const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Template updated: ${templateId}`);
 
@@ -268,7 +269,7 @@ router.delete('/:templateId', requireDelegatedAuth, async (req, res) => {
 
         // Save updated master file
         const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Template deleted: ${templateId}`);
 
@@ -390,7 +391,7 @@ router.patch('/:templateId/toggle', requireDelegatedAuth, async (req, res) => {
 
         // Save updated master file
         const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await uploadToOneDrive(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Template status toggled: ${templateId} -> ${newStatus}`);
 
@@ -579,40 +580,5 @@ async function downloadMasterFile(graphClient) {
     }
 }
 
-// Helper function to upload file to OneDrive
-async function uploadToOneDrive(client, fileBuffer, filename, folderPath) {
-    try {
-        // Create folder if it doesn't exist
-        try {
-            await client.api(`/me/drive/root:${folderPath}`).get();
-        } catch (error) {
-            if (error.code === 'itemNotFound') {
-                const folderName = folderPath.split('/').pop();
-                const parentPath = folderPath.substring(0, folderPath.lastIndexOf('/')) || '/';
-                
-                await client.api(`/me/drive/root:${parentPath}:/children`).post({
-                    name: folderName,
-                    folder: {},
-                    '@microsoft.graph.conflictBehavior': 'rename'
-                });
-            }
-        }
-
-        const uploadUrl = `/me/drive/root:${folderPath}/${filename}:/content`;
-        const result = await client.api(uploadUrl).put(fileBuffer);
-        
-        console.log(`📤 Uploaded file: ${filename} to ${folderPath}`);
-        
-        return {
-            id: result.id,
-            name: result.name,
-            webUrl: result.webUrl,
-            size: result.size
-        };
-    } catch (error) {
-        console.error('❌ OneDrive upload error:', error);
-        throw error;
-    }
-}
 
 module.exports = router;
