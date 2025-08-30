@@ -51,18 +51,21 @@ class EmailContentProcessor {
         // Parse AI content to extract subject and body
         const parsed = this.parseEmailContent(aiContent);
         
-        // Fallback Subject if missing
-        const finalSubject = parsed.subject || `Connecting with ${lead['Company Name'] || 'your company'}`;
-        const cleanBody = parsed.body || '';
+        // Final subject with proper fallback
+        let finalSubject = parsed.subject;
+        if (!finalSubject) {
+            finalSubject = `Connecting with ${lead['Company Name'] || 'your company'}`;
+        }
 
         console.log(`📧 Final email structure for ${lead.Email}:`, {
             subject: finalSubject,
-            bodyStart: cleanBody.substring(0, 100) + '...'
+            bodyStart: parsed.body.substring(0, 100) + '...',
+            usedFallback: !parsed.subject
         });
         
         return {
             subject: finalSubject,
-            body: cleanBody,
+            body: parsed.body,
             contentType: 'AI_Generated',
             variables: this.extractVariables(aiContent)
         };
@@ -135,22 +138,32 @@ class EmailContentProcessor {
      * Parse email content to extract subject and body
      */
     parseEmailContent(aiContent) {
-        if (!aiContent) return { subject: '', body: '' };
+        if (!aiContent || typeof aiContent !== 'string') return { subject: '', body: '' };
+
+        // Remove BOM & trim
+        aiContent = aiContent.replace(/^\uFEFF/, '').trim();
 
         console.log(`📧 Raw AI content to parse:`, aiContent.substring(0, 200) + '...');
 
-        // Extract Subject Line - simplified and more reliable
-        const subjectMatch = aiContent.match(/(?:Subject Line:|1\.\s*Subject Line:)\s*(.+?)(?:\n|$)/i);
+        // Improved regex: captures "Subject Line:" even with extra spaces or after numbers
+        const subjectMatch = aiContent.match(/(?:Subject\s*Line:|^\s*\d+\.\s*Subject\s*Line:)\s*(.+)/im);
+
         const subject = subjectMatch ? subjectMatch[1].trim() : '';
 
-        // Extract Body (everything after 'Email Body:')
-        const bodyMatch = aiContent.match(/Email Body:\s*([\s\S]*)/i);
-        const body = bodyMatch ? bodyMatch[1].trim() : '';
+        // Remove subject line from body if found
+        let body = aiContent;
+        if (subjectMatch) {
+            body = aiContent.replace(subjectMatch[0], '').trim();
+        }
+
+        // Additional cleanup: remove "Email Body:" or numbered body labels
+        body = body.replace(/^(?:\d+\.\s*)?Email\s*Body:\s*/im, '').trim();
 
         console.log(`📧 Parsed email content:`, {
             subject: subject,
             bodyLength: body.length,
-            bodyStart: body.substring(0, 100) + '...'
+            bodyStart: body.substring(0, 100) + '...',
+            subjectMatchFound: !!subjectMatch
         });
 
         return {
