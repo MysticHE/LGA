@@ -51,29 +51,13 @@ class EmailContentProcessor {
         // Parse AI content to extract subject and body
         const parsed = this.parseEmailContent(aiContent);
         
-        // CRITICAL FIX: Ensure we always have a valid subject
-        let finalSubject = parsed.subject;
-        if (!finalSubject || finalSubject.trim() === '') {
-            // If parsing failed, try to extract from the very first line
-            const firstLine = aiContent.split('\n')[0];
-            if (firstLine && !firstLine.toLowerCase().includes('subject')) {
-                finalSubject = firstLine.trim();
-            } else {
-                finalSubject = `Connecting with ${lead['Company Name'] || 'your company'}`;
-            }
-        }
-
-        // CRITICAL FIX: Clean body to remove any subject duplication
-        let cleanBody = parsed.body || aiContent;
-        if (finalSubject && cleanBody.includes(finalSubject)) {
-            // Remove subject from beginning of body (more aggressive cleaning)
-            cleanBody = cleanBody.replace(new RegExp(`^.*${finalSubject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*\n?`, 'mi'), '').trim();
-        }
+        // Fallback Subject if missing
+        const finalSubject = parsed.subject || `Connecting with ${lead['Company Name'] || 'your company'}`;
+        const cleanBody = parsed.body || '';
 
         console.log(`📧 Final email structure for ${lead.Email}:`, {
             subject: finalSubject,
-            bodyStart: cleanBody.substring(0, 100) + '...',
-            subjectInBody: cleanBody.includes(finalSubject)
+            bodyStart: cleanBody.substring(0, 100) + '...'
         });
         
         return {
@@ -150,42 +134,18 @@ class EmailContentProcessor {
     /**
      * Parse email content to extract subject and body
      */
-    parseEmailContent(content) {
-        if (!content) return { subject: '', body: '' };
+    parseEmailContent(aiContent) {
+        if (!aiContent) return { subject: '', body: '' };
 
-        console.log(`📧 Raw AI content to parse:`, content.substring(0, 200) + '...');
+        console.log(`📧 Raw AI content to parse:`, aiContent.substring(0, 200) + '...');
 
-        // Try multiple subject line patterns (AI generates different formats)
-        let subject = '';
-        let body = content;
-        
-        // Pattern 1: "Subject Line: ..." (most common from AI)
-        let subjectMatch = content.match(/(?:Subject Line:|1\.\s*Subject Line:)\s*(.+?)(?:\n|$)/i);
-        
-        // Pattern 2: "Subject: ..." (fallback)
-        if (!subjectMatch) {
-            subjectMatch = content.match(/(?:Subject:|Subj:)\s*(.+?)(?:\n|$)/i);
-        }
-        
-        if (subjectMatch) {
-            subject = subjectMatch[1].trim();
-            console.log(`📧 Extracted subject: "${subject}"`);
-            console.log(`📧 Subject match to remove: "${subjectMatch[0]}"`);
-            
-            // Remove the entire subject line from content
-            body = content.replace(subjectMatch[0], '').trim();
-            
-            // Additional cleanup: remove any remaining instance of the subject text itself
-            // This handles cases where AI duplicates the subject in the body
-            if (subject && body.includes(subject)) {
-                // Remove exact subject text from beginning of body (case insensitive)
-                body = body.replace(new RegExp(`^${subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i'), '').trim();
-                console.log(`📧 Removed duplicate subject from body start`);
-            }
-        }
+        // Extract Subject Line - simplified and more reliable
+        const subjectMatch = aiContent.match(/(?:Subject Line:|1\.\s*Subject Line:)\s*(.+?)(?:\n|$)/i);
+        const subject = subjectMatch ? subjectMatch[1].trim() : '';
 
-        // Clean up body formatting (remove labels and structure)
-        body = this.cleanEmailBody(body);
+        // Extract Body (everything after 'Email Body:')
+        const bodyMatch = aiContent.match(/Email Body:\s*([\s\S]*)/i);
+        const body = bodyMatch ? bodyMatch[1].trim() : '';
 
         console.log(`📧 Parsed email content:`, {
             subject: subject,
@@ -462,6 +422,31 @@ Best regards,
             variableCount: this.extractVariables(subject + ' ' + body).length,
             estimatedReadTime: Math.ceil(body.split(/\s+/).length / 200) // Average 200 words per minute
         };
+    }
+
+    /**
+     * Convert email content to HTML format
+     */
+    convertToHTML(emailContent, leadEmail = null) {
+        if (!emailContent || !emailContent.body) {
+            return '<div>No content available</div>';
+        }
+
+        // Convert plain text to HTML email body
+        const htmlBody = emailContent.body.replace(/\n/g, '<br>');
+        
+        return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>${emailContent.subject || 'Email'}</title>
+</head>
+<body>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        ${htmlBody}
+    </div>
+</body>
+</html>`;
     }
 }
 
