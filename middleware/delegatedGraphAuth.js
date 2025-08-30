@@ -1,6 +1,7 @@
 const { Client } = require('@microsoft/microsoft-graph-client');
 const { AuthenticationProvider } = require('@microsoft/microsoft-graph-client');
 const msal = require('@azure/msal-node');
+const persistentStorage = require('../utils/persistentStorage');
 
 /**
  * Microsoft Graph Delegated Authentication Provider
@@ -36,10 +37,13 @@ class DelegatedGraphAuth {
         };
         
         this.msalInstance = new msal.ConfidentialClientApplication(this.msalConfig);
-        this.userTokens = new Map(); // In production, use Redis or database
+        this.userTokens = new Map(); // In-memory cache
+        
+        // Load existing sessions on startup
+        this.loadPersistedSessions();
         
         this.validateConfig();
-        console.log('✅ Delegated Microsoft Graph authentication initialized');
+        console.log('✅ Delegated Microsoft Graph authentication initialized with persistent storage');
     }
 
     validateConfig() {
@@ -98,10 +102,26 @@ class DelegatedGraphAuth {
                 refreshToken: response.refreshToken,
                 expiresOn: response.expiresOn,
                 account: response.account,
-                scopes: response.scopes
+                scopes: response.scopes,
+                createdAt: new Date().toISOString()
             });
 
             console.log(`✅ User authenticated: ${response.account.username}`);
+            
+            // Save to persistent storage immediately (async, don't wait)
+            setImmediate(async () => {
+                try {
+                    await persistentStorage.saveSessions(this.userTokens);
+                    await persistentStorage.saveUserContext(
+                        sessionId, 
+                        response.account.username,
+                        '/LGA-Email-Automation'
+                    );
+                    console.log(`💾 Session persisted: ${sessionId}`);
+                } catch (persistError) {
+                    console.error('❌ Failed to persist session:', persistError);
+                }
+            });
             return {
                 success: true,
                 user: response.account.username,
@@ -200,8 +220,33 @@ class DelegatedGraphAuth {
         return Array.from(this.userTokens.keys());
     }
 
-    // Clean up expired sessions
-    cleanupExpiredSessions() {
+    // Load persisted sessions on startup
+    async loadPersistedSessions() {
+        try {
+            const sessions = await persistentStorage.loadSessions();
+            
+            for (const [sessionId, sessionData] of Object.entries(sessions)) {
+                // Only load sessions that haven't expired
+                const expiresOn = new Date(sessionData.expiresOn);
+                if (expiresOn > new Date()) {
+                    // Create minimal session entry (tokens will be refreshed when needed)
+                    this.userTokens.set(sessionId, {
+                        account: sessionData.account,
+                        expiresOn: sessionData.expiresOn,
+                        needsRefresh: true, // Flag to refresh tokens when accessed
+                        createdAt: sessionData.createdAt
+                    });
+                }
+            }
+            
+            console.log(`🔄 Restored ${this.userTokens.size} sessions from persistent storage`);
+        } catch (error) {
+            console.error('❌ Failed to load persisted sessions:', error);
+        }
+    }
+
+    // Clean up expired sessions and save to persistent storage
+    async cleanupExpiredSessions() {
         const now = new Date();
         let cleanedCount = 0;
         
@@ -214,6 +259,9 @@ class DelegatedGraphAuth {
                 console.log(`🧹 Cleaned up expired session: ${sessionId}`);
             }
         }
+        
+        // Save updated sessions to persistent storage
+        await persistentStorage.saveSessions(this.userTokens);
         
         return cleanedCount;
     }

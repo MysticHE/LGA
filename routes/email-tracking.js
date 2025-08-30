@@ -4,6 +4,7 @@ const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const { advancedExcelUpload } = require('./excel-upload-fix');
+const persistentStorage = require('../utils/persistentStorage');
 const router = express.Router();
 
 // Initialize processors
@@ -584,6 +585,65 @@ router.post('/webhook/auto-setup', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+// Comprehensive tracking system status
+router.get('/system-status', async (req, res) => {
+    try {
+        const activeSessions = authProvider.getActiveSessions();
+        const emailMappings = await persistentStorage.getAllEmailMappings();
+        const webhookSubs = await persistentStorage.getActiveWebhookSubscriptions();
+        
+        const status = {
+            activeSessions: {
+                count: activeSessions.length,
+                sessions: activeSessions.map(sessionId => {
+                    const userInfo = authProvider.getUserInfo(sessionId);
+                    return {
+                        sessionId: sessionId,
+                        user: userInfo?.username || 'Unknown',
+                        name: userInfo?.name || 'Unknown'
+                    };
+                })
+            },
+            emailMappings: {
+                count: Object.keys(emailMappings).length,
+                recent: Object.entries(emailMappings)
+                    .sort((a, b) => new Date(b[1].createdAt) - new Date(a[1].createdAt))
+                    .slice(0, 10)
+                    .map(([email, mapping]) => ({
+                        email: email,
+                        sessionId: mapping.sessionId,
+                        createdAt: mapping.createdAt,
+                        active: activeSessions.includes(mapping.sessionId)
+                    }))
+            },
+            webhookSubscriptions: {
+                count: Object.keys(webhookSubs).length,
+                subscriptions: Object.values(webhookSubs)
+            },
+            tracking: {
+                pixelEndpoint: '/api/email/track-read',
+                webhookEndpoint: '/api/email/webhook/notifications',
+                persistentStorage: true,
+                sessionRecovery: true
+            }
+        };
+        
+        res.json({
+            success: true,
+            status: status,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ System status error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to get system status',
+            error: error.message
+        });
+    }
+});
+
 // Register email-session mapping when email is sent (called by email-automation route)
 router.post('/register-email-session', (req, res) => {
     try {
@@ -596,17 +656,10 @@ router.post('/register-email-session', (req, res) => {
             });
         }
         
-        // Store mapping for tracking pixel to find correct session
-        const emailKey = email.toLowerCase().trim();
-        emailSessionMapping.set(emailKey, sessionId);
+        // Store mapping in persistent storage
+        await persistentStorage.saveEmailMapping(email, sessionId);
         
-        console.log(`📝 Registered email-session mapping: ${email} → ${sessionId}`);
-        
-        // Set expiration (clean up after 7 days)
-        setTimeout(() => {
-            emailSessionMapping.delete(emailKey);
-            console.log(`🧹 Cleaned up email mapping: ${email}`);
-        }, 7 * 24 * 60 * 60 * 1000);
+        console.log(`📝 Registered persistent email-session mapping: ${email} → ${sessionId}`);
         
         res.json({
             success: true,
@@ -685,17 +738,26 @@ async function updateEmailReadStatus(trackingId) {
         // Get all active sessions to update across all users
         const activeSessions = authProvider.getActiveSessions();
         
+        // If no active sessions, try to find the user by looking up who sent this email
         if (activeSessions.length === 0) {
-            console.log('⚠️ No active sessions found for email tracking update');
+            console.log('⚠️ No active sessions found, trying to find sender from email mapping...');
+            
+            const emailMapping = await persistentStorage.getEmailMapping(email);
+            if (emailMapping) {
+                console.log(`📧 Found email mapping for ${email} → session ${emailMapping.sessionId}, but session not active`);
+                console.log(`💡 User needs to re-authenticate to update tracking for previous emails`);
+            } else {
+                console.log(`❌ No email mapping found for ${email}`);
+            }
             return;
         }
         
-        // First try to use the stored session mapping for this email
-        const mappedSessionId = emailSessionMapping.get(email.toLowerCase().trim());
-        if (mappedSessionId && activeSessions.includes(mappedSessionId)) {
-            console.log(`🎯 USING MAPPED SESSION: ${mappedSessionId} for email ${email}`);
+        // First try to use the persistent session mapping for this email
+        const emailMapping = await persistentStorage.getEmailMapping(email);
+        if (emailMapping && activeSessions.includes(emailMapping.sessionId)) {
+            console.log(`🎯 USING MAPPED SESSION: ${emailMapping.sessionId} for email ${email}`);
             try {
-                const graphClient = await authProvider.getGraphClient(mappedSessionId);
+                const graphClient = await authProvider.getGraphClient(emailMapping.sessionId);
                 await updateLeadEmailStatusByEmail(graphClient, email, {
                     Status: 'Read',
                     Read_Date: new Date().toISOString().split('T')[0],
@@ -706,6 +768,10 @@ async function updateEmailReadStatus(trackingId) {
             } catch (mappedError) {
                 console.log(`⚠️ Mapped session failed, trying all sessions: ${mappedError.message}`);
             }
+        } else if (emailMapping) {
+            console.log(`⚠️ Mapped session ${emailMapping.sessionId} not active, trying fallback...`);
+        } else {
+            console.log(`⚠️ No email mapping found for ${email}, trying all active sessions...`);
         }
         
         // Fallback: Try ALL sessions until we find the email

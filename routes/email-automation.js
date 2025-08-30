@@ -829,6 +829,10 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             saveToSentItems: true
         });
 
+        // Get sender's email for tracking purposes
+        const userInfo = authProvider.getUserInfo(req.sessionId);
+        const senderEmail = userInfo?.username || 'unknown@sender.com';
+        
         // Update lead status in master file
         const updates = {
             Status: 'Sent',
@@ -839,7 +843,8 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             Next_Email_Date: excelProcessor.calculateNextEmailDate(new Date(), lead.Follow_Up_Days || 7),
             'Email Sent': 'Yes',
             'Email Status': 'Sent',
-            'Sent Date': new Date().toISOString()
+            'Sent Date': new Date().toISOString(),
+            'Sent By': senderEmail // Track who sent the email
         };
 
         const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
@@ -848,17 +853,11 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 
         console.log(`✅ Email sent successfully to: ${email}`);
 
-        // Register email-session mapping for tracking pixel
+        // Register email-session mapping for tracking pixel (persistent storage)
         try {
-            const axios = require('axios');
-            const baseUrl = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
-            
-            await axios.post(`${baseUrl}/api/email/register-email-session`, {
-                email: email,
-                sessionId: req.sessionId
-            }, { timeout: 5000 });
-            
-            console.log(`📝 Registered tracking mapping: ${email} → ${req.sessionId}`);
+            const persistentStorage = require('../utils/persistentStorage');
+            await persistentStorage.saveEmailMapping(email, req.sessionId);
+            console.log(`📝 Registered persistent tracking mapping: ${email} → ${req.sessionId}`);
         } catch (mappingError) {
             console.log(`⚠️ Failed to register email mapping: ${mappingError.message}`);
         }

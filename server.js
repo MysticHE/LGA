@@ -140,11 +140,20 @@ app.use('*', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🚀 Lead Generation Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 Access: http://localhost:${PORT}`);
     console.log(`✅ Server ready - v1.1.0`);
+    
+    // Initialize persistent storage and session recovery
+    try {
+        const persistentStorage = require('./utils/persistentStorage');
+        await persistentStorage.cleanup();
+        console.log('💾 Persistent storage initialized and cleaned');
+    } catch (storageError) {
+        console.error('❌ Failed to initialize persistent storage:', storageError);
+    }
     
     // Check for required environment variables
     const requiredEnvVars = ['APIFY_API_TOKEN', 'OPENAI_API_KEY'];
