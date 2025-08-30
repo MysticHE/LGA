@@ -4,7 +4,7 @@ const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const { advancedExcelUpload } = require('./excel-upload-fix');
-const persistentStorage = require('../utils/persistentStorage');
+// const persistentStorage = require('../utils/persistentStorage'); // Removed - using simplified Excel lookup
 const router = express.Router();
 
 // Initialize processors
@@ -217,19 +217,42 @@ router.post('/test-read-update', requireDelegatedAuth, async (req, res) => {
         
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
         
+        // Download master file and update using the same pattern as email automation
+        const masterWorkbook = await downloadMasterFile(graphClient);
+        if (!masterWorkbook) {
+            return res.status(404).json({
+                success: false,
+                message: 'Master file not found'
+            });
+        }
+
+        let updates;
         if (testType === 'read') {
-            await updateLeadEmailStatusByEmail(graphClient, email, {
+            updates = {
                 Status: 'Read',
                 Read_Date: new Date().toISOString().split('T')[0],
                 'Last Updated': new Date().toISOString()
-            });
+            };
         } else if (testType === 'reply') {
-            await updateLeadEmailStatusByEmail(graphClient, email, {
+            updates = {
                 Status: 'Replied',
                 Reply_Date: new Date().toISOString().split('T')[0],
                 'Last Updated': new Date().toISOString()
+            };
+        }
+
+        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
+        
+        if (!updatedWorkbook) {
+            return res.status(404).json({
+                success: false,
+                message: `Email ${email} not found in Excel file`
             });
         }
+
+        // Upload updated file back to OneDrive
+        const excelBuffer = XLSX.write(updatedWorkbook, { type: 'buffer', bookType: 'xlsx' });
+        await advancedExcelUpload(graphClient, excelBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
         
         res.json({
             success: true,
@@ -589,8 +612,9 @@ router.post('/webhook/auto-setup', requireDelegatedAuth, async (req, res) => {
 router.get('/system-status', async (req, res) => {
     try {
         const activeSessions = authProvider.getActiveSessions();
-        const emailMappings = await persistentStorage.getAllEmailMappings();
-        const webhookSubs = await persistentStorage.getActiveWebhookSubscriptions();
+        // Simplified tracking - no persistent storage needed
+        const emailMappings = {};
+        const webhookSubs = {};
         
         const status = {
             activeSessions: {
@@ -623,8 +647,9 @@ router.get('/system-status', async (req, res) => {
             tracking: {
                 pixelEndpoint: '/api/email/track-read',
                 webhookEndpoint: '/api/email/webhook/notifications',
-                persistentStorage: true,
-                sessionRecovery: true
+                persistentStorage: false,
+                sessionRecovery: false,
+                method: 'Direct Excel lookup'
             }
         };
         
@@ -644,7 +669,7 @@ router.get('/system-status', async (req, res) => {
     }
 });
 
-// Register email-session mapping when email is sent (called by email-automation route)
+// Register email-session mapping - SIMPLIFIED VERSION (no persistent storage needed)
 router.post('/register-email-session', async (req, res) => {
     try {
         const { email, sessionId } = req.body;
@@ -656,23 +681,22 @@ router.post('/register-email-session', async (req, res) => {
             });
         }
         
-        // Store mapping in persistent storage
-        await persistentStorage.saveEmailMapping(email, sessionId);
-        
-        console.log(`📝 Registered persistent email-session mapping: ${email} → ${sessionId}`);
+        // With simplified tracking, no persistent storage needed
+        console.log(`📝 Email sent: ${email} from session ${sessionId} (tracking via Excel lookup)`);
         
         res.json({
             success: true,
-            message: 'Email-session mapping registered',
+            message: 'Email registration completed (using simplified tracking)',
             email: email,
-            sessionId: sessionId
+            sessionId: sessionId,
+            trackingMethod: 'Direct Excel lookup'
         });
         
     } catch (error) {
-        console.error('❌ Email mapping registration error:', error);
+        console.error('❌ Email registration error:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to register email mapping',
+            message: 'Failed to register email',
             error: error.message
         });
     }
@@ -735,80 +759,51 @@ async function updateEmailReadStatus(trackingId) {
         
         console.log(`📧 Tracking pixel hit - updating read status for email: ${email}`);
         
-        // Get all active sessions to update across all users
+        // Get all active sessions to try finding the right Excel file
         const activeSessions = authProvider.getActiveSessions();
         
-        // If no active sessions, try to find the user by looking up who sent this email
         if (activeSessions.length === 0) {
-            console.log('⚠️ No active sessions found, trying to find sender from email mapping...');
-            
-            const emailMapping = await persistentStorage.getEmailMapping(email);
-            if (emailMapping) {
-                console.log(`📧 Found email mapping for ${email} → session ${emailMapping.sessionId}, but session not active`);
-                console.log(`💡 User needs to re-authenticate to update tracking for previous emails`);
-            } else {
-                console.log(`❌ No email mapping found for ${email}`);
-            }
+            console.log('⚠️ No active sessions found, cannot update tracking');
             return;
         }
         
-        // First try to use the persistent session mapping for this email
-        const emailMapping = await persistentStorage.getEmailMapping(email);
-        if (emailMapping && activeSessions.includes(emailMapping.sessionId)) {
-            console.log(`🎯 USING MAPPED SESSION: ${emailMapping.sessionId} for email ${email}`);
-            try {
-                const graphClient = await authProvider.getGraphClient(emailMapping.sessionId);
-                await updateLeadEmailStatusByEmail(graphClient, email, {
-                    Status: 'Read',
-                    Read_Date: new Date().toISOString().split('T')[0],
-                    'Last Updated': new Date().toISOString()
-                });
-                console.log(`✅ Successfully updated using mapped session`);
-                return; // Success, exit early
-            } catch (mappedError) {
-                console.log(`⚠️ Mapped session failed, trying all sessions: ${mappedError.message}`);
-            }
-        } else if (emailMapping) {
-            console.log(`⚠️ Mapped session ${emailMapping.sessionId} not active, trying fallback...`);
-        } else {
-            console.log(`⚠️ No email mapping found for ${email}, trying all active sessions...`);
-        }
+        console.log(`🔍 Searching for email ${email} across ${activeSessions.length} active sessions...`);
         
-        // Fallback: Try ALL sessions until we find the email
+        // Try each active session to find the one containing this email
         let updateSuccess = false;
-        
         for (const sessionId of activeSessions) {
             try {
-                console.log(`🔍 TRYING SESSION: ${sessionId} for email ${email}`);
+                console.log(`🔍 Trying session: ${sessionId} for email ${email}`);
                 const graphClient = await authProvider.getGraphClient(sessionId);
                 
-                // Quick check - does this session's file have the email?
-                const testWorkbook = await downloadMasterFile(graphClient);
-                if (!testWorkbook) {
+                // Download the master file and check if this email exists
+                const masterWorkbook = await downloadMasterFile(graphClient);
+                if (!masterWorkbook) {
                     console.log(`⚠️ No master file for session ${sessionId}`);
                     continue;
                 }
                 
-                const testSheet = testWorkbook.Sheets['Leads'] || testWorkbook.Sheets['Sheet1'] || testWorkbook.Sheets[Object.keys(testWorkbook.Sheets)[0]];
-                const testData = testSheet ? XLSX.utils.sheet_to_json(testSheet) : [];
+                // Use the same update pattern as email automation - let excelProcessor handle the lookup
+                const updates = {
+                    Status: 'Read',
+                    Read_Date: new Date().toISOString().split('T')[0],
+                    'Last Updated': new Date().toISOString()
+                };
                 
-                const hasEmail = testData.some(lead => {
-                    const leadEmails = [lead.Email, lead.email, lead['Email Address']].filter(Boolean);
-                    return leadEmails.some(e => String(e).toLowerCase().trim() === email.toLowerCase().trim());
-                });
+                const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
                 
-                if (hasEmail) {
-                    console.log(`✅ FOUND EMAIL in session ${sessionId}, updating...`);
-                    await updateLeadEmailStatusByEmail(graphClient, email, {
-                        Status: 'Read',
-                        Read_Date: new Date().toISOString().split('T')[0],
-                        'Last Updated': new Date().toISOString()
-                    });
+                if (updatedWorkbook) {
+                    // Upload updated file back to OneDrive
+                    const excelBuffer = XLSX.write(updatedWorkbook, { type: 'buffer', bookType: 'xlsx' });
+                    await advancedExcelUpload(graphClient, excelBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+                    
+                    console.log(`✅ Successfully updated read status for ${email} in session ${sessionId}`);
                     updateSuccess = true;
                     break;
                 } else {
-                    console.log(`❌ Email not found in session ${sessionId} (${testData.length} leads)`);
+                    console.log(`❌ Email ${email} not found in session ${sessionId}`);
                 }
+                
             } catch (sessionError) {
                 console.error(`❌ Session ${sessionId} failed:`, sessionError.message);
                 continue;
@@ -824,53 +819,6 @@ async function updateEmailReadStatus(trackingId) {
     }
 }
 
-// Helper function to update email read status by email address
-async function updateLeadEmailStatusByEmail(graphClient, email, updates) {
-    try {
-        console.log(`📧 TRACKING UPDATE: Starting update for ${email}`);
-        
-        // Use fresh download to avoid cache issues with tracking updates
-        const masterWorkbook = await downloadMasterFile(graphClient);
-        if (!masterWorkbook) {
-            console.log('⚠️ No master file found for tracking update');
-            return;
-        }
-
-        console.log(`📊 TRACKING UPDATE: Master file downloaded, updating lead...`);
-
-        // Update lead in master file
-        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
-
-        console.log(`💾 TRACKING UPDATE: Lead updated, saving to OneDrive...`);
-
-        // Save updated file
-        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
-
-        console.log(`✅ Updated email tracking for ${email}: ${updates.Status}`);
-        
-    } catch (error) {
-        console.error('❌ Email tracking update error:', error);
-        
-        // If lead not found, let's get more details
-        if (error.message.includes('not found')) {
-            console.error('🔍 DEBUGGING: Lead not found error occurred');
-            try {
-                const debugWorkbook = await downloadMasterFile(graphClient);
-                if (debugWorkbook) {
-                    const debugSheet = debugWorkbook.Sheets['Leads'];
-                    const debugData = XLSX.utils.sheet_to_json(debugSheet);
-                    console.error(`📊 DEBUG INFO: Total leads in file: ${debugData.length}`);
-                    console.error(`📧 DEBUG INFO: All emails in file:`, debugData.map(l => l.Email || l.email || 'NO_EMAIL').slice(0, 20));
-                }
-            } catch (debugError) {
-                console.error('❌ Debug inspection failed:', debugError.message);
-            }
-        }
-        
-        throw error;
-    }
-}
 
 // Helper function to update master file with email status
 async function updateMasterFileEmailStatus(emailId, subject, isRead, hasReply) {
