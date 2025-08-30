@@ -853,14 +853,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 
         console.log(`✅ Email sent successfully to: ${email}`);
 
-        // Register email-session mapping for tracking pixel (persistent storage)
-        try {
-            const persistentStorage = require('../utils/persistentStorage');
-            await persistentStorage.saveEmailMapping(email, req.sessionId);
-            console.log(`📝 Registered persistent tracking mapping: ${email} → ${req.sessionId}`);
-        } catch (mappingError) {
-            console.log(`⚠️ Failed to register email mapping: ${mappingError.message}`);
-        }
+        // Email tracking is now handled via direct Graph API Excel lookup (no persistent storage needed)
 
         res.json({
             success: true,

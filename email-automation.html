@@ -38,9 +38,6 @@
                     <button class="btn btn-outline" onclick="showInsights()" title="View Analytics">
                         📈 Insights
                     </button>
-                    <button class="btn btn-outline" onclick="setupEmailTracking()" title="Setup Email Read/Reply Tracking">
-                        🔔 Setup Tracking
-                    </button>
                 </div>
             </div>
             <div class="stats-grid">
@@ -1367,32 +1364,6 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             alert('📈 Analytics insights coming soon!\n\n- Email performance metrics\n- Response rate analytics\n- Best performing templates\n- Lead engagement trends');
         }
 
-        // Setup email tracking webhook
-        async function setupEmailTracking() {
-            if (!confirm('🔔 Setup Email Tracking\n\nThis will create a webhook subscription to automatically track when emails are read or replied to.\n\nProceed?')) {
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/email/webhook/subscribe', {
-                    method: 'POST',
-                    headers: {
-                        'X-Session-Id': sessionId
-                    }
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`✅ Email tracking setup successfully!\n\nSubscription ID: ${result.subscriptionId}\nExpires: ${new Date(result.expirationDateTime).toLocaleDateString()}\n\nEmails will now be automatically tracked for read/reply status.`);
-                } else {
-                    alert('❌ Failed to setup email tracking: ' + result.message);
-                }
-            } catch (error) {
-                console.error('❌ Tracking setup error:', error);
-                alert('❌ Failed to setup email tracking.');
-            }
-        }
 
         // Show lead details by type
         function showLeadDetails(type) {

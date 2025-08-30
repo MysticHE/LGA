@@ -11,7 +11,6 @@ class PersistentStorage {
         this.dataDir = path.join(process.cwd(), 'data');
         this.sessionsFile = path.join(this.dataDir, 'sessions.json');
         this.emailMappingsFile = path.join(this.dataDir, 'email-mappings.json');
-        this.webhookSubsFile = path.join(this.dataDir, 'webhook-subscriptions.json');
         
         this.ensureDataDirectory();
     }
@@ -162,56 +161,6 @@ class PersistentStorage {
         }
     }
 
-    // Webhook Subscription Management
-    async saveWebhookSubscription(sessionId, subscriptionId, expirationDateTime) {
-        try {
-            let subscriptions = {};
-            try {
-                const data = await fs.readFile(this.webhookSubsFile, 'utf8');
-                subscriptions = JSON.parse(data);
-            } catch (readError) {
-                // File doesn't exist, start empty
-            }
-            
-            const key = `${sessionId}-${subscriptionId}`;
-            subscriptions[key] = {
-                sessionId: sessionId,
-                subscriptionId: subscriptionId,
-                expirationDateTime: expirationDateTime,
-                createdAt: new Date().toISOString()
-            };
-            
-            await fs.writeFile(this.webhookSubsFile, JSON.stringify(subscriptions, null, 2));
-            console.log(`📝 Saved webhook subscription: ${subscriptionId}`);
-        } catch (error) {
-            console.error('❌ Failed to save webhook subscription:', error);
-        }
-    }
-
-    async getActiveWebhookSubscriptions() {
-        try {
-            const data = await fs.readFile(this.webhookSubsFile, 'utf8');
-            const subscriptions = JSON.parse(data);
-            
-            // Filter active subscriptions
-            const now = new Date();
-            const activeSubscriptions = {};
-            
-            for (const [key, sub] of Object.entries(subscriptions)) {
-                const expiresAt = new Date(sub.expirationDateTime);
-                if (expiresAt > now) {
-                    activeSubscriptions[key] = sub;
-                }
-            }
-            
-            return activeSubscriptions;
-        } catch (error) {
-            if (error.code !== 'ENOENT') {
-                console.error('❌ Failed to load webhook subscriptions:', error);
-            }
-            return {};
-        }
-    }
 
     // User Authentication Context Storage
     async saveUserContext(sessionId, userEmail, oneDrivePath) {
@@ -265,8 +214,6 @@ class PersistentStorage {
             // Clean expired email mappings
             await this.getAllEmailMappings();
             
-            // Clean expired webhook subscriptions  
-            await this.getActiveWebhookSubscriptions();
             
             console.log('🧹 Persistent storage cleanup completed');
         } catch (error) {
