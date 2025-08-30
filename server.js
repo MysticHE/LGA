@@ -42,7 +42,7 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
             scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers temporarily
             imgSrc: ["'self'", "data:", "https:"],
