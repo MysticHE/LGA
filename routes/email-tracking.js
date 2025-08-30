@@ -645,7 +645,7 @@ router.get('/system-status', async (req, res) => {
 });
 
 // Register email-session mapping when email is sent (called by email-automation route)
-router.post('/register-email-session', (req, res) => {
+router.post('/register-email-session', async (req, res) => {
     try {
         const { email, sessionId } = req.body;
         
