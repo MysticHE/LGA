@@ -848,6 +848,21 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
 
         console.log(`✅ Email sent successfully to: ${email}`);
 
+        // Register email-session mapping for tracking pixel
+        try {
+            const axios = require('axios');
+            const baseUrl = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
+            
+            await axios.post(`${baseUrl}/api/email/register-email-session`, {
+                email: email,
+                sessionId: req.sessionId
+            }, { timeout: 5000 });
+            
+            console.log(`📝 Registered tracking mapping: ${email} → ${req.sessionId}`);
+        } catch (mappingError) {
+            console.log(`⚠️ Failed to register email mapping: ${mappingError.message}`);
+        }
+
         res.json({
             success: true,
             message: `Email sent successfully to ${email}`,

@@ -13,6 +13,9 @@ const authProvider = getDelegatedAuthProvider();
 // In-memory webhook subscription storage (for production, use database)
 const webhookSubscriptions = new Map();
 
+// In-memory email-to-session mapping (for production, use database)
+const emailSessionMapping = new Map();
+
 /**
  * Email Tracking and Webhook Integration
  * Handles email read/reply status updates from Microsoft Graph webhooks
@@ -103,8 +106,8 @@ router.post('/webhook/subscribe', requireDelegatedAuth, async (req, res) => {
             notificationUrl: notificationUrl,
             resource: '/me/messages',
             expirationDateTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
-            clientState: process.env.WEBHOOK_CLIENT_STATE || 'lga-email-tracking',
-            includeResourceData: true
+            clientState: process.env.WEBHOOK_CLIENT_STATE || 'lga-email-tracking'
+            // Note: Removed includeResourceData to fix Graph API validation error
         };
         
         console.log(`📡 Creating webhook subscription: ${notificationUrl}`);
@@ -547,14 +550,14 @@ router.post('/webhook/auto-setup', requireDelegatedAuth, async (req, res) => {
             });
         }
         
-        // Create new subscription
+        // Create new subscription - fix Graph API requirements
         const subscription = {
             changeType: 'updated',
             notificationUrl: `${webhookUrl}/api/email/webhook/notifications`,
             resource: '/me/messages',
             expirationDateTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-            clientState: `lga-email-tracking-${req.sessionId}`,
-            includeResourceData: true
+            clientState: `lga-email-tracking-${req.sessionId}`
+            // Note: Removed includeResourceData to fix "select clause" error
         };
         
         const result = await graphClient.api('/subscriptions').post(subscription);
@@ -576,6 +579,47 @@ router.post('/webhook/auto-setup', requireDelegatedAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to auto-setup webhook subscriptions',
+            error: error.message
+        });
+    }
+});
+
+// Register email-session mapping when email is sent (called by email-automation route)
+router.post('/register-email-session', (req, res) => {
+    try {
+        const { email, sessionId } = req.body;
+        
+        if (!email || !sessionId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email and sessionId are required'
+            });
+        }
+        
+        // Store mapping for tracking pixel to find correct session
+        const emailKey = email.toLowerCase().trim();
+        emailSessionMapping.set(emailKey, sessionId);
+        
+        console.log(`📝 Registered email-session mapping: ${email} → ${sessionId}`);
+        
+        // Set expiration (clean up after 7 days)
+        setTimeout(() => {
+            emailSessionMapping.delete(emailKey);
+            console.log(`🧹 Cleaned up email mapping: ${email}`);
+        }, 7 * 24 * 60 * 60 * 1000);
+        
+        res.json({
+            success: true,
+            message: 'Email-session mapping registered',
+            email: email,
+            sessionId: sessionId
+        });
+        
+    } catch (error) {
+        console.error('❌ Email mapping registration error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to register email mapping',
             error: error.message
         });
     }
@@ -646,7 +690,25 @@ async function updateEmailReadStatus(trackingId) {
             return;
         }
         
-        // Try ALL sessions until we find the email (different users may have different files)
+        // First try to use the stored session mapping for this email
+        const mappedSessionId = emailSessionMapping.get(email.toLowerCase().trim());
+        if (mappedSessionId && activeSessions.includes(mappedSessionId)) {
+            console.log(`🎯 USING MAPPED SESSION: ${mappedSessionId} for email ${email}`);
+            try {
+                const graphClient = await authProvider.getGraphClient(mappedSessionId);
+                await updateLeadEmailStatusByEmail(graphClient, email, {
+                    Status: 'Read',
+                    Read_Date: new Date().toISOString().split('T')[0],
+                    'Last Updated': new Date().toISOString()
+                });
+                console.log(`✅ Successfully updated using mapped session`);
+                return; // Success, exit early
+            } catch (mappedError) {
+                console.log(`⚠️ Mapped session failed, trying all sessions: ${mappedError.message}`);
+            }
+        }
+        
+        // Fallback: Try ALL sessions until we find the email
         let updateSuccess = false;
         
         for (const sessionId of activeSessions) {
