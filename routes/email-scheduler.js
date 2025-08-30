@@ -1047,7 +1047,7 @@ async function updateLeadStatusViaGraph(graphClient, fileId, leadEmail, updates)
         for (const [field, value] of Object.entries(updates)) {
             const colIndex = headers.findIndex(h => h && h === field);
             if (colIndex !== -1) {
-                const cellAddress = `${String.fromCharCode(65 + colIndex)}${targetRowIndex + 1}`;
+                const cellAddress = `${getExcelColumnLetter(colIndex + 1)}${targetRowIndex + 1}`;
                 
                 await graphClient
                     .api(`/me/drive/items/${fileId}/workbook/worksheets('Leads')/range(address='${cellAddress}')`)
@@ -1072,6 +1072,17 @@ function calculateNextEmailDate(fromDate, followUpDays) {
     const nextDate = new Date(fromDate);
     nextDate.setDate(nextDate.getDate() + followUpDays);
     return nextDate.toISOString().split('T')[0];
+}
+
+// Helper function to get Excel column letter from number (A, B, C, ... Z, AA, AB, etc.)
+function getExcelColumnLetter(columnNumber) {
+    let result = '';
+    while (columnNumber > 0) {
+        const remainder = (columnNumber - 1) % 26;
+        result = String.fromCharCode(65 + remainder) + result;
+        columnNumber = Math.floor((columnNumber - 1) / 26);
+    }
+    return result;
 }
 
 module.exports = router;

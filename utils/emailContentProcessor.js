@@ -128,6 +128,8 @@ class EmailContentProcessor {
     parseEmailContent(content) {
         if (!content) return { subject: '', body: '' };
 
+        console.log(`📧 Raw AI content to parse:`, content.substring(0, 200) + '...');
+
         // Try multiple subject line patterns (AI generates different formats)
         let subject = '';
         let body = content;
@@ -142,8 +144,19 @@ class EmailContentProcessor {
         
         if (subjectMatch) {
             subject = subjectMatch[1].trim();
+            console.log(`📧 Extracted subject: "${subject}"`);
+            console.log(`📧 Subject match to remove: "${subjectMatch[0]}"`);
+            
             // Remove the entire subject line from content
             body = content.replace(subjectMatch[0], '').trim();
+            
+            // Additional cleanup: remove any remaining instance of the subject text itself
+            // This handles cases where AI duplicates the subject in the body
+            if (subject && body.includes(subject)) {
+                // Remove exact subject text from beginning of body (case insensitive)
+                body = body.replace(new RegExp(`^${subject.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i'), '').trim();
+                console.log(`📧 Removed duplicate subject from body start`);
+            }
         }
 
         // Clean up body formatting (remove labels and structure)
@@ -152,7 +165,7 @@ class EmailContentProcessor {
         console.log(`📧 Parsed email content:`, {
             subject: subject,
             bodyLength: body.length,
-            bodyStart: body.substring(0, 50) + '...'
+            bodyStart: body.substring(0, 100) + '...'
         });
 
         return {
@@ -172,7 +185,10 @@ class EmailContentProcessor {
             .replace(/^(Subject Line:|Email Body:|Body:|Message:)\s*/mi, '') // Remove content labels
             .replace(/\d+\.\s*(Subject Line:|Email Body:)/gi, '') // Remove numbered labels
             .replace(/^(Subject:|Subj:)\s*.+$/mi, '') // Remove any remaining subject lines
+            .replace(/^Email Body:\s*/mi, '') // Remove "Email Body:" prefix if it exists
+            .replace(/^Dear\s+[^,]+,\s*/mi, '$&') // Preserve greeting but clean extra spaces
             .replace(/^Hi\s+[^,]+,\s*/mi, '$&') // Preserve greeting but clean extra spaces
+            .replace(/^\s*\n+/g, '') // Remove leading empty lines
             .replace(/\n{3,}/g, '\n\n') // Limit consecutive line breaks
             .replace(/^\s+|\s+$/g, '') // Trim whitespace
             .replace(/\r\n/g, '\n') // Normalize line endings

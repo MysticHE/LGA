@@ -1233,15 +1233,11 @@ function normalizeLeadData(lead) {
         'AI_Generated_Email': lead['AI_Generated_Email'] || '',
         'Status': lead['Status'] || 'New',
         'Campaign_Stage': lead['Campaign_Stage'] || 'First_Contact',
-        'Email_Choice': lead['Email_Choice'] || 'AI_Generated',
         'Template_Used': lead['Template_Used'] || '',
-        'Email_Content_Sent': lead['Email_Content_Sent'] || '',
         'Last_Email_Date': lead['Last_Email_Date'] || '',
         'Next_Email_Date': lead['Next_Email_Date'] || '',
         'Follow_Up_Days': lead['Follow_Up_Days'] || 7,
         'Email_Count': lead['Email_Count'] || 0,
-        'Max_Emails': lead['Max_Emails'] || 3,
-        'Auto_Send_Enabled': lead['Auto_Send_Enabled'] || 'Yes',
         'Read_Date': lead['Read_Date'] || '',
         'Reply_Date': lead['Reply_Date'] || '',
         
@@ -1441,14 +1437,14 @@ function formatCellValueForExcel(header, value) {
     }
     
     // Number fields - ensure proper numeric type
-    const numberFields = ['Follow_Up_Days', 'Email_Count', 'Max_Emails'];
+    const numberFields = ['Follow_Up_Days', 'Email_Count'];
     if (numberFields.includes(header)) {
         const numValue = parseInt(value, 10);
         return isNaN(numValue) ? 0 : numValue;
     }
     
     // Boolean-like fields - standardize to Yes/No
-    const booleanFields = ['Auto_Send_Enabled', 'Email Verified'];
+    const booleanFields = ['Email Verified'];
     if (booleanFields.includes(header)) {
         if (!value || value === '') return 'No';
         const val = String(value).toLowerCase();
@@ -1488,15 +1484,11 @@ function getColumnWidths() {
         {width: 50}, // AI_Generated_Email
         {width: 15}, // Status
         {width: 20}, // Campaign_Stage
-        {width: 18}, // Email_Choice
         {width: 20}, // Template_Used
-        {width: 40}, // Email_Content_Sent
         {width: 18}, // Last_Email_Date
         {width: 18}, // Next_Email_Date
         {width: 15}, // Follow_Up_Days
         {width: 12}, // Email_Count
-        {width: 12}, // Max_Emails
-        {width: 18}, // Auto_Send_Enabled
         {width: 18}, // Read_Date
         {width: 18}, // Reply_Date
         
