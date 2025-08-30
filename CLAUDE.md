@@ -236,6 +236,44 @@ generateProfessionalSignature() {
 }
 ```
 
+### Excel Sheet Detection Intelligence (Fixed)
+**Issue:** System was hardcoded to pull data from 'Leads', 'leads', or 'Sheet1', always falling back to Sheet1 even when actual data was in differently named sheets. This caused email tracking and file processing to fail with user-uploaded Excel files.
+
+**Root Cause:** Rigid sheet name matching in `excelProcessor.updateLeadInMaster()` and related functions without intelligent content detection.
+
+**Solution Implemented:**
+- **Intelligent Sheet Detection:** New `findLeadsSheet()` helper method analyzes sheet content to find sheets containing email and name columns
+- **Content-Based Analysis:** Examines headers to identify lead data sheets regardless of naming
+- **Enhanced Functions:** Updated `updateLeadInMaster()`, `parseUploadedFile()`, email tracking endpoints
+- **Better Diagnostics:** Clear logging shows which sheet is selected and why
+
+**Key Changes:**
+```javascript
+// Smart sheet detection in findLeadsSheet()
+findLeadsSheet(workbook) {
+    // 1. Try expected names first
+    const expectedSheetNames = ['Leads', 'leads', 'LEADS'];
+    
+    // 2. Intelligent content analysis
+    const hasEmailColumn = headers.some(header => 
+        header && typeof header === 'string' && 
+        header.toLowerCase().includes('email')
+    );
+    const hasNameColumn = headers.some(header => 
+        header && typeof header === 'string' && 
+        header.toLowerCase().includes('name')
+    );
+    
+    return hasEmailColumn && hasNameColumn ? { sheet, name } : null;
+}
+```
+
+**Benefits:**
+- ✅ **Universal Excel Compatibility:** Works with any sheet naming convention
+- ✅ **Intelligent Detection:** Automatically finds data sheets based on content
+- ✅ **Email Tracking Fix:** Tracking pixels now update regardless of sheet name
+- ✅ **Better Error Handling:** Clear diagnostics when no suitable sheet found
+
 ## Important Notes
 
 - **No Test Framework:** This project has no automated tests. Manual testing required.
@@ -245,3 +283,4 @@ generateProfessionalSignature() {
 - **Rate Limiting:** Built-in protection - adjust MAX_REQUESTS_PER_MINUTE if needed
 - **Email Content Processing:** AI-generated content is automatically parsed to extract subjects and clean email bodies
 - **Excel Column Support:** Supports unlimited Excel columns (A-Z, AA-AB, etc.) with proper Graph API integration
+- **Excel Sheet Intelligence:** Automatically detects lead data sheets regardless of naming convention - no more Sheet1 fallback issues

@@ -108,9 +108,21 @@ class ExcelProcessor {
             
             const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
             
-            const sheetName = workbook.SheetNames[0]; // Use first sheet
-            const worksheet = workbook.Sheets[sheetName];
+            // Try to intelligently find the leads sheet, fallback to first sheet
+            const sheetInfo = this.findLeadsSheet(workbook);
+            let worksheet;
+            let sheetName;
             
+            if (sheetInfo) {
+                worksheet = sheetInfo.sheet;
+                sheetName = sheetInfo.name;
+                console.log(`📊 Using intelligently detected sheet: "${sheetName}"`);
+            } else {
+                // Fallback to first sheet if no intelligent match found
+                sheetName = workbook.SheetNames[0];
+                worksheet = workbook.Sheets[sheetName];
+                console.log(`📊 Using first sheet as fallback: "${sheetName}"`);
+            }
             
             const data = XLSX.utils.sheet_to_json(worksheet);
             
@@ -345,17 +357,15 @@ class ExcelProcessor {
      */
     updateLeadInMaster(workbook, email, updates) {
         try {
-            console.log(`📊 DEBUG: Available sheets in workbook:`, Object.keys(workbook.Sheets || {}));
+            // Use the intelligent sheet finder
+            const sheetInfo = this.findLeadsSheet(workbook);
             
-            // Try multiple possible sheet names
-            let leadsSheet = workbook.Sheets['Leads'] || 
-                           workbook.Sheets['leads'] || 
-                           workbook.Sheets['Sheet1'] ||
-                           workbook.Sheets[Object.keys(workbook.Sheets)[0]]; // First sheet as fallback
-            
-            if (!leadsSheet) {
-                throw new Error(`No valid sheet found in workbook. Available sheets: ${Object.keys(workbook.Sheets).join(', ')}`);
+            if (!sheetInfo) {
+                throw new Error(`No valid lead data sheet found in workbook. Available sheets: ${Object.keys(workbook.Sheets).join(', ')}`);
             }
+            
+            const leadsSheet = sheetInfo.sheet;
+            const sheetName = sheetInfo.name;
             
             const data = XLSX.utils.sheet_to_json(leadsSheet);
             
@@ -410,11 +420,7 @@ class ExcelProcessor {
                 throw new Error(`Lead with email ${email} not found. Total leads: ${data.length}, First emails: ${availableEmails.join(', ')}`);
             }
             
-            // Recreate sheet with updated data using the same sheet name that was found
-            const sheetName = Object.keys(workbook.Sheets).find(name => 
-                name === 'Leads' || name === 'leads' || name === 'Sheet1'
-            ) || Object.keys(workbook.Sheets)[0];
-            
+            // Recreate sheet with updated data using the detected sheet name
             console.log(`💾 DEBUG: Recreating sheet "${sheetName}" with updated data`);
             
             const newSheet = XLSX.utils.json_to_sheet(data);
@@ -567,6 +573,52 @@ class ExcelProcessor {
             console.error('❌ Template addition error:', error);
             throw error;
         }
+    }
+
+    /**
+     * Helper method to intelligently find the leads sheet in a workbook
+     */
+    findLeadsSheet(workbook) {
+        console.log(`📊 DEBUG: Available sheets in workbook:`, Object.keys(workbook.Sheets || {}));
+        
+        // First try the expected sheet names
+        const expectedSheetNames = ['Leads', 'leads', 'LEADS'];
+        for (const name of expectedSheetNames) {
+            if (workbook.Sheets[name]) {
+                console.log(`✅ Found expected sheet: "${name}"`);
+                return { sheet: workbook.Sheets[name], name: name };
+            }
+        }
+        
+        // If not found, intelligently search for sheet containing lead data
+        console.log(`⚠️ Expected sheet names not found. Searching for sheet with lead data...`);
+        
+        const sheetNames = Object.keys(workbook.Sheets);
+        for (const name of sheetNames) {
+            const sheet = workbook.Sheets[name];
+            const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Get raw headers
+            
+            if (data.length > 0) {
+                const headers = data[0] || [];
+                const hasEmailColumn = headers.some(header => 
+                    header && typeof header === 'string' && 
+                    header.toLowerCase().includes('email')
+                );
+                const hasNameColumn = headers.some(header => 
+                    header && typeof header === 'string' && 
+                    header.toLowerCase().includes('name')
+                );
+                
+                // This sheet likely contains lead data if it has email and name columns
+                if (hasEmailColumn && hasNameColumn) {
+                    console.log(`✅ Found lead data in sheet: "${name}" (has email and name columns)`);
+                    return { sheet: sheet, name: name };
+                }
+            }
+        }
+        
+        console.error(`❌ No valid lead data sheet found in workbook. Available sheets: ${Object.keys(workbook.Sheets).join(', ')}`);
+        return null;
     }
 
     // Helper methods

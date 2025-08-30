@@ -286,8 +286,20 @@ router.get('/diagnostic/:email?', requireDelegatedAuth, async (req, res) => {
             });
         }
         
-        const leadsSheet = masterWorkbook.Sheets['Leads'];
+        // Use intelligent sheet detection
+        const sheetInfo = excelProcessor.findLeadsSheet(masterWorkbook);
+        if (!sheetInfo) {
+            return res.json({
+                success: false,
+                message: 'No valid lead data sheet found',
+                availableSheets: Object.keys(masterWorkbook.Sheets)
+            });
+        }
+        
+        const leadsSheet = sheetInfo.sheet;
         const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
+        
+        console.log(`📊 DIAGNOSTIC: Using sheet "${sheetInfo.name}" with ${leadsData.length} leads`);
         
         // If specific email requested, return that lead's tracking data
         if (email) {
@@ -838,8 +850,17 @@ async function updateMasterFileEmailStatus(emailId, subject, isRead, hasReply) {
         const masterWorkbook = await downloadMasterFile(graphClient, false); // Fresh download
         if (!masterWorkbook) return;
         
-        const leadsSheet = masterWorkbook.Sheets['Leads'];
+        // Use intelligent sheet detection
+        const sheetInfo = excelProcessor.findLeadsSheet(masterWorkbook);
+        if (!sheetInfo) {
+            console.error(`❌ No valid lead data sheet found for email tracking update`);
+            return;
+        }
+        
+        const leadsSheet = sheetInfo.sheet;
         const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
+        
+        console.log(`📧 TRACKING: Using sheet "${sheetInfo.name}" with ${leadsData.length} leads for email ${email}`);
         
         // Improved matching logic - try multiple approaches
         let matchingLead = null;
