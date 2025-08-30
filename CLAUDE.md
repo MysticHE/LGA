@@ -168,6 +168,44 @@ GET /api/microsoft-graph/test
 - Health check endpoints for service monitoring
 - Webhook validation for email tracking reliability
 
+## Recent Fixes and Improvements
+
+### Email Subject/Body Parsing (Fixed)
+**Issue:** Email subjects were not being extracted correctly from AI-generated content, causing fallback subjects like "Connecting with {Company}" to be used instead of the actual AI-generated subject lines.
+
+**Root Cause:** Regex patterns in `utils/emailContentProcessor.js` were too rigid and couldn't handle variations in AI-generated content formatting.
+
+**Solution Implemented:**
+- **Robust Regex Patterns:** Updated to handle extra spaces, BOM characters, and numbered prefixes
+- **Flexible Subject Extraction:** Handles `Subject Line:`, `1. Subject Line:`, and spacing variations
+- **Enhanced Body Cleaning:** Removes numbered email body labels like `2. Email Body:`
+- **Proper Fallback Logic:** Only uses fallback when genuinely no subject found
+
+**Key Changes:**
+```javascript
+// Improved regex in parseEmailContent()
+const subjectMatch = aiContent.match(/(?:Subject\s*Line:|^\s*\d+\.\s*Subject\s*Line:)\s*(.+)/im);
+
+// Enhanced body cleaning
+body = body.replace(/^(?:\d+\.\s*)?Email\s*Body:\s*/im, '').trim();
+
+// BOM character handling
+aiContent = aiContent.replace(/^\uFEFF/, '').trim();
+```
+
+### Excel Column Address Calculation (Fixed)
+**Issue:** Graph API errors when updating Excel columns beyond Z (AA, AB, etc.) due to incorrect cell address calculation.
+
+**Root Cause:** Using `String.fromCharCode(65 + colIndex)` which only works for columns A-Z (0-25).
+
+**Solution:** Added `getExcelColumnLetter()` helper function to properly handle multi-letter column names (AA, AB, AC, etc.).
+
+### Excel Structure Optimization (Completed)
+**Changes Made:**
+- Removed 4 unnecessary columns: `Email_Choice`, `Email_Content_Sent`, `Auto_Send_Enabled`, `Max_Emails`
+- Reduced Excel from 28 to 24 columns for cleaner structure
+- Maintained all essential tracking and automation functionality
+
 ## Important Notes
 
 - **No Test Framework:** This project has no automated tests. Manual testing required.
@@ -175,3 +213,5 @@ GET /api/microsoft-graph/test
 - **Excel Integration:** Uses table append operations to prevent data loss
 - **Authentication Flow:** Uses delegated permissions (user auth) not application permissions
 - **Rate Limiting:** Built-in protection - adjust MAX_REQUESTS_PER_MINUTE if needed
+- **Email Content Processing:** AI-generated content is automatically parsed to extract subjects and clean email bodies
+- **Excel Column Support:** Supports unlimited Excel columns (A-Z, AA-AB, etc.) with proper Graph API integration
