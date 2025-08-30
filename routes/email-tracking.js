@@ -646,17 +646,49 @@ async function updateEmailReadStatus(trackingId) {
             return;
         }
         
-        // Use the first available session (most likely to be valid)
-        const sessionId = activeSessions[0];
-        try {
-            const graphClient = await authProvider.getGraphClient(sessionId);
-            await updateLeadEmailStatusByEmail(graphClient, email, {
-                Status: 'Read',
-                Read_Date: new Date().toISOString().split('T')[0],
-                'Last Updated': new Date().toISOString()
-            });
-        } catch (error) {
-            console.error(`❌ Failed to update read status for ${email}:`, error.message);
+        // Try ALL sessions until we find the email (different users may have different files)
+        let updateSuccess = false;
+        
+        for (const sessionId of activeSessions) {
+            try {
+                console.log(`🔍 TRYING SESSION: ${sessionId} for email ${email}`);
+                const graphClient = await authProvider.getGraphClient(sessionId);
+                
+                // Quick check - does this session's file have the email?
+                const testWorkbook = await downloadMasterFile(graphClient);
+                if (!testWorkbook) {
+                    console.log(`⚠️ No master file for session ${sessionId}`);
+                    continue;
+                }
+                
+                const testSheet = testWorkbook.Sheets['Leads'] || testWorkbook.Sheets['Sheet1'] || testWorkbook.Sheets[Object.keys(testWorkbook.Sheets)[0]];
+                const testData = testSheet ? XLSX.utils.sheet_to_json(testSheet) : [];
+                
+                const hasEmail = testData.some(lead => {
+                    const leadEmails = [lead.Email, lead.email, lead['Email Address']].filter(Boolean);
+                    return leadEmails.some(e => String(e).toLowerCase().trim() === email.toLowerCase().trim());
+                });
+                
+                if (hasEmail) {
+                    console.log(`✅ FOUND EMAIL in session ${sessionId}, updating...`);
+                    await updateLeadEmailStatusByEmail(graphClient, email, {
+                        Status: 'Read',
+                        Read_Date: new Date().toISOString().split('T')[0],
+                        'Last Updated': new Date().toISOString()
+                    });
+                    updateSuccess = true;
+                    break;
+                } else {
+                    console.log(`❌ Email not found in session ${sessionId} (${testData.length} leads)`);
+                }
+            } catch (sessionError) {
+                console.error(`❌ Session ${sessionId} failed:`, sessionError.message);
+                continue;
+            }
+        }
+        
+        if (!updateSuccess) {
+            console.error(`❌ Failed to update ${email} in any of ${activeSessions.length} sessions`);
         }
         
     } catch (error) {
