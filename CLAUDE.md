@@ -206,6 +206,36 @@ aiContent = aiContent.replace(/^\uFEFF/, '').trim();
 - Reduced Excel from 28 to 24 columns for cleaner structure
 - Maintained all essential tracking and automation functionality
 
+### Email Signature Placeholder Removal (Fixed)
+**Issue:** Professional signature replacement wasn't working - emails still showed placeholder text like `[Your Name]`, `[Your Title]`, `[Your Position]` instead of Joel Lee's Inspro Insurance Brokers signature.
+
+**Root Cause:** Duplicate `convertToHTML` functions in `utils/emailContentProcessor.js` - basic version (line 522) was overriding enhanced version (line 330).
+
+**Solution Implemented:**
+- **Function Deduplication:** Removed duplicate `convertToHTML` function to enable enhanced email processing
+- **Comprehensive Placeholder Removal:** Added patterns for `[Your Name]`, `[Your Title]`, `[Your Position]`, `[Your Contact Information]`
+- **Professional Signature Integration:** Automatic replacement with Joel Lee's complete Inspro contact details and logo
+- **HTML Email Structure:** Enhanced email template with CSS styling and tracking pixels
+
+**Key Changes:**
+```javascript
+// Enhanced placeholder removal in removePlaceholderSignatures()
+.replace(/\[Your Name\]\s*/gi, '')
+.replace(/\[Your Title\]\s*/gi, '')
+.replace(/\[Your Position\]\s*/gi, '')
+.replace(/\[Your Contact Information\]\s*/gi, '')
+
+// Professional signature with Inspro branding
+generateProfessionalSignature() {
+    return `<div class="signature">
+        <img src="https://ik.imagekit.io/ofkmpd3cb/inspro%20logo.jpg..." alt="Inspro Insurance Brokers" />
+        <strong>Joel Lee – Client Relations Manager</strong><br>
+        <strong>Inspro Insurance Brokers Pte Ltd (199307139Z)</strong>
+        ...
+    </div>`;
+}
+```
+
 ## Important Notes
 
 - **No Test Framework:** This project has no automated tests. Manual testing required.
