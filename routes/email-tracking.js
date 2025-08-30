@@ -1,9 +1,9 @@
 const express = require('express');
-const XLSX = require('xlsx');
+const XLSX = require('xlsx'); // Still needed for legacy diagnostic function - TODO: Remove when migrated to Graph API
 const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
-const { advancedExcelUpload } = require('./excel-upload-fix');
+// Removed: const { advancedExcelUpload } = require('./excel-upload-fix'); - Now using direct Graph API updates
 // const persistentStorage = require('../utils/persistentStorage'); // Removed - using simplified Excel lookup
 const router = express.Router();
 
@@ -115,15 +115,7 @@ router.post('/test-read-update', requireDelegatedAuth, async (req, res) => {
         
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
         
-        // Download master file and update using the same pattern as email automation
-        const masterWorkbook = await downloadMasterFile(graphClient);
-        if (!masterWorkbook) {
-            return res.status(404).json({
-                success: false,
-                message: 'Master file not found'
-            });
-        }
-
+        // Use the new Graph API method for testing
         let updates;
         if (testType === 'read') {
             updates = {
@@ -139,18 +131,15 @@ router.post('/test-read-update', requireDelegatedAuth, async (req, res) => {
             };
         }
 
-        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
+        // Use direct Graph API update method
+        const updateSuccess = await updateExcelViaGraphAPI(graphClient, email, updates);
         
-        if (!updatedWorkbook) {
+        if (!updateSuccess) {
             return res.status(404).json({
                 success: false,
-                message: `Email ${email} not found in Excel file`
+                message: `Email ${email} not found in Excel file or update failed`
             });
         }
-
-        // Upload updated file back to OneDrive
-        const excelBuffer = XLSX.write(updatedWorkbook, { type: 'buffer', bookType: 'xlsx' });
-        await advancedExcelUpload(graphClient, excelBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
         
         res.json({
             success: true,
@@ -175,6 +164,7 @@ router.get('/diagnostic/:email?', requireDelegatedAuth, async (req, res) => {
         const { email } = req.params;
         
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        // TODO: Migrate this diagnostic function to use Graph API directly like updateExcelViaGraphAPI
         const masterWorkbook = await downloadMasterFile(graphClient, false);
         
         if (!masterWorkbook) {
@@ -577,6 +567,33 @@ async function getCampaignTrackingStats(campaignId) {
         readRate: 0,
         replyRate: 0
     };
+}
+
+// DEPRECATED: Helper function for downloading master file
+// TODO: Migrate all functions to use direct Graph API updates instead
+async function downloadMasterFile(graphClient, useCache = true) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return null;
+        }
+
+        const fileContent = await graphClient
+            .api(`/me/drive/items/${files.value[0].id}/content`)
+            .get();
+
+        return excelProcessor.bufferToWorkbook(fileContent);
+    } catch (error) {
+        console.error('❌ Master file download error:', error);
+        return null;
+    }
 }
 
 // Export helper functions for use by other modules

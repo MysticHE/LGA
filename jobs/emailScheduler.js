@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const axios = require('axios');
 const { getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
-const { advancedExcelUpload } = require('../routes/excel-upload-fix');
+// Removed: const { advancedExcelUpload } = require('../routes/excel-upload-fix'); - Now using direct Graph API updates
 
 /**
  * Background Email Scheduler
@@ -342,7 +342,9 @@ class EmailScheduler {
     }
 
     /**
-     * Download master file from OneDrive
+     * DEPRECATED: Download master file from OneDrive
+     * This method is being phased out in favor of direct Graph API Excel operations
+     * TODO: Migrate remaining email automation functions to use getSentEmailsViaGraphAPI pattern
      */
     async downloadMasterFile(graphClient) {
         try {

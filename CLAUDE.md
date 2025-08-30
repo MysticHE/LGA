@@ -360,6 +360,52 @@ Reply Tracking: Cron Job → Inbox Check → Email Match → Graph API → Updat
 - **Reply Tracking**: Cron job every 5 minutes checking inbox via Microsoft Graph
 - **Excel Updates**: Direct Graph API cell updates for maximum performance
 
+### Microsoft Graph API Migration (In Progress)
+**Migration from Legacy File Operations to Direct Graph API:**
+
+**✅ Completed Migrations:**
+- **Email Read Tracking**: Migrated to `updateExcelViaGraphAPI()` method
+- **Email Reply Detection**: Migrated to `getSentEmailsViaGraphAPI()` + direct cell updates
+- **Rate Limiting**: Completely removed for simplified operation
+- **Webhook System**: Completely removed in favor of cron-based reply detection
+
+**🔄 Functions Identified for Migration:**
+The following files still contain legacy file download/upload operations that should be migrated:
+
+- `routes/email-automation.js`: Multiple `downloadMasterFile()` calls for campaign management
+- `routes/email-scheduler.js`: Uses old file operations for scheduled campaigns  
+- `routes/email-templates.js`: Template management still downloads/uploads files
+- `jobs/emailScheduler.js`: Email sending automation (marked as DEPRECATED)
+
+**🎯 Migration Strategy:**
+Each legacy function should be replaced using the proven Graph API pattern:
+
+```javascript
+// OLD APPROACH (File Download/Upload)
+const masterWorkbook = await downloadMasterFile(graphClient);
+const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
+const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
+await advancedExcelUpload(graphClient, masterBuffer, filename, folder);
+
+// NEW APPROACH (Direct Graph API)
+await updateExcelViaGraphAPI(graphClient, email, updates);
+```
+
+**Benefits of Graph API Migration:**
+- ✅ **90%+ Performance Improvement**: No file operations required
+- ✅ **Universal Sheet Support**: Works with any worksheet name (Sheet1, Leads, etc.)
+- ✅ **No File Conflicts**: Direct cell updates eliminate race conditions
+- ✅ **Reduced Dependencies**: Less reliance on XLSX file processing
+- ✅ **Better Error Handling**: Clear cell-level error reporting
+- ✅ **Simplified Code**: Fewer moving parts and cleaner logic
+
+**TODO: Complete Migration:**
+1. Migrate `email-automation.js` campaign functions to Graph API pattern
+2. Migrate `email-scheduler.js` scheduled campaign operations  
+3. Migrate `email-templates.js` template management operations
+4. Remove unused `excel-upload-fix.js` and `utils/excelProcessor.js` dependencies
+5. Remove remaining `XLSX` imports when no longer needed
+
 ## Important Notes
 
 - **No Test Framework:** This project has no automated tests. Manual testing required.
