@@ -516,30 +516,6 @@ Joel Lee`;
         };
     }
 
-    /**
-     * Convert email content to HTML format
-     */
-    convertToHTML(emailContent, leadEmail = null) {
-        if (!emailContent || !emailContent.body) {
-            return '<div>No content available</div>';
-        }
-
-        // Convert plain text to HTML email body
-        const htmlBody = emailContent.body.replace(/\n/g, '<br>');
-        
-        return `<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>${emailContent.subject || 'Email'}</title>
-</head>
-<body>
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        ${htmlBody}
-    </div>
-</body>
-</html>`;
-    }
 }
 
 module.exports = EmailContentProcessor;
