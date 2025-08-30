@@ -120,7 +120,7 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         }
 
         // Record campaign in master file
-        await recordCampaignHistory(graphClient, masterWorkbook, {
+        await recordCampaignHistory(graphClient, masterFileData, {
             Campaign_ID: campaignId,
             Campaign_Name: campaignName,
             Start_Date: new Date().toISOString().split('T')[0],
