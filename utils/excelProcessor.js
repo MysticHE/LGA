@@ -309,7 +309,7 @@ class ExcelProcessor {
                 console.log(`📊 Sheet reference: ${leadsSheet ? leadsSheet['!ref'] : 'null'}`);
             }
             
-            console.log(`🔍 MERGE DEBUG: ${finalExistingData.length} existing + ${newLeads.length} new = ${finalExistingData.length + newLeads.length} total`);
+            console.log(`📊 Merging ${finalExistingData.length} existing + ${newLeads.length} new leads`);
             
             if (finalExistingData.length === 0) {
                 console.log(`⚠️ WARNING: No existing data found - this will result in data replacement!`);
@@ -369,12 +369,7 @@ class ExcelProcessor {
             
             const data = XLSX.utils.sheet_to_json(leadsSheet);
             
-            console.log(`🔍 DEBUG: Looking for email "${email}" in ${data.length} leads`);
-            console.log(`🔍 DEBUG: First 3 leads data:`, data.slice(0, 3).map(lead => ({
-                Email: lead.Email,
-                email: lead.email,
-                allKeys: Object.keys(lead).filter(k => k.toLowerCase().includes('email'))
-            })));
+            console.log(`🔍 Looking for email "${email}" in ${data.length} leads`);
             
             // Find and update the lead - try multiple email field variations
             let updated = false;
@@ -394,7 +389,6 @@ class ExcelProcessor {
                     lead['Primary Email']
                 ].filter(Boolean).map(e => String(e).toLowerCase().trim());
                 
-                console.log(`🔍 DEBUG: Lead ${i} emails:`, leadEmails);
                 
                 if (leadEmails.includes(searchEmail)) {
                     console.log(`✅ FOUND: Updating lead ${i} with email ${searchEmail}`);
@@ -421,7 +415,7 @@ class ExcelProcessor {
             }
             
             // Recreate sheet with updated data using the detected sheet name
-            console.log(`💾 DEBUG: Recreating sheet "${sheetName}" with updated data`);
+            console.log(`💾 Recreating sheet "${sheetName}" with updated data`);
             
             const newSheet = XLSX.utils.json_to_sheet(data);
             newSheet['!cols'] = this.getColumnWidths();
@@ -579,7 +573,7 @@ class ExcelProcessor {
      * Helper method to intelligently find the leads sheet in a workbook
      */
     findLeadsSheet(workbook) {
-        console.log(`📊 DEBUG: Available sheets in workbook:`, Object.keys(workbook.Sheets || {}));
+        console.log(`📊 Available sheets in workbook:`, Object.keys(workbook.Sheets || {}));
         
         // First try the expected sheet names
         const expectedSheetNames = ['Leads', 'leads', 'LEADS'];

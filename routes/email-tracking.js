@@ -758,59 +758,43 @@ async function processEmailNotification(notification) {
     }
 }
 
-// Helper function to update email read status from tracking pixel
+// Helper function to update email read status using direct Graph API Excel updates
 async function updateEmailReadStatus(trackingId) {
     try {
-        // Parse tracking ID to get email and campaign info
+        // Parse tracking ID - format: email-timestamp
         const [email, timestamp] = trackingId.split('-');
         
         if (!email) {
-            console.log('⚠️ Invalid tracking ID format');
+            console.log('❌ Invalid tracking ID format');
             return;
         }
         
         console.log(`📧 Tracking pixel hit - updating read status for email: ${email}`);
         
-        // Get all active sessions to try finding the right Excel file
+        // Get active sessions
         const activeSessions = authProvider.getActiveSessions();
-        
         if (activeSessions.length === 0) {
             console.log('⚠️ No active sessions found, cannot update tracking');
             return;
         }
         
-        console.log(`🔍 Searching for email ${email} across ${activeSessions.length} active sessions...`);
+        console.log(`🔍 Updating tracking for email: ${email} across ${activeSessions.length} sessions...`);
         
-        // Try each active session to find the one containing this email
+        // Try each active session
         let updateSuccess = false;
         for (const sessionId of activeSessions) {
             try {
-                console.log(`🔍 Trying session: ${sessionId} for email ${email}`);
                 const graphClient = await authProvider.getGraphClient(sessionId);
                 
-                // Download the master file and check if this email exists
-                const masterWorkbook = await downloadMasterFile(graphClient);
-                if (!masterWorkbook) {
-                    console.log(`⚠️ No master file for session ${sessionId}`);
-                    continue;
-                }
-                
-                // Use the same update pattern as email automation - let excelProcessor handle the lookup
-                const updates = {
+                // Use direct Graph API to find and update the email
+                updateSuccess = await updateExcelViaGraphAPI(graphClient, email, {
                     Status: 'Read',
                     Read_Date: new Date().toISOString().split('T')[0],
                     'Last Updated': new Date().toISOString()
-                };
+                });
                 
-                const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
-                
-                if (updatedWorkbook) {
-                    // Upload updated file back to OneDrive
-                    const excelBuffer = XLSX.write(updatedWorkbook, { type: 'buffer', bookType: 'xlsx' });
-                    await advancedExcelUpload(graphClient, excelBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
-                    
-                    console.log(`✅ Successfully updated read status for ${email} in session ${sessionId}`);
-                    updateSuccess = true;
+                if (updateSuccess) {
+                    console.log(`✅ Direct Graph API update successful for ${email} in session ${sessionId}`);
                     break;
                 } else {
                     console.log(`❌ Email ${email} not found in session ${sessionId}`);
@@ -831,6 +815,160 @@ async function updateEmailReadStatus(trackingId) {
     }
 }
 
+// Direct Graph API Excel update - find email and update cells (NEW EFFICIENT METHOD)
+async function updateExcelViaGraphAPI(graphClient, email, updates) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        console.log(`🔍 Graph API: Searching for ${email} in Excel file via Graph API...`);
+        
+        // Get the Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            console.log(`❌ Master file not found: ${masterFileName}`);
+            return false;
+        }
+
+        const fileId = files.value[0].id;
+        
+        // Try to get worksheet info - use Sheet1 or first available worksheet
+        const worksheets = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+            .get();
+            
+        if (worksheets.value.length === 0) {
+            console.log(`❌ No worksheets found in Excel file`);
+            return false;
+        }
+        
+        const worksheetName = worksheets.value[0].name;
+        console.log(`📊 Using worksheet: ${worksheetName}`);
+        
+        // Get all data from the worksheet to find the email
+        const usedRange = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/usedRange`)
+            .get();
+        
+        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+            console.log(`❌ No data found in worksheet`);
+            return false;
+        }
+        
+        const headers = usedRange.values[0];
+        const rows = usedRange.values.slice(1); // Skip header row
+        
+        console.log(`🔍 Found ${rows.length} data rows, searching for email: ${email}`);
+        console.log(`📋 Headers:`, headers);
+        
+        // Find email column index
+        const emailColumnIndex = headers.findIndex(header => 
+            header && typeof header === 'string' && 
+            header.toLowerCase().includes('email') && 
+            !header.toLowerCase().includes('date') &&
+            !header.toLowerCase().includes('count')
+        );
+        
+        if (emailColumnIndex === -1) {
+            console.log(`❌ Email column not found in headers`);
+            return false;
+        }
+        
+        console.log(`📧 Email column found at index: ${emailColumnIndex} (${headers[emailColumnIndex]})`);
+        
+        // Find the row with matching email
+        let targetRowIndex = -1;
+        for (let i = 0; i < rows.length; i++) {
+            const rowEmail = rows[i][emailColumnIndex];
+            if (rowEmail && typeof rowEmail === 'string' && rowEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
+                targetRowIndex = i;
+                console.log(`✅ Found matching email in row ${i + 2} (Excel row, including header)`);
+                break;
+            }
+        }
+        
+        if (targetRowIndex === -1) {
+            console.log(`❌ Email ${email} not found in Excel file`);
+            return false;
+        }
+        
+        // Excel row number (1-based, including header)
+        const excelRowNumber = targetRowIndex + 2;
+        
+        // Find column indices for fields we want to update
+        const fieldColumnMap = {};
+        for (const field of Object.keys(updates)) {
+            const columnIndex = headers.findIndex(header => 
+                header && typeof header === 'string' && 
+                (header === field || header.replace(/[_\s]/g, '').toLowerCase() === field.replace(/[_\s]/g, '').toLowerCase())
+            );
+            
+            if (columnIndex !== -1) {
+                // Convert column index to Excel column letter
+                const columnLetter = getExcelColumnLetter(columnIndex);
+                fieldColumnMap[field] = { index: columnIndex, letter: columnLetter };
+                console.log(`📍 Field '${field}' found at column ${columnIndex} (${columnLetter}): ${headers[columnIndex]}`);
+            } else {
+                console.log(`⚠️ Field '${field}' not found in headers`);
+            }
+        }
+        
+        // Update each field directly via Graph API
+        let updatedCount = 0;
+        for (const [field, value] of Object.entries(updates)) {
+            if (fieldColumnMap[field]) {
+                const columnLetter = fieldColumnMap[field].letter;
+                const cellAddress = `${columnLetter}${excelRowNumber}`;
+                
+                try {
+                    console.log(`🔄 Updating cell ${cellAddress} with '${value}'`);
+                    
+                    await graphClient
+                        .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/range(address='${cellAddress}')`)
+                        .patch({
+                            values: [[value]]
+                        });
+                    
+                    console.log(`✅ Updated ${field} in cell ${cellAddress}`);
+                    updatedCount++;
+                    
+                } catch (cellUpdateError) {
+                    console.error(`❌ Failed to update cell ${cellAddress}:`, cellUpdateError.message);
+                }
+            }
+        }
+        
+        if (updatedCount > 0) {
+            console.log(`🎉 Successfully updated ${updatedCount} fields for ${email} via Graph API!`);
+            return true;
+        } else {
+            console.log(`❌ No fields were successfully updated for ${email}`);
+            return false;
+        }
+        
+    } catch (error) {
+        console.error(`❌ Graph API Excel update failed:`, error);
+        return false;
+    }
+}
+
+// Helper function to convert column index to Excel column letter
+function getExcelColumnLetter(columnIndex) {
+    let result = '';
+    let index = columnIndex;
+    
+    while (index >= 0) {
+        result = String.fromCharCode(65 + (index % 26)) + result;
+        index = Math.floor(index / 26) - 1;
+    }
+    
+    return result;
+}
+
 
 // Helper function to update master file with email status
 async function updateMasterFileEmailStatus(emailId, subject, isRead, hasReply) {
@@ -846,158 +984,49 @@ async function updateMasterFileEmailStatus(emailId, subject, isRead, hasReply) {
         const sessionId = activeSessions[0];
         const graphClient = await authProvider.getGraphClient(sessionId);
         
-        // Enhanced lead matching strategy
-        const masterWorkbook = await downloadMasterFile(graphClient, false); // Fresh download
-        if (!masterWorkbook) return;
+        // Extract email from subject (common patterns)
+        let targetEmail = null;
+        if (subject) {
+            const emailMatch = subject.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+            if (emailMatch) {
+                targetEmail = emailMatch[1];
+            }
+        }
         
-        // Use intelligent sheet detection
-        const sheetInfo = excelProcessor.findLeadsSheet(masterWorkbook);
-        if (!sheetInfo) {
-            console.error(`❌ No valid lead data sheet found for email tracking update`);
+        if (!targetEmail) {
+            console.log(`⚠️ Could not extract email from webhook subject: ${subject}`);
             return;
         }
         
-        const leadsSheet = sheetInfo.sheet;
-        const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
-        
-        console.log(`📧 TRACKING: Using sheet "${sheetInfo.name}" with ${leadsData.length} leads for email ${email}`);
-        
-        // Improved matching logic - try multiple approaches
-        let matchingLead = null;
-        
-        // 1. Try matching by email ID from Graph API (best match)
-        if (emailId) {
-            matchingLead = leadsData.find(lead => 
-                lead['Graph_Email_ID'] === emailId || 
-                lead['Message_ID'] === emailId
-            );
-        }
-        
-        // 2. Try matching by subject containing lead email
-        if (!matchingLead && subject) {
-            matchingLead = leadsData.find(lead => {
-                const leadEmail = lead.Email || '';
-                if (!leadEmail) return false;
-                
-                // Check if subject contains the lead's email domain or name
-                const emailDomain = leadEmail.split('@')[1];
-                const emailName = leadEmail.split('@')[0];
-                
-                return subject.toLowerCase().includes(leadEmail.toLowerCase()) ||
-                       subject.toLowerCase().includes(emailDomain.toLowerCase()) ||
-                       (lead.Name && subject.toLowerCase().includes(lead.Name.toLowerCase())) ||
-                       (lead['Company Name'] && subject.toLowerCase().includes(lead['Company Name'].toLowerCase()));
-            });
-        }
-        
-        // 3. Try matching recent sent emails (last 7 days)
-        if (!matchingLead) {
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-            
-            matchingLead = leadsData.find(lead => {
-                if (!lead.Last_Email_Date) return false;
-                const lastEmailDate = new Date(lead.Last_Email_Date);
-                return lastEmailDate >= sevenDaysAgo && lead.Status === 'Sent';
-            });
-        }
-        
-        if (matchingLead) {
-            console.log(`📧 Found matching lead for webhook: ${matchingLead.Email}`);
-            
-            const updates = {
-                'Last Updated': new Date().toISOString()
-            };
-            
-            if (isRead && !matchingLead.Read_Date) {
-                updates.Status = 'Read';
-                updates.Read_Date = new Date().toISOString().split('T')[0];
-                console.log(`📖 Setting read date for ${matchingLead.Email}`);
-            }
-            
-            if (hasReply) {
-                updates.Status = 'Replied';
-                updates.Reply_Date = new Date().toISOString().split('T')[0];
-                console.log(`💬 Setting reply date for ${matchingLead.Email}`);
-            }
-            
-            if (Object.keys(updates).length > 1) { // More than just 'Last Updated'
-                await updateLeadInMasterFile(graphClient, matchingLead.Email, updates);
-            }
-        } else {
-            console.log(`⚠️ No matching lead found for webhook notification. Subject: ${subject?.substring(0, 50)}...`);
-        }
-        
-    } catch (error) {
-        console.error('❌ Master file email status update error:', error);
-    }
-}
-
-// Helper function to update specific lead email status
-async function updateLeadEmailStatus(graphClient, email, status, date) {
-    try {
+        // Prepare updates
         const updates = {
-            Status: status,
             'Last Updated': new Date().toISOString()
         };
         
-        if (status === 'Read') {
-            updates.Read_Date = date.split('T')[0];
-        } else if (status === 'Replied') {
-            updates.Reply_Date = date.split('T')[0];
+        if (isRead) {
+            updates.Status = 'Read';
+            updates.Read_Date = new Date().toISOString().split('T')[0];
+            console.log(`📖 WEBHOOK: Setting read date for ${targetEmail}`);
         }
         
-        await updateLeadInMasterFile(graphClient, email, updates);
-        
-    } catch (error) {
-        console.error('❌ Lead email status update error:', error);
-    }
-}
-
-// Helper function to update lead in master file
-async function updateLeadInMasterFile(graphClient, email, updates) {
-    try {
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
-        if (!masterWorkbook) return;
-        
-        // Update lead
-        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
-        
-        // Save updated file
-        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
-        
-        console.log(`✅ Updated lead ${email} with status: ${updates.Status}`);
-        
-    } catch (error) {
-        console.error('❌ Master file lead update error:', error);
-    }
-}
-
-// Helper function to download master file
-async function downloadMasterFile(graphClient) {
-    try {
-        const masterFileName = 'LGA-Master-Email-List.xlsx';
-        const masterFolderPath = '/LGA-Email-Automation';
-        
-        const files = await graphClient
-            .api(`/me/drive/root:${masterFolderPath}:/children`)
-            .filter(`name eq '${masterFileName}'`)
-            .get();
-
-        if (files.value.length === 0) {
-            return null;
+        if (hasReply) {
+            updates.Status = 'Replied';
+            updates.Reply_Date = new Date().toISOString().split('T')[0];
+            console.log(`💬 WEBHOOK: Setting reply date for ${targetEmail}`);
         }
-
-        const fileContent = await graphClient
-            .api(`/me/drive/items/${files.value[0].id}/content`)
-            .get();
-
-        return excelProcessor.bufferToWorkbook(fileContent);
+        
+        // Use new Graph API method
+        if (Object.keys(updates).length > 1) {
+            const updateSuccess = await updateExcelViaGraphAPI(graphClient, targetEmail, updates);
+            if (updateSuccess) {
+                console.log(`✅ Webhook update successful for ${targetEmail}`);
+            } else {
+                console.log(`❌ Webhook update failed for ${targetEmail}`);
+            }
+        }
+        
     } catch (error) {
-        console.error('❌ Master file download error:', error);
-        return null;
+        console.error('❌ Webhook email status update error:', error);
     }
 }
 
