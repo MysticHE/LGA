@@ -30,13 +30,13 @@
         <!-- Dashboard Stats -->
         <div class="card full-width">
             <div class="card-header">
-                <h2 class="card-title" data-icon="📊">Email Automation Dashboard</h2>
+                <h2 class="card-title">Email Automation Dashboard</h2>
                 <div class="flex gap-sm">
                     <button class="btn" onclick="refreshDashboard()" title="Refresh Dashboard Data">
-                        🔄 Refresh
+                        Refresh
                     </button>
                     <button class="btn btn-outline" onclick="showInsights()" title="View Analytics">
-                        📈 Insights
+                        Insights
                     </button>
                 </div>
             </div>
@@ -66,7 +66,7 @@
                     <div class="stat-label">New Records</div>
                     <div class="stat-action">
                         <button class="btn btn-success btn-sm" onclick="sendNewEmails(event)" title="Send emails to all new records">
-                            📧 Send New Emails
+                            Send New Emails
                         </button>
                     </div>
                 </div>
@@ -77,16 +77,16 @@
             <!-- Upload Section -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title" data-icon="📤">Upload Lead List</h3>
-                    <div>
-                        <span id="uploadAuthStatus" class="auth-status" style="margin-right: 10px;">🔄 Checking...</span>
+                    <h3 class="card-title">Upload Lead List</h3>
+                    <div class="auth-status-container">
+                        <span id="uploadAuthStatus" class="auth-indicator">Checking...</span>
                         <button class="btn btn-outline" onclick="showUploadHelp()" title="Upload Help">
-                            ❓ Help
+                            Help
                         </button>
                     </div>
                 </div>
                 <div class="upload-area" onclick="document.getElementById('fileInput').click()">
-                    <div class="upload-icon">📁</div>
+                    <div class="upload-icon"></div>
                     <div class="upload-text">Click or drag Excel file here</div>
                     <div class="upload-subtext">Supports .xlsx files up to 10MB</div>
                     <input type="file" id="fileInput" accept=".xlsx,.xls" />
@@ -99,9 +99,9 @@
                 </div>
                 <div id="uploadResults" class="hidden">
                     <div class="flex-between mb-lg">
-                        <h4>📊 Upload Results</h4>
+                        <h4>Upload Results</h4>
                         <button class="btn btn-success" onclick="viewMasterList()" title="View Updated Master List">
-                            👁️ View List
+                            View List
                         </button>
                     </div>
                     <div id="uploadSummary"></div>
@@ -111,13 +111,13 @@
             <!-- Template Management -->
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title" data-icon="📝">Email Templates</h3>
+                    <h3 class="card-title">Email Templates</h3>
                     <div class="flex gap-sm">
                         <button class="btn" onclick="loadTemplates()" title="Refresh Templates">
-                            🔄 Refresh
+                            Refresh
                         </button>
                         <button class="btn btn-success" onclick="openTemplateModal()" title="Create New Template">
-                            ➕ New Template
+                            New Template
                         </button>
                     </div>
                 </div>
@@ -133,7 +133,7 @@
                             <span class="text-muted">0 templates</span>
                         </div>
                         <button class="btn btn-outline" onclick="importTemplates()" title="Import Templates">
-                            📥 Import
+                            Import
                         </button>
                     </div>
                 </div>
@@ -143,48 +143,48 @@
         <!-- Campaign Management -->
         <div class="card full-width">
             <div class="card-header">
-                <h3 class="card-title" data-icon="🚀">Campaign Management</h3>
+                <h3 class="card-title">Campaign Management</h3>
                 <div class="flex gap-sm">
                     <button class="btn" onclick="showCampaignHistory()" title="View Campaign History">
-                        📈 History
+                        History
                     </button>
                     <button class="btn btn-success" onclick="openCampaignModal()" title="Start New Campaign">
-                        🚀 Start Campaign
+                        Start Campaign
                     </button>
                 </div>
             </div>
             <div class="campaign-actions-grid">
                 <div class="action-group">
-                    <h4>📋 Quick Actions</h4>
+                    <h4>Quick Actions</h4>
                     <div class="action-buttons">
                         <button class="btn" onclick="showDueLeads()" title="View leads due for email today">
-                            📅 View Due Today
+                            View Due Today
                         </button>
                         <button class="btn btn-warning" onclick="showScheduledCampaigns()" title="View and manage scheduled campaigns">
-                            ⏰ Scheduled Campaigns
+                            Scheduled Campaigns
                         </button>
                         <button class="btn" onclick="viewMasterList()" title="View complete master list">
-                            📋 View Master List
+                            View Master List
                         </button>
                         <button class="btn btn-outline" onclick="bulkActions()" title="Perform bulk actions">
-                            📦 Bulk Actions
+                            Bulk Actions
                         </button>
                     </div>
                 </div>
                 <div class="action-group">
-                    <h4>⚙️ Automation Settings</h4>
+                    <h4>Automation Settings</h4>
                     <div class="action-buttons">
                         <button class="btn" onclick="openAutomationSettings()" title="Configure automation rules">
-                            ⚙️ Configure Rules
+                            Configure Rules
                         </button>
                         <button class="btn btn-warning" onclick="pauseAutomation()" title="Pause all automated campaigns">
-                            ⏸️ Pause All
+                            Pause All
                         </button>
                         <button class="btn btn-success" onclick="resumeAutomation()" title="Resume all automated campaigns">
-                            ▶️ Resume All
+                            Resume All
                         </button>
                         <button class="btn btn-outline" onclick="viewAutomationLogs()" title="View automation activity logs">
-                            📋 View Logs
+                            View Logs
                         </button>
                     </div>
                 </div>
@@ -194,10 +194,10 @@
         <!-- Master List Table -->
         <div class="card full-width">
             <div class="card-header">
-                <h3 class="card-title" data-icon="📋">Master Lead List</h3>
+                <h3 class="card-title">Master Lead List</h3>
                 <div class="flex gap-sm">
                     <div class="flex gap-sm">
-                        <input type="text" id="searchLeads" class="form-input search-input" placeholder="🔍 Search leads...">
+                        <input type="text" id="searchLeads" class="form-input search-input" placeholder="Search leads...">
                         <select id="filterStatus" class="form-select filter-select">
                             <option value="">All Status</option>
                             <option value="new">New</option>
@@ -208,10 +208,10 @@
                     </div>
                     <div class="flex gap-sm">
                         <button class="btn btn-outline" onclick="exportMasterList()" title="Export to Excel">
-                            📥 Export Excel
+                            Export Excel
                         </button>
                         <button class="btn" onclick="loadMasterList()" title="Refresh master list">
-                            🔄 Refresh
+                            Refresh
                         </button>
                     </div>
                 </div>
@@ -224,10 +224,10 @@
                 </div>
                 <div class="flex gap-sm">
                     <button class="btn btn-outline" onclick="selectAllLeads()" title="Select all visible leads">
-                        ☑️ Select All
+                        Select All
                     </button>
                     <button class="btn btn-outline" onclick="clearSelection()" title="Clear selection">
-                        🔄 Clear
+                        Clear
                     </button>
                 </div>
             </div>
@@ -282,7 +282,7 @@
     <div id="templateModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title">📝 Email Template Editor</h2>
+                <h2 class="modal-title">Email Template Editor</h2>
                 <span class="close" onclick="closeTemplateModal()">&times;</span>
             </div>
             <form id="templateForm">
@@ -315,9 +315,9 @@
                         <option value="No">No</option>
                     </select>
                 </div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                    <button type="button" class="btn" onclick="previewTemplate()">👁️ Preview</button>
-                    <button type="submit" class="btn btn-success">💾 Save Template</button>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="previewTemplate()">Preview</button>
+                    <button type="submit" class="btn btn-success">Save Template</button>
                 </div>
             </form>
         </div>
@@ -327,7 +327,7 @@
     <div id="campaignModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title">🚀 Start Email Campaign</h2>
+                <h2 class="modal-title">Start Email Campaign</h2>
                 <span class="close" onclick="closeCampaignModal()">&times;</span>
             </div>
             <form id="campaignForm">
@@ -368,9 +368,9 @@
                     <label class="form-label">Follow-up Days:</label>
                     <input type="number" id="followUpDays" class="form-input" value="7" min="1" max="30" required>
                 </div>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                    <button type="button" class="btn" onclick="previewCampaign()">👁️ Preview</button>
-                    <button type="submit" class="btn btn-success">🚀 Start Campaign</button>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="previewCampaign()">Preview</button>
+                    <button type="submit" class="btn btn-success">Start Campaign</button>
                 </div>
             </form>
         </div>
@@ -864,9 +864,9 @@
                     <td title="${lead.Next_Email_Date ? new Date(lead.Next_Email_Date).toLocaleString() : 'Not scheduled'}">${lead.Next_Email_Date ? new Date(lead.Next_Email_Date).toLocaleDateString() : '-'}</td>
                     <td>
                         <div class="flex gap-sm">
-                            <button class="btn" onclick="editLead('${lead.Email}')" title="Edit lead details">✏️</button>
-                            <button class="btn btn-success" onclick="sendNow('${lead.Email}')" title="Send email now">📧</button>
-                            <button class="btn btn-outline" onclick="viewLeadHistory('${lead.Email}')" title="View lead history">📊</button>
+                            <button class="btn" onclick="editLead('${lead.Email}')" title="Edit lead details">Edit</button>
+                            <button class="btn btn-success" onclick="sendNow('${lead.Email}')" title="Send email now">Send</button>
+                            <button class="btn btn-outline" onclick="viewLeadHistory('${lead.Email}')" title="View lead history">History</button>
                         </div>
                     </td>
                 </tr>
