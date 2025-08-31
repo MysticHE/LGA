@@ -45,13 +45,13 @@ class ExcelProcessor {
     /**
      * Create a new master Excel file with proper structure
      */
-    createMasterFile(leads = []) {
+    createMasterFile(leads = [], templateChoice = 'AI_Generated') {
         const wb = XLSX.utils.book_new();
         
         // Sheet 1: Leads (Main data)
         let leadsData;
         if (leads.length > 0) {
-            leadsData = this.normalizeLeadsData(leads);
+            leadsData = this.normalizeLeadsData(leads, templateChoice);
         } else {
             // Create sheet with headers only (no empty row)
             leadsData = [];
@@ -187,7 +187,7 @@ class ExcelProcessor {
                     console.log(`✅ Processing new leads... (${index + 1}/${uploadedLeads.length})`);
                 }
                 // Normalize and add default automation settings
-                const normalizedLead = this.normalizeLeadData(lead);
+                const normalizedLead = this.normalizeLeadData(lead, 'AI_Generated');
                 results.newLeads.push(normalizedLead);
                 existingEmails.add(email); // Prevent duplicates within current upload
             }
@@ -202,7 +202,7 @@ class ExcelProcessor {
     /**
      * Normalize lead data to match master file structure
      */
-    normalizeLeadData(lead) {
+    normalizeLeadData(lead, templateChoice = 'AI_Generated') {
         const normalized = {};
         
         // Map various input formats to standard columns
@@ -225,7 +225,7 @@ class ExcelProcessor {
         // Set default automation settings
         normalized['Status'] = 'New';
         normalized['Campaign_Stage'] = 'First_Contact';
-        normalized['Email_Choice'] = 'AI_Generated';
+        normalized['Email_Choice'] = templateChoice;
         normalized['Template_Used'] = '';
         normalized['Email_Content_Sent'] = '';
         normalized['Last_Email_Date'] = '';
@@ -248,8 +248,8 @@ class ExcelProcessor {
     /**
      * Normalize multiple leads data
      */
-    normalizeLeadsData(leads) {
-        return leads.map(lead => this.normalizeLeadData(lead));
+    normalizeLeadsData(leads, templateChoice = 'AI_Generated') {
+        return leads.map(lead => this.normalizeLeadData(lead, templateChoice));
     }
 
     /**

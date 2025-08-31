@@ -843,6 +843,117 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+// Send bulk email campaign
+router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
+    try {
+        const { 
+            leads, 
+            templateChoice = 'AI_Generated',
+            emailTemplate = '',
+            subject = '',
+            trackReads = true,
+            oneDriveFileId = null 
+        } = req.body;
+
+        console.log(`📧 Starting bulk email campaign for ${leads.length} leads using ${templateChoice}`);
+
+        if (!leads || leads.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No leads provided for campaign'
+            });
+        }
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+        const authProvider = getDelegatedAuthProvider();
+        
+        // Get templates for processing
+        const templates = await getTemplatesViaGraphAPI(graphClient);
+        
+        const results = {
+            campaignId: `campaign_${Date.now()}`,
+            sent: 0,
+            failed: 0,
+            trackingEnabled: trackReads,
+            errors: []
+        };
+
+        // Process each lead
+        for (const lead of leads) {
+            try {
+                if (!lead.Email) {
+                    results.failed++;
+                    results.errors.push(`Lead missing email: ${lead.Name || 'Unknown'}`);
+                    continue;
+                }
+
+                // Determine email choice - use templateChoice from frontend or lead's existing choice
+                let emailChoice = templateChoice;
+                if (emailChoice === 'custom' && emailTemplate) {
+                    // For custom templates, create temporary template-like structure
+                    emailChoice = 'AI_Generated'; // Process as custom content
+                    lead.AI_Generated_Email = `Subject: ${subject}\n\n${emailTemplate}`;
+                }
+
+                // Process email content
+                const emailContent = await emailContentProcessor.processEmailContent(
+                    lead, 
+                    emailChoice, 
+                    templates
+                );
+
+                // Send email via Microsoft Graph
+                const emailMessage = emailContentProcessor.createEmailMessage(
+                    emailContent, 
+                    lead.Email, 
+                    trackReads ? req.sessionId : null
+                );
+
+                await graphClient
+                    .api('/me/sendMail')
+                    .post({ message: emailMessage });
+
+                // Update lead status
+                const updates = {
+                    Status: 'Sent',
+                    Last_Email_Date: new Date().toISOString().split('T')[0],
+                    Email_Count: (lead.Email_Count || 0) + 1,
+                    Template_Used: emailContent.contentType,
+                    Email_Choice: emailChoice,
+                    'Email Sent': 'Yes',
+                    'Email Status': 'Sent',
+                    'Sent Date': new Date().toISOString()
+                };
+
+                await updateLeadViaGraphAPI(graphClient, lead.Email, updates);
+                results.sent++;
+
+            } catch (emailError) {
+                console.error(`❌ Failed to send email to ${lead.Email}:`, emailError.message);
+                results.failed++;
+                results.errors.push(`${lead.Email}: ${emailError.message}`);
+            }
+        }
+
+        console.log(`✅ Campaign completed: ${results.sent} sent, ${results.failed} failed`);
+
+        res.json({
+            success: true,
+            message: `Campaign completed: ${results.sent} emails sent, ${results.failed} failed`,
+            ...results
+        });
+
+    } catch (error) {
+        console.error('❌ Campaign error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Campaign failed',
+            error: error.message
+        });
+    }
+});
+
 // Graph API helper functions
 
 // Get leads data using Graph API

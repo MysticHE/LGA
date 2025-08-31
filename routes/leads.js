@@ -533,6 +533,7 @@ router.post('/start-workflow-job', async (req, res) => {
             excludeIndustries = [],
             saveToOneDrive = false,
             sendEmailCampaign = false,
+            templateChoice = 'AI_Generated',
             emailTemplate = '',
             emailSubject = '',
             trackEmailReads = true
@@ -547,7 +548,7 @@ router.post('/start-workflow-job', async (req, res) => {
             status: 'started',
             progress: { step: 1, message: 'Starting workflow...', total: saveToOneDrive || sendEmailCampaign ? 6 : 4 },
             startTime: new Date().toISOString(),
-            params: { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries, saveToOneDrive, sendEmailCampaign, emailTemplate, emailSubject, trackEmailReads },
+            params: { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries, saveToOneDrive, sendEmailCampaign, templateChoice, emailTemplate, emailSubject, trackEmailReads },
             result: null,
             error: null,
             completedAt: null
@@ -595,7 +596,7 @@ async function processWorkflowJob(jobId, protocol, host) {
     if (!job) return;
     
     try {
-        const { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries, saveToOneDrive, sendEmailCampaign, emailTemplate, emailSubject, trackEmailReads } = job.params;
+        const { jobTitles, companySizes, maxRecords, generateOutreach, useProductMaterials, chunkSize, excludeEmailDomains, excludeIndustries, saveToOneDrive, sendEmailCampaign, templateChoice, emailTemplate, emailSubject, trackEmailReads } = job.params;
         
         // Step 1: Generate Web URL
         const totalSteps = 4 + (saveToOneDrive ? 1 : 0) + (sendEmailCampaign ? 1 : 0);
@@ -764,15 +765,16 @@ async function processWorkflowJob(jobId, protocol, host) {
 
         // Step 6: Send Email Campaign (if enabled)
         let campaignResult = null;
-        if (sendEmailCampaign && emailTemplate && emailSubject && processedLeads.length > 0) {
+        if (sendEmailCampaign && emailSubject && processedLeads.length > 0 && (templateChoice !== 'custom' || emailTemplate)) {
             try {
                 const finalStep = saveToOneDrive ? 6 : 5;
                 job.progress = { step: finalStep, message: 'Sending email campaign...', total: finalStep };
                 job.status = 'sending_emails';
                 
                 
-                const emailResponse = await axios.post(`${protocol}://${host}/api/email/send-campaign`, {
+                const emailResponse = await axios.post(`${protocol}://${host}/api/email-automation/send-campaign`, {
                     leads: processedLeads,
+                    templateChoice: templateChoice,
                     emailTemplate: emailTemplate,
                     subject: emailSubject,
                     trackReads: trackEmailReads,

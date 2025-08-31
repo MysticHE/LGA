@@ -1639,8 +1639,28 @@
                                         <small style="color: var(--color-gray-500);">Use {name} and {company} for personalization</small>
                                     </div>
                                     <div>
-                                        <label for="emailTemplate" style="font-weight: var(--font-weight-medium); color: var(--color-gray-700);">Email Template:</label>
-                                        <textarea id="emailTemplate" rows="6" placeholder="Hello {name},&#10;&#10;I hope this email finds you well. I noticed your role as {title} at {company} and wanted to reach out...&#10;&#10;Best regards" style="width: 100%; margin-top: var(--space-1); padding: var(--space-2); border: 1px solid var(--color-gray-300); border-radius: var(--border-radius-sm); font-family: var(--font-family);"></textarea>
+                                        <label for="templateChoice" style="font-weight: var(--font-weight-medium); color: var(--color-gray-700);">Email Template:</label>
+                                        <div style="margin-top: var(--space-1);">
+                                            <select id="templateChoice" style="width: 100%; padding: var(--space-2); border: 1px solid var(--color-gray-300); border-radius: var(--border-radius-sm); margin-bottom: var(--space-2);">
+                                                <option value="AI_Generated">AI Generated Content (Default)</option>
+                                                <option value="custom">Custom Template</option>
+                                            </select>
+                                            
+                                            <!-- Custom template textarea (hidden by default) -->
+                                            <div id="customTemplateSection" style="display: none;">
+                                                <textarea id="emailTemplate" rows="6" placeholder="Hello {name},&#10;&#10;I hope this email finds you well. I noticed your role as {title} at {company} and wanted to reach out...&#10;&#10;Best regards" style="width: 100%; margin-bottom: var(--space-2); padding: var(--space-2); border: 1px solid var(--color-gray-300); border-radius: var(--border-radius-sm); font-family: var(--font-family);"></textarea>
+                                            </div>
+                                            
+                                            <!-- Template preview section -->
+                                            <div id="templatePreview" style="display: none; padding: var(--space-2); background: var(--color-gray-50); border: 1px solid var(--color-gray-200); border-radius: var(--border-radius-sm); margin-bottom: var(--space-2);">
+                                                <div style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-gray-700); margin-bottom: var(--space-1);">Preview:</div>
+                                                <div id="templatePreviewContent" style="font-size: var(--font-size-sm); color: var(--color-gray-600);"></div>
+                                            </div>
+                                            
+                                            <button type="button" id="refreshTemplatesBtn" style="padding: var(--space-1) var(--space-2); background: var(--color-gray-100); border: 1px solid var(--color-gray-300); border-radius: var(--border-radius-sm); font-size: var(--font-size-sm); cursor: pointer; margin-bottom: var(--space-2);">
+                                                🔄 Refresh Templates
+                                            </button>
+                                        </div>
                                         <small style="color: var(--color-gray-500);">Use {name}, {company}, {title}, {industry} for personalization. HTML supported.</small>
                                     </div>
                                     <div class="checkbox-group">
@@ -1848,6 +1868,10 @@
                 document.getElementById('emailSubject').addEventListener('input', () => this.validateEmailCampaign());
                 document.getElementById('emailTemplate').addEventListener('input', () => this.validateEmailCampaign());
                 
+                // Template management event listeners
+                document.getElementById('templateChoice').addEventListener('change', (e) => this.handleTemplateChoice(e.target.value));
+                document.getElementById('refreshTemplatesBtn').addEventListener('click', () => this.loadTemplates());
+                
                 document.getElementById('toggleLogsBtn').addEventListener('click', () => {
                     const container = this.logsContainer;
                     const button = document.getElementById('toggleLogsBtn');
@@ -2047,6 +2071,7 @@
                             excludeIndustries: formData.excludeIndustries,
                             saveToOneDrive: formData.saveToOneDrive,
                             sendEmailCampaign: formData.sendEmailCampaign,
+                            templateChoice: formData.templateChoice,
                             emailTemplate: formData.emailTemplate,
                             emailSubject: formData.emailSubject,
                             trackEmailReads: formData.trackEmailReads
@@ -2334,7 +2359,8 @@
                 // Microsoft Graph Integration options
                 const saveToOneDrive = document.getElementById('saveToOneDrive').checked;
                 const sendEmailCampaign = document.getElementById('sendEmailCampaign').checked;
-                const emailTemplate = document.getElementById('emailTemplate').value.trim();
+                const templateChoice = document.getElementById('templateChoice').value;
+                const emailTemplate = templateChoice === 'custom' ? document.getElementById('emailTemplate').value.trim() : '';
                 const emailSubject = document.getElementById('emailSubject').value.trim();
                 const trackEmailReads = document.getElementById('trackEmailReads').checked;
                 
@@ -2348,6 +2374,7 @@
                     excludeIndustries,
                     saveToOneDrive,
                     sendEmailCampaign,
+                    templateChoice,
                     emailTemplate,
                     emailSubject,
                     trackEmailReads
@@ -2764,10 +2791,13 @@
                 if (details) {
                     details.style.display = show ? 'block' : 'none';
                     
-                    // If showing, set default values
+                    // If showing, load templates and set default values
                     if (show) {
                         const emailSubject = document.getElementById('emailSubject');
                         const emailTemplate = document.getElementById('emailTemplate');
+                        
+                        // Load templates from server
+                        this.loadTemplates();
                         
                         if (!emailSubject.value) {
                             emailSubject.value = 'Professional introduction from {company}';
@@ -2800,21 +2830,143 @@ Best regards,
             validateEmailCampaign() {
                 const sendEmailCheckbox = document.getElementById('sendEmailCampaign');
                 const emailSubject = document.getElementById('emailSubject');
+                const templateChoice = document.getElementById('templateChoice');
                 const emailTemplate = document.getElementById('emailTemplate');
                 const submitBtn = document.getElementById('generateBtn');
                 
                 if (sendEmailCheckbox.checked) {
                     const hasSubject = emailSubject.value.trim().length > 0;
-                    const hasTemplate = emailTemplate.value.trim().length > 0;
+                    const isCustomTemplate = templateChoice.value === 'custom';
+                    const hasTemplate = !isCustomTemplate || emailTemplate.value.trim().length > 0;
                     
                     // Add visual validation feedback
                     emailSubject.style.borderColor = hasSubject ? 'var(--color-gray-300)' : 'var(--color-error)';
-                    emailTemplate.style.borderColor = hasTemplate ? 'var(--color-gray-300)' : 'var(--color-error)';
+                    if (isCustomTemplate) {
+                        emailTemplate.style.borderColor = hasTemplate ? 'var(--color-gray-300)' : 'var(--color-error)';
+                    }
                     
                     return hasSubject && hasTemplate;
                 }
                 
                 return true;
+            }
+
+            // Template Management Methods
+            async loadTemplates() {
+                try {
+                    console.log('📝 Loading templates from server...');
+                    
+                    const sessionId = localStorage.getItem('msGraph_sessionId');
+                    if (!sessionId) {
+                        console.log('⚠️ No session ID available for template loading');
+                        return;
+                    }
+
+                    const response = await fetch('/api/email-templates', {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Session-ID': sessionId
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Template loading failed: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.populateTemplateDropdown(result.templates);
+                        console.log(`✅ Loaded ${result.templates.length} templates`);
+                    } else {
+                        console.warn('⚠️ No templates found or failed to load');
+                        this.populateTemplateDropdown([]);
+                    }
+                } catch (error) {
+                    console.error('❌ Template loading error:', error);
+                    this.showStatus('Failed to load templates: ' + error.message, 'error');
+                }
+            }
+
+            populateTemplateDropdown(templates) {
+                const templateChoice = document.getElementById('templateChoice');
+                
+                // Clear existing options except default ones
+                const options = templateChoice.querySelectorAll('option[value^="template_"]');
+                options.forEach(option => option.remove());
+                
+                // Add stored templates
+                templates.filter(t => t.Active === 'Yes').forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.Template_ID;
+                    option.textContent = template.Template_Name;
+                    option.dataset.subject = template.Subject;
+                    option.dataset.body = template.Body;
+                    templateChoice.appendChild(option);
+                });
+            }
+
+            handleTemplateChoice(value) {
+                const customSection = document.getElementById('customTemplateSection');
+                const previewSection = document.getElementById('templatePreview');
+                const emailSubject = document.getElementById('emailSubject');
+                
+                if (value === 'custom') {
+                    // Show custom template textarea
+                    customSection.style.display = 'block';
+                    previewSection.style.display = 'none';
+                    emailSubject.readOnly = false;
+                    emailSubject.style.backgroundColor = '';
+                } else if (value === 'AI_Generated') {
+                    // Hide custom template and preview
+                    customSection.style.display = 'none';
+                    previewSection.style.display = 'none';
+                    emailSubject.readOnly = false;
+                    emailSubject.style.backgroundColor = '';
+                } else {
+                    // Selected a stored template
+                    customSection.style.display = 'none';
+                    this.previewSelectedTemplate(value);
+                    
+                    // Auto-fill subject from template
+                    const selectedOption = document.querySelector(`option[value="${value}"]`);
+                    if (selectedOption && selectedOption.dataset.subject) {
+                        emailSubject.value = selectedOption.dataset.subject;
+                        emailSubject.readOnly = true;
+                        emailSubject.style.backgroundColor = 'var(--color-gray-50)';
+                    }
+                }
+                
+                this.validateEmailCampaign();
+            }
+
+            previewSelectedTemplate(templateId) {
+                const selectedOption = document.querySelector(`option[value="${templateId}"]`);
+                const previewSection = document.getElementById('templatePreview');
+                const previewContent = document.getElementById('templatePreviewContent');
+                
+                if (selectedOption) {
+                    const subject = selectedOption.dataset.subject || '';
+                    const body = selectedOption.dataset.body || '';
+                    
+                    // Create preview with variable highlighting
+                    const previewHtml = `
+                        <div><strong>Subject:</strong> ${this.highlightVariables(subject)}</div>
+                        <div style="margin-top: var(--space-2);"><strong>Body:</strong></div>
+                        <div style="margin-top: var(--space-1); max-height: 200px; overflow-y: auto; white-space: pre-wrap;">${this.highlightVariables(body)}</div>
+                    `;
+                    
+                    previewContent.innerHTML = previewHtml;
+                    previewSection.style.display = 'block';
+                } else {
+                    previewSection.style.display = 'none';
+                }
+            }
+
+            highlightVariables(text) {
+                if (!text) return '';
+                return text.replace(/\{([^}]+)\}/g, '<span style="background: var(--color-primary-100); color: var(--color-primary-700); padding: 2px 4px; border-radius: 2px; font-weight: var(--font-weight-medium);">{$1}</span>');
             }
 
             async testMicrosoftGraphConnection() {
