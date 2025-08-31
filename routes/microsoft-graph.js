@@ -812,6 +812,10 @@ async function createExcelFileWithTable(client, filePath, leads) {
         const excelProcessor = new ExcelProcessor();
         const wb = excelProcessor.createMasterFile([]);
         
+        // Get headers for table creation (needed for createEmptyExcelTable)
+        const sampleNormalized = normalizeLeadData({});
+        const headers = Object.keys(sampleNormalized);
+        
         // Note: createMasterFile() already creates all three sheets with proper structure
         
         // Convert to buffer
