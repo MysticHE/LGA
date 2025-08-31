@@ -5,7 +5,7 @@ const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
-const { advancedExcelUpload } = require('./excel-upload-fix');
+// Removed: const { advancedExcelUpload } = require('./excel-upload-fix'); - Now using direct Graph API updates
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -249,14 +249,11 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
             masterWorkbook = excelProcessor.createMasterFile();
         }
 
-        // CRITICAL: Get current OneDrive data for accurate duplicate checking
+        // CRITICAL: Get current OneDrive data for accurate duplicate checking using Graph API
         let currentOneDriveData = [];
         try {
-            const currentWorkbook = await downloadMasterFile(graphClient, false); // Fresh download
-            if (currentWorkbook && currentWorkbook.Sheets['Leads']) {
-                currentOneDriveData = XLSX.utils.sheet_to_json(currentWorkbook.Sheets['Leads']);
-                console.log(`📊 Current OneDrive data: ${currentOneDriveData.length} leads for duplicate checking`);
-            }
+            currentOneDriveData = await getLeadsViaGraphAPI(graphClient);
+            console.log(`📊 Current OneDrive data: ${currentOneDriveData.length} leads for duplicate checking`);
         } catch (error) {
             console.log(`⚠️ Could not fetch current OneDrive data for duplicate check: ${error.message}`);
             // Fallback to locally parsed data
@@ -302,10 +299,8 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
 
         try {
             console.log(`📋 Fetching fresh data for verification (post-append)...`);
-            const verificationWorkbook = await downloadMasterFile(graphClient, false); // Force fresh download
-            if (verificationWorkbook && verificationWorkbook.Sheets['Leads']) {
-                const verifySheet = verificationWorkbook.Sheets['Leads'];
-                const verifyData = XLSX.utils.sheet_to_json(verifySheet);
+            const verifyData = await getLeadsViaGraphAPI(graphClient);
+            if (verifyData && verifyData.length > 0) {
                 
                 // Smart verification: Ensure file has reasonable data and at least the new leads were added
                 const hasReasonableData = verifyData.length >= mergeResults.newLeads.length && verifyData.length > 0;
@@ -369,9 +364,8 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
         // Get the actual final count from verification
         let finalTotalLeads = existingData.length + mergeResults.newLeads.length;
         try {
-            const finalVerificationWorkbook = await downloadMasterFile(graphClient, false);
-            if (finalVerificationWorkbook && finalVerificationWorkbook.Sheets['Leads']) {
-                const finalVerifyData = XLSX.utils.sheet_to_json(finalVerificationWorkbook.Sheets['Leads']);
+            const finalVerifyData = await getLeadsViaGraphAPI(graphClient);
+            if (finalVerifyData) {
                 finalTotalLeads = finalVerifyData.length;
             }
         } catch (verifyError) {
@@ -434,10 +428,10 @@ router.get('/master-list/data', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get leads data using Graph API
+        let leadsData = await getLeadsViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!leadsData) {
             return res.json({
                 success: true,
                 data: [],
@@ -445,10 +439,6 @@ router.get('/master-list/data', requireDelegatedAuth, async (req, res) => {
                 message: 'No master file found'
             });
         }
-
-        // Get leads data
-        const leadsSheet = masterWorkbook.Sheets['Leads'];
-        let leadsData = XLSX.utils.sheet_to_json(leadsSheet);
 
         // Filter data if parameters provided
         if (status) {
@@ -489,10 +479,10 @@ router.get('/master-list/stats', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get leads data and calculate statistics using Graph API
+        const leadsData = await getLeadsViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!leadsData) {
             return res.json({
                 success: true,
                 data: {
@@ -506,8 +496,8 @@ router.get('/master-list/stats', requireDelegatedAuth, async (req, res) => {
             });
         }
 
-        // Calculate statistics
-        const stats = excelProcessor.getMasterFileStats(masterWorkbook);
+        // Calculate statistics from leads data
+        const stats = calculateStatsFromLeads(leadsData);
 
         res.json({
             success: true,
@@ -535,22 +525,15 @@ router.put('/master-list/lead/:email', requireDelegatedAuth, async (req, res) =>
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Update lead using Graph API
+        const updateSuccess = await updateLeadViaGraphAPI(graphClient, email, updates);
         
-        if (!masterWorkbook) {
+        if (!updateSuccess) {
             return res.status(404).json({
                 success: false,
-                message: 'Master file not found'
+                message: 'Lead not found or update failed'
             });
         }
-
-        // Update lead in master file
-        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
-
-        // Save updated file
-        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Lead updated: ${email}`);
 
@@ -578,19 +561,16 @@ router.get('/master-list/due-today', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get leads due today using Graph API
+        const dueLeads = await getLeadsDueTodayViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!dueLeads) {
             return res.json({
                 success: true,
                 data: [],
                 total: 0
             });
         }
-
-        // Get leads due today
-        const dueLeads = excelProcessor.getLeadsDueToday(masterWorkbook);
 
         res.json({
             success: true,
@@ -616,18 +596,15 @@ router.get('/master-list/export', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Export master file using Graph API
+        const buffer = await exportMasterFileViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!buffer) {
             return res.status(404).json({
                 success: false,
                 message: 'Master file not found'
             });
         }
-
-        // Convert to buffer and send
-        const buffer = excelProcessor.workbookToBuffer(masterWorkbook);
         
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
         const filename = `LGA-Master-Email-List-Export-${timestamp}.xlsx`;
@@ -676,19 +653,16 @@ router.post('/master-list/merge-recovery', requireDelegatedAuth, upload.single('
 
         console.log(`📊 Found ${recoveryLeads.length} leads in recovery file`);
 
-        // Download current master file
+        // Get current leads using Graph API
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
-        let currentMasterWorkbook = await downloadMasterFile(graphClient);
-        let currentLeads = [];
-
-        if (currentMasterWorkbook && currentMasterWorkbook.Sheets['Leads']) {
-            const leadsSheet = currentMasterWorkbook.Sheets['Leads'];
-            currentLeads = XLSX.utils.sheet_to_json(leadsSheet);
-            console.log(`📊 Current master file has ${currentLeads.length} existing leads`);
+        let currentLeads = await getLeadsViaGraphAPI(graphClient);
+        
+        if (!currentLeads) {
+            console.log('📋 No current master file found');
+            currentLeads = [];
         } else {
-            console.log('📋 No current master file found or corrupted - creating new one');
-            currentMasterWorkbook = excelProcessor.createMasterFile();
+            console.log(`📊 Current master file has ${currentLeads.length} existing leads`);
         }
 
         // Merge recovery leads with current data (append mode)
@@ -765,19 +739,17 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file to get lead data and templates
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get lead data and templates using Graph API
+        const leadsData = await getLeadsViaGraphAPI(graphClient);
+        const templates = await getTemplatesViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!leadsData) {
             return res.status(404).json({
                 success: false,
                 message: 'Master file not found'
             });
         }
 
-        // Get lead data
-        const leadsSheet = masterWorkbook.Sheets['Leads'];
-        const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
         const lead = leadsData.find(l => l.Email.toLowerCase() === email.toLowerCase());
 
         if (!lead) {
@@ -786,9 +758,6 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
                 message: 'Lead not found'
             });
         }
-
-        // Get templates
-        const templates = excelProcessor.getTemplates(masterWorkbook);
 
         // Process email content
         const emailContent = await emailContentProcessor.processEmailContent(
@@ -839,17 +808,15 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             Last_Email_Date: new Date().toISOString().split('T')[0],
             Email_Count: (lead.Email_Count || 0) + 1,
             Template_Used: emailContent.contentType,
-            Email_Content_Sent: emailContent.subject + '\n\n' + emailContent.body,
-            Next_Email_Date: excelProcessor.calculateNextEmailDate(new Date(), lead.Follow_Up_Days || 7),
+            Next_Email_Date: calculateNextEmailDate(new Date(), lead.Follow_Up_Days || 7),
             'Email Sent': 'Yes',
             'Email Status': 'Sent',
             'Sent Date': new Date().toISOString(),
-            'Sent By': senderEmail // Track who sent the email
+            'Sent By': senderEmail
         };
 
-        const updatedWorkbook = excelProcessor.updateLeadInMaster(masterWorkbook, email, updates);
-        const masterBuffer = excelProcessor.workbookToBuffer(updatedWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        // Update lead using Graph API
+        await updateLeadViaGraphAPI(graphClient, email, updates);
 
         console.log(`✅ Email sent successfully to: ${email}`);
 
@@ -876,149 +843,314 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
     }
 });
 
-// Cache for master file downloads with promise-based deduplication
-const masterFileCache = new Map();
-const activeDownloads = new Map();
+// Graph API helper functions
 
-// Helper function to download master file with caching and deduplication
-async function downloadMasterFile(graphClient, useCache = true) {
+// Get leads data using Graph API
+async function getLeadsViaGraphAPI(graphClient) {
     try {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
-        // Create unique cache key per session to avoid cross-user conflicts
-        const cacheKey = `master_file_${graphClient.config?.authProvider?.account?.username || 'default'}`;
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return null;
+        }
+
+        const fileId = files.value[0].id;
         
-        // Check cache first
-        if (useCache && masterFileCache.has(cacheKey)) {
-            const cached = masterFileCache.get(cacheKey);
-            const age = Date.now() - cached.timestamp;
-            if (age < 30 * 1000) { // 30 seconds
-                console.log(`📋 Using cached master file (${Math.round(age/1000)}s old)`);
-                return cached.workbook;
-            } else {
-                masterFileCache.delete(cacheKey);
-            }
+        // Get worksheets to find the correct sheet name
+        const worksheets = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+            .get();
+            
+        // Find Leads sheet (or first sheet)
+        const leadsSheet = worksheets.value.find(sheet => 
+            sheet.name === 'Leads' || sheet.name.toLowerCase().includes('lead')
+        ) || worksheets.value[0];
+        
+        if (!leadsSheet) {
+            return null;
         }
         
-        // Check if download is already in progress (only if using cache)
-        if (useCache && activeDownloads.has(cacheKey)) {
-            console.log(`⏳ Master file download in progress, waiting...`);
-            return await activeDownloads.get(cacheKey);
+        // Get leads data
+        const usedRange = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/usedRange`)
+            .get();
+        
+        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+            return [];
         }
         
-        // Start download and cache the promise to prevent concurrent downloads (only if using cache)
-        const downloadPromise = performMasterFileDownload(graphClient, masterFileName, masterFolderPath, cacheKey);
-        if (useCache) {
-            activeDownloads.set(cacheKey, downloadPromise);
-        }
+        // Convert to lead objects
+        const headers = usedRange.values[0];
+        const rows = usedRange.values.slice(1);
         
-        try {
-            const workbook = await downloadPromise;
-            return workbook;
-        } finally {
-            // Clean up active download tracking (only if we added it)
-            if (useCache) {
-                activeDownloads.delete(cacheKey);
-            }
-        }
+        return rows.map(row => {
+            const lead = {};
+            headers.forEach((header, index) => {
+                lead[header] = row[index] || '';
+            });
+            return lead;
+        }).filter(lead => lead.Email);
+        
     } catch (error) {
-        console.error('❌ Master file download error:', error);
+        console.error('❌ Get leads via Graph API error:', error);
         return null;
     }
 }
 
-// Separate function to perform the actual download
-async function performMasterFileDownload(graphClient, masterFileName, masterFolderPath, cacheKey) {
-    console.log(`📥 Downloading master file from: ${masterFolderPath}`);
-    
-    const files = await graphClient
-        .api(`/me/drive/root:${masterFolderPath}:/children`)
-        .filter(`name eq '${masterFileName}'`)
-        .get();
+// Update lead using Graph API
+async function updateLeadViaGraphAPI(graphClient, email, updates) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
 
-    if (files.value.length === 0) {
-        return null;
+        if (files.value.length === 0) {
+            return false;
+        }
+
+        const fileId = files.value[0].id;
+        
+        // Get worksheets to find the correct sheet name
+        const worksheets = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+            .get();
+            
+        const leadsSheet = worksheets.value.find(sheet => 
+            sheet.name === 'Leads' || sheet.name.toLowerCase().includes('lead')
+        ) || worksheets.value[0];
+        
+        if (!leadsSheet) {
+            return false;
+        }
+        
+        // Get worksheet data to find the email
+        const usedRange = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/usedRange`)
+            .get();
+        
+        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+            return false;
+        }
+        
+        const headers = usedRange.values[0];
+        const rows = usedRange.values.slice(1);
+        
+        // Find email column and target row
+        const emailColumnIndex = headers.findIndex(header => 
+            header && typeof header === 'string' && 
+            header.toLowerCase().includes('email') && 
+            !header.toLowerCase().includes('date')
+        );
+        
+        if (emailColumnIndex === -1) {
+            return false;
+        }
+        
+        let targetRowIndex = -1;
+        for (let i = 0; i < rows.length; i++) {
+            const rowEmail = rows[i][emailColumnIndex];
+            if (rowEmail && rowEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
+                targetRowIndex = i + 2; // +2 for 1-based and header row
+                break;
+            }
+        }
+        
+        if (targetRowIndex === -1) {
+            return false;
+        }
+        
+        // Update each field
+        for (const [field, value] of Object.entries(updates)) {
+            const colIndex = headers.findIndex(h => h === field);
+            if (colIndex !== -1) {
+                const cellAddress = `${getExcelColumnLetter(colIndex)}${targetRowIndex}`;
+                
+                await graphClient
+                    .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/range(address='${cellAddress}')`)
+                    .patch({
+                        values: [[value]]
+                    });
+            }
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Update lead via Graph API error:', error);
+        return false;
     }
-        
-        // Try multiple methods to download the file
-        let fileContent = null;
-        
-        try {
-            // Method 1: Direct content download
-            fileContent = await graphClient
-                .api(`/me/drive/items/${files.value[0].id}/content`)
-                .get();
-                
-        } catch (error) {
-            console.log('⚠️ Method 1 failed:', error.message);
-        }
-        
-        // If Method 1 failed or returned undefined, try Method 2
-        if (!fileContent || fileContent.length === undefined) {
-            try {
-                const response = await graphClient
-                    .api(`/me/drive/items/${files.value[0].id}/content`)
-                    .getStream();
-                    
-                // Convert stream to buffer
-                const chunks = [];
-                for await (const chunk of response) {
-                    chunks.push(chunk);
-                }
-                fileContent = Buffer.concat(chunks);
-                
-            } catch (error) {
-                console.log('⚠️ Method 2 failed:', error.message);
-            }
-        }
-        
-        // If both methods failed, try Method 3
-        if (!fileContent || fileContent.length === undefined) {
-            try {
-                fileContent = await graphClient
-                    .api(`/me/drive/root:${masterFolderPath}/${masterFileName}:/content`)
-                    .get();
-                    
-            } catch (error) {
-                console.log('⚠️ Method 3 failed:', error.message);
-            }
-        }
+}
 
-        if (!fileContent) {
-            console.error('❌ All download methods failed');
-            return null;
-        }
-
-
-        // Handle different content types from Graph API
-        let buffer;
-        if (Buffer.isBuffer(fileContent)) {
-            buffer = fileContent;
-        } else if (fileContent instanceof ArrayBuffer) {
-            buffer = Buffer.from(fileContent);
-        } else if (typeof fileContent === 'string') {
-            buffer = Buffer.from(fileContent, 'binary');
-        } else {
-            console.error('❌ Unexpected file content type:', typeof fileContent);
-            return null;
-        }
-
-        // Parse workbook and verify content
-        const workbook = excelProcessor.bufferToWorkbook(buffer);
-        
-        if (!workbook.SheetNames.includes('Leads')) {
-            console.error('❌ Downloaded file missing Leads sheet');
+// Get leads due today using Graph API
+async function getLeadsDueTodayViaGraphAPI(graphClient) {
+    try {
+        const leadsData = await getLeadsViaGraphAPI(graphClient);
+        if (!leadsData) {
             return null;
         }
         
-        // Cache the workbook for 30 seconds
-        masterFileCache.set(cacheKey, {
-            workbook: workbook,
-            timestamp: Date.now()
+        const today = new Date().toISOString().split('T')[0];
+        
+        return leadsData.filter(lead => {
+            const nextEmailDate = lead.Next_Email_Date ? 
+                new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+            
+            return nextEmailDate && nextEmailDate <= today &&
+                   !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
         });
         
-        return workbook;
+    } catch (error) {
+        console.error('❌ Get leads due today via Graph API error:', error);
+        return null;
+    }
+}
+
+// Export master file using Graph API
+async function exportMasterFileViaGraphAPI(graphClient) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file content directly
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return null;
+        }
+
+        const fileContent = await graphClient
+            .api(`/me/drive/items/${files.value[0].id}/content`)
+            .get();
+
+        return fileContent;
+        
+    } catch (error) {
+        console.error('❌ Export master file via Graph API error:', error);
+        return null;
+    }
+}
+
+// Calculate statistics from leads data
+function calculateStatsFromLeads(leadsData) {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const stats = {
+        totalLeads: leadsData.length,
+        dueToday: 0,
+        emailsSent: 0,
+        emailsRead: 0,
+        repliesReceived: 0,
+        statusBreakdown: {}
+    };
+    
+    leadsData.forEach(lead => {
+        // Count by status
+        const status = lead.Status || 'New';
+        stats.statusBreakdown[status] = (stats.statusBreakdown[status] || 0) + 1;
+        
+        // Count specific metrics
+        if (lead.Last_Email_Date) stats.emailsSent++;
+        if (lead.Read_Date) stats.emailsRead++;
+        if (lead.Reply_Date) stats.repliesReceived++;
+        
+        // Check if due today
+        const nextEmailDate = lead.Next_Email_Date ? 
+            new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+        
+        if (nextEmailDate && nextEmailDate <= today &&
+            !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status)) {
+            stats.dueToday++;
+        }
+    });
+    
+    return stats;
+}
+
+// Get templates using Graph API
+async function getTemplatesViaGraphAPI(graphClient) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return [];
+        }
+
+        const fileId = files.value[0].id;
+        
+        try {
+            // Try to get Templates worksheet data
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/usedRange`)
+                .get();
+            
+            if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+                return [];
+            }
+            
+            // Convert to template objects
+            const headers = usedRange.values[0];
+            const rows = usedRange.values.slice(1);
+            
+            return rows.map(row => {
+                const template = {};
+                headers.forEach((header, index) => {
+                    template[header] = row[index] || '';
+                });
+                return template;
+            }).filter(template => template.Template_ID);
+            
+        } catch (error) {
+            // If Templates sheet doesn't exist, return empty array
+            console.log('Templates sheet not found, returning empty array');
+            return [];
+        }
+        
+    } catch (error) {
+        console.error('❌ Get templates via Graph API error:', error);
+        return [];
+    }
+}
+
+// Helper function to calculate next email date
+function calculateNextEmailDate(fromDate, followUpDays) {
+    const nextDate = new Date(fromDate);
+    nextDate.setDate(nextDate.getDate() + followUpDays);
+    return nextDate.toISOString().split('T')[0];
+}
+
+// Helper function to get Excel column letter
+function getExcelColumnLetter(columnIndex) {
+    let result = '';
+    let index = columnIndex;
+    
+    while (index >= 0) {
+        result = String.fromCharCode(65 + (index % 26)) + result;
+        index = Math.floor(index / 26) - 1;
+    }
+    
+    return result;
 }
 
 // Helper function to create OneDrive folder

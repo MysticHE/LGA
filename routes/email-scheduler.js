@@ -1,13 +1,9 @@
 const express = require('express');
-const XLSX = require('xlsx');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
-const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
-const { advancedExcelUpload } = require('./excel-upload-fix');
 const router = express.Router();
 
 // Initialize processors
-const excelProcessor = new ExcelProcessor();
 const emailContentProcessor = new EmailContentProcessor();
 
 /**
@@ -40,11 +36,10 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Get master file data using Graph Workbook API (bypassing cache)
-        console.log(`📥 Getting master file data for campaign (bypassing cache)...`);
-        const masterFileData = await getMasterFileData(graphClient, false);
+        // Get leads data using Graph API
+        const allLeads = await getLeadsViaGraphAPI(graphClient);
         
-        if (!masterFileData || !masterFileData.leadsData) {
+        if (!allLeads) {
             console.error(`❌ Master file data retrieval failed for campaign`);
             return res.status(404).json({
                 success: false,
@@ -56,9 +51,8 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
             });
         }
 
-        // Get leads based on target criteria (now works directly with leads data)
-        const leadsData = getTargetLeadsFromData(masterFileData.leadsData, targetLeads);
-        const allLeads = masterFileData.leadsData;
+        // Get leads based on target criteria
+        const leadsData = getTargetLeadsFromData(allLeads, targetLeads);
         
         if (leadsData.length === 0) {
             return res.json({
@@ -77,8 +71,8 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Generate campaign ID
         const campaignId = `Campaign_${Date.now()}`;
 
-        // Get templates for content processing (fallback to empty array for now)
-        const templates = []; // TODO: Add Graph API template support
+        // Get templates using Graph API
+        const templates = await getTemplatesViaGraphAPI(graphClient);
 
         // Process and send emails based on schedule
         let emailsSent = 0;
@@ -100,14 +94,14 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
             results.push(...sendResults.results);
             errors.push(...sendResults.errors);
 
-            // Update leads in master file using Graph API
-            await updateLeadsAfterCampaign(graphClient, masterFileData, sendResults.results, followUpDays);
+            // Update leads after campaign using Graph API
+            await updateLeadsAfterCampaign(graphClient, sendResults.results, followUpDays);
         } else {
             // Schedule emails for later
             emailsQueued = leadsData.length;
             
             // Create scheduled campaign record
-            await createScheduledCampaign(graphClient, masterFileData, {
+            await createScheduledCampaign(graphClient, {
                 campaignId,
                 campaignName,
                 emailContentType,
@@ -121,7 +115,7 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         }
 
         // Record campaign in master file
-        await recordCampaignHistory(graphClient, masterFileData, {
+        await recordCampaignHistory(graphClient, {
             Campaign_ID: campaignId,
             Campaign_Name: campaignName,
             Start_Date: new Date().toISOString().split('T')[0],
@@ -166,18 +160,8 @@ router.get('/campaigns/:campaignId', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
-        
-        if (!masterWorkbook) {
-            return res.status(404).json({
-                success: false,
-                message: 'Master file not found'
-            });
-        }
-
-        // Get campaign history
-        const campaignHistory = getCampaignHistory(masterWorkbook);
+        // Get campaign history using Graph API
+        const campaignHistory = await getCampaignHistoryViaGraphAPI(graphClient);
         const campaign = campaignHistory.find(c => c.Campaign_ID === campaignId);
 
         if (!campaign) {
@@ -187,8 +171,9 @@ router.get('/campaigns/:campaignId', requireDelegatedAuth, async (req, res) => {
             });
         }
 
-        // Get leads associated with this campaign
-        const leadsData = getLeadsByCampaign(masterWorkbook, campaignId);
+        // Get leads associated with this campaign using Graph API
+        const allLeads = await getLeadsViaGraphAPI(graphClient);
+        const leadsData = getLeadsByCampaign(allLeads, campaignId);
         
         // Calculate campaign statistics
         const stats = calculateCampaignStats(leadsData);
@@ -220,19 +205,16 @@ router.get('/campaigns', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get campaign history using Graph API
+        let campaigns = await getCampaignHistoryViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!campaigns) {
             return res.json({
                 success: true,
                 campaigns: [],
                 total: 0
             });
         }
-
-        // Get campaign history
-        let campaigns = getCampaignHistory(masterWorkbook);
 
         // Filter by status if provided
         if (status) {
@@ -271,18 +253,8 @@ router.post('/campaigns/:campaignId/pause', requireDelegatedAuth, async (req, re
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
-        
-        if (!masterWorkbook) {
-            return res.status(404).json({
-                success: false,
-                message: 'Master file not found'
-            });
-        }
-
-        // Update campaign status
-        const updated = await updateCampaignStatus(graphClient, masterWorkbook, campaignId, 'Paused');
+        // Update campaign status using Graph API
+        const updated = await updateCampaignStatusViaGraphAPI(graphClient, campaignId, 'Paused');
 
         if (!updated) {
             return res.status(404).json({
@@ -316,18 +288,8 @@ router.post('/campaigns/:campaignId/resume', requireDelegatedAuth, async (req, r
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
-        
-        if (!masterWorkbook) {
-            return res.status(404).json({
-                success: false,
-                message: 'Master file not found'
-            });
-        }
-
-        // Update campaign status
-        const updated = await updateCampaignStatus(graphClient, masterWorkbook, campaignId, 'Active');
+        // Update campaign status using Graph API
+        const updated = await updateCampaignStatusViaGraphAPI(graphClient, campaignId, 'Active');
 
         if (!updated) {
             return res.status(404).json({
@@ -360,19 +322,8 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
-        
-        if (!masterWorkbook) {
-            return res.json({
-                success: true,
-                message: 'No master file found',
-                processed: 0
-            });
-        }
-
-        // Get scheduled campaigns that are due
-        const dueCampaigns = getScheduledCampaignsDue(masterWorkbook);
+        // Get scheduled campaigns that are due using Graph API
+        const dueCampaigns = await getScheduledCampaignsDueViaGraphAPI(graphClient);
         
         if (dueCampaigns.length === 0) {
             return res.json({
@@ -389,8 +340,8 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
             try {
                 console.log(`📧 Processing scheduled campaign: ${campaign.Campaign_ID}`);
 
-                // Get templates
-                const templates = excelProcessor.getTemplates(masterWorkbook);
+                // Get templates using Graph API
+                const templates = await getTemplatesViaGraphAPI(graphClient);
 
                 // Send emails
                 const sendResults = await sendEmailsToLeads(
@@ -401,9 +352,9 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
                     campaign.Campaign_ID
                 );
 
-                // Update leads and campaign status
-                await updateLeadsAfterCampaign(graphClient, masterWorkbook, sendResults.results, campaign.followUpDays);
-                await updateCampaignStatus(graphClient, masterWorkbook, campaign.Campaign_ID, 'Active');
+                // Update leads and campaign status using Graph API
+                await updateLeadsAfterCampaign(graphClient, sendResults.results, campaign.followUpDays);
+                await updateCampaignStatusViaGraphAPI(graphClient, campaign.Campaign_ID, 'Active');
 
                 processed++;
                 results.push({
@@ -622,7 +573,7 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
 }
 
 // Helper function to update leads after campaign using Graph API
-async function updateLeadsAfterCampaign(graphClient, masterFileData, results, followUpDays) {
+async function updateLeadsAfterCampaign(graphClient, results, followUpDays) {
     try {
         console.log(`📝 Updating ${results.length} leads after campaign using Graph API...`);
         
@@ -634,7 +585,7 @@ async function updateLeadsAfterCampaign(graphClient, masterFileData, results, fo
                 
                 try {
                     // Update individual lead using Graph API (matching exact Excel column names)
-                    await updateLeadStatusViaGraph(graphClient, masterFileData.fileId, leadEmail, {
+                    await updateLeadStatusViaGraph(graphClient, leadEmail, {
                         Status: 'Sent',                                               // Column M
                         Campaign_Stage: 'Email_Sent',                                // Column N  
                         Template_Used: result.templateUsed || 'AI_Generated',        // Column P
@@ -661,27 +612,11 @@ async function updateLeadsAfterCampaign(graphClient, masterFileData, results, fo
     }
 }
 
-// Helper functions for campaign management
-function getCampaignHistory(masterWorkbook) {
-    try {
-        const campaignSheet = masterWorkbook.Sheets['Campaign_History'];
-        if (!campaignSheet) return [];
-        
-        const data = XLSX.utils.sheet_to_json(campaignSheet);
-        return data.filter(campaign => campaign.Campaign_ID && campaign.Campaign_ID !== '');
-    } catch (error) {
-        console.error('❌ Error getting campaign history:', error);
-        return [];
-    }
-}
 
-function getLeadsByCampaign(masterWorkbook, campaignId) {
-    const leadsSheet = masterWorkbook.Sheets['Leads'];
-    const leadsData = XLSX.utils.sheet_to_json(leadsSheet);
-    
+function getLeadsByCampaign(allLeads, campaignId) {
     // This is a simplified approach - in a real system you'd track campaign associations
     // For now, we'll return leads that might have been part of the campaign
-    return leadsData.filter(lead => 
+    return allLeads.filter(lead => 
         lead.Template_Used && lead.Last_Email_Date
     );
 }
@@ -718,19 +653,89 @@ function calculateCampaignStats(leads) {
     return stats;
 }
 
-async function recordCampaignHistory(graphClient, masterFileData, campaignData) {
+async function recordCampaignHistory(graphClient, campaignData) {
     try {
         console.log(`📝 Recording campaign history: ${campaignData.Campaign_ID}`);
-        // TODO: Implement Graph API campaign history recording
-        // For now, just log the campaign data
-        console.log(`📊 Campaign data:`, {
-            Campaign_ID: campaignData.Campaign_ID,
-            Campaign_Name: campaignData.Campaign_Name,
-            Emails_Sent: campaignData.Emails_Sent,
-            Status: campaignData.Status
-        });
         
-        return true; // Simplified success return
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            console.log('❌ Master file not found for campaign history recording');
+            return false;
+        }
+
+        const fileId = files.value[0].id;
+        
+        try {
+            // Try to append to Campaign_History worksheet
+            // First get existing data to find next row
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Campaign_History')/usedRange`)
+                .get();
+            
+            let nextRow = 2; // Start after headers
+            if (usedRange && usedRange.values) {
+                nextRow = usedRange.values.length + 1;
+            }
+            
+            // Add new campaign record
+            const campaignRow = [
+                campaignData.Campaign_ID,
+                campaignData.Campaign_Name,
+                campaignData.Start_Date,
+                campaignData.Emails_Sent,
+                campaignData.Emails_Read,
+                campaignData.Replies,
+                campaignData.Status
+            ];
+            
+            await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Campaign_History')/range(address='A${nextRow}:G${nextRow}')`)
+                .patch({
+                    values: [campaignRow]
+                });
+            
+            console.log(`✅ Campaign history recorded at row ${nextRow}`);
+            return true;
+            
+        } catch (error) {
+            console.log('⚠️ Campaign_History sheet might not exist, creating headers...');
+            // If sheet doesn't exist, create it with headers
+            const headers = ['Campaign_ID', 'Campaign_Name', 'Start_Date', 'Emails_Sent', 'Emails_Read', 'Replies', 'Status'];
+            
+            await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Campaign_History')/range(address='A1:G1')`)
+                .patch({
+                    values: [headers]
+                });
+            
+            // Add campaign data
+            const campaignRow = [
+                campaignData.Campaign_ID,
+                campaignData.Campaign_Name,
+                campaignData.Start_Date,
+                campaignData.Emails_Sent,
+                campaignData.Emails_Read,
+                campaignData.Replies,
+                campaignData.Status
+            ];
+            
+            await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Campaign_History')/range(address='A2:G2')`)
+                .patch({
+                    values: [campaignRow]
+                });
+            
+            console.log(`✅ Campaign history recorded with new headers`);
+            return true;
+        }
         
     } catch (error) {
         console.error('❌ Error recording campaign history:', error);
@@ -739,42 +744,11 @@ async function recordCampaignHistory(graphClient, masterFileData, campaignData) 
     }
 }
 
-async function updateCampaignStatus(graphClient, masterWorkbook, campaignId, newStatus) {
-    try {
-        const campaignSheet = masterWorkbook.Sheets['Campaign_History'];
-        const campaignData = XLSX.utils.sheet_to_json(campaignSheet);
-        
-        let found = false;
-        for (let i = 0; i < campaignData.length; i++) {
-            if (campaignData[i].Campaign_ID === campaignId) {
-                campaignData[i].Status = newStatus;
-                found = true;
-                break;
-            }
-        }
-        
-        if (found) {
-            const newSheet = XLSX.utils.json_to_sheet(campaignData);
-            newSheet['!cols'] = [
-                {width: 20}, {width: 30}, {width: 20}, {width: 15}, {width: 15}, {width: 15}, {width: 20}
-            ];
-            masterWorkbook.Sheets['Campaign_History'] = newSheet;
-            
-            const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-            await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
-        }
-        
-        return found;
-    } catch (error) {
-        console.error('❌ Error updating campaign status:', error);
-        return false;
-    }
-}
 
-async function createScheduledCampaign(graphClient, masterFileData, campaignData) {
+async function createScheduledCampaign(graphClient, campaignData) {
     // In a production system, you'd store scheduled campaigns in a separate sheet or database
     // For now, we'll add it to campaign history with scheduled status
-    await recordCampaignHistory(graphClient, masterFileData, {
+    await recordCampaignHistory(graphClient, {
         Campaign_ID: campaignData.campaignId,
         Campaign_Name: campaignData.campaignName,
         Start_Date: campaignData.scheduledTime.split('T')[0],
@@ -785,11 +759,6 @@ async function createScheduledCampaign(graphClient, masterFileData, campaignData
     });
 }
 
-function getScheduledCampaignsDue(masterWorkbook) {
-    // This is a simplified implementation
-    // In a real system, you'd have a proper scheduled campaigns management
-    return [];
-}
 
 // Helper function to get master file data using Graph Workbook API
 async function getMasterFileData(graphClient, useCache = true) {
@@ -991,11 +960,40 @@ async function downloadMasterFileRaw(graphClient, useCache = true) {
 
 
 // Helper function to update individual lead via Graph API
-async function updateLeadStatusViaGraph(graphClient, fileId, leadEmail, updates) {
+async function updateLeadStatusViaGraph(graphClient, leadEmail, updates) {
     try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            throw new Error('Master file not found');
+        }
+
+        const fileId = files.value[0].id;
+        
+        // Get worksheets to find the correct sheet name
+        const worksheets = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+            .get();
+            
+        // Find Leads sheet (or first sheet)
+        const leadsSheet = worksheets.value.find(sheet => 
+            sheet.name === 'Leads' || sheet.name.toLowerCase().includes('lead')
+        ) || worksheets.value[0];
+        
+        if (!leadsSheet) {
+            throw new Error('No leads sheet found');
+        }
+        
         // Find the row containing this lead
         const tableRange = await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets('Leads')/usedRange`)
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/usedRange`)
             .get();
             
         if (!tableRange || !tableRange.values) {
@@ -1032,7 +1030,7 @@ async function updateLeadStatusViaGraph(graphClient, fileId, leadEmail, updates)
                 const cellAddress = `${getExcelColumnLetter(colIndex + 1)}${targetRowIndex + 1}`;
                 
                 await graphClient
-                    .api(`/me/drive/items/${fileId}/workbook/worksheets('Leads')/range(address='${cellAddress}')`)
+                    .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/range(address='${cellAddress}')`)
                     .patch({
                         values: [[value]]
                     });
@@ -1065,6 +1063,285 @@ function getExcelColumnLetter(columnNumber) {
         columnNumber = Math.floor((columnNumber - 1) / 26);
     }
     return result;
+}
+
+// Graph API helper functions for migrated functionality
+
+async function getLeadsViaGraphAPI(graphClient) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return null;
+        }
+
+        const fileId = files.value[0].id;
+        
+        // Get worksheets to find the correct sheet name
+        const worksheets = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
+            .get();
+            
+        // Find Leads sheet (or first sheet)
+        const leadsSheet = worksheets.value.find(sheet => 
+            sheet.name === 'Leads' || sheet.name.toLowerCase().includes('lead')
+        ) || worksheets.value[0];
+        
+        if (!leadsSheet) {
+            return null;
+        }
+        
+        // Get leads data
+        const usedRange = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/usedRange`)
+            .get();
+        
+        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+            return [];
+        }
+        
+        // Convert to lead objects
+        const headers = usedRange.values[0];
+        const rows = usedRange.values.slice(1);
+        
+        return rows.map(row => {
+            const lead = {};
+            headers.forEach((header, index) => {
+                lead[header] = row[index] || '';
+            });
+            return lead;
+        }).filter(lead => lead.Email);
+        
+    } catch (error) {
+        console.error('❌ Get leads via Graph API error:', error);
+        return null;
+    }
+}
+
+async function getTemplatesViaGraphAPI(graphClient) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return [];
+        }
+
+        const fileId = files.value[0].id;
+        
+        try {
+            // Try to get Templates worksheet data
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/usedRange`)
+                .get();
+            
+            if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+                return [];
+            }
+            
+            // Convert to template objects
+            const headers = usedRange.values[0];
+            const rows = usedRange.values.slice(1);
+            
+            return rows.map(row => {
+                const template = {};
+                headers.forEach((header, index) => {
+                    template[header] = row[index] || '';
+                });
+                return template;
+            }).filter(template => template.Template_ID);
+            
+        } catch (error) {
+            // If Templates sheet doesn't exist, return empty array
+            console.log('Templates sheet not found, returning empty array');
+            return [];
+        }
+        
+    } catch (error) {
+        console.error('❌ Get templates via Graph API error:', error);
+        return [];
+    }
+}
+
+async function getCampaignHistoryViaGraphAPI(graphClient) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return null;
+        }
+
+        const fileId = files.value[0].id;
+        
+        try {
+            // Try to get Campaign_History worksheet data
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Campaign_History')/usedRange`)
+                .get();
+            
+            if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+                return [];
+            }
+            
+            // Convert to campaign objects
+            const headers = usedRange.values[0];
+            const rows = usedRange.values.slice(1);
+            
+            return rows.map(row => {
+                const campaign = {};
+                headers.forEach((header, index) => {
+                    campaign[header] = row[index] || '';
+                });
+                return campaign;
+            }).filter(campaign => campaign.Campaign_ID && campaign.Campaign_ID !== '');
+            
+        } catch (error) {
+            // If Campaign_History sheet doesn't exist, return empty array
+            console.log('Campaign_History sheet not found, returning empty array');
+            return [];
+        }
+        
+    } catch (error) {
+        console.error('❌ Get campaign history via Graph API error:', error);
+        return null;
+    }
+}
+
+async function updateCampaignStatusViaGraphAPI(graphClient, campaignId, newStatus) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            console.log('❌ Master file not found for campaign status update');
+            return false;
+        }
+
+        const fileId = files.value[0].id;
+        
+        try {
+            // Get Campaign_History worksheet data
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Campaign_History')/usedRange`)
+                .get();
+            
+            if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+                console.log('❌ No campaign history data found');
+                return false;
+            }
+            
+            const headers = usedRange.values[0];
+            const rows = usedRange.values.slice(1);
+            
+            // Find Campaign_ID column
+            const campaignIdIndex = headers.findIndex(h => h === 'Campaign_ID');
+            const statusIndex = headers.findIndex(h => h === 'Status');
+            
+            if (campaignIdIndex === -1 || statusIndex === -1) {
+                console.log('❌ Campaign_ID or Status column not found');
+                return false;
+            }
+            
+            // Find the campaign row
+            let targetRowIndex = -1;
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i][campaignIdIndex] === campaignId) {
+                    targetRowIndex = i;
+                    break;
+                }
+            }
+            
+            if (targetRowIndex === -1) {
+                console.log(`❌ Campaign ${campaignId} not found`);
+                return false;
+            }
+            
+            // Update the status cell
+            const excelRowNumber = targetRowIndex + 2; // +2 for header row and 0-based index
+            const statusColumnLetter = getExcelColumnLetter(statusIndex + 1);
+            const cellAddress = `${statusColumnLetter}${excelRowNumber}`;
+            
+            await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Campaign_History')/range(address='${cellAddress}')`)
+                .patch({
+                    values: [[newStatus]]
+                });
+            
+            console.log(`✅ Updated campaign ${campaignId} status to ${newStatus}`);
+            return true;
+            
+        } catch (error) {
+            console.error('❌ Error updating campaign status:', error);
+            return false;
+        }
+        
+    } catch (error) {
+        console.error('❌ Update campaign status via Graph API error:', error);
+        return false;
+    }
+}
+
+async function getScheduledCampaignsDueViaGraphAPI(graphClient) {
+    try {
+        // Get campaign history to find scheduled campaigns
+        const campaigns = await getCampaignHistoryViaGraphAPI(graphClient);
+        
+        if (!campaigns) {
+            return [];
+        }
+        
+        // Filter for scheduled campaigns that are due
+        const now = new Date();
+        const dueCampaigns = campaigns.filter(campaign => {
+            if (campaign.Status !== 'Scheduled') return false;
+            
+            // Check if the scheduled time has passed
+            const scheduledTime = new Date(campaign.Start_Date);
+            return scheduledTime <= now;
+        });
+        
+        // In a real system, you'd also need to retrieve the full campaign details
+        // including target leads, email content type, etc. For now, return basic info
+        return dueCampaigns.map(campaign => ({
+            Campaign_ID: campaign.Campaign_ID,
+            Campaign_Name: campaign.Campaign_Name,
+            Start_Date: campaign.Start_Date,
+            // These would need to be stored in the campaign record or a separate sheet
+            targetLeads: [], // TODO: Retrieve from campaign details
+            emailContentType: 'ai_generated', // TODO: Retrieve from campaign details
+            followUpDays: 7 // TODO: Retrieve from campaign details
+        }));
+        
+    } catch (error) {
+        console.error('❌ Get scheduled campaigns due via Graph API error:', error);
+        return [];
+    }
 }
 
 module.exports = router;

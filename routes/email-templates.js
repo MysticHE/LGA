@@ -1,13 +1,9 @@
 const express = require('express');
-const XLSX = require('xlsx');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
-const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
-const { advancedExcelUpload } = require('./excel-upload-fix');
 const router = express.Router();
 
 // Initialize processors
-const excelProcessor = new ExcelProcessor();
 const emailContentProcessor = new EmailContentProcessor();
 
 /**
@@ -23,19 +19,16 @@ router.get('/', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get templates using Graph API
+        const templates = await getTemplatesViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!templates) {
             return res.json({
                 success: true,
                 templates: [],
                 message: 'No master file found'
             });
         }
-
-        // Get templates from master file
-        const templates = excelProcessor.getTemplates(masterWorkbook);
 
         res.json({
             success: true,
@@ -62,18 +55,17 @@ router.get('/:templateId', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get templates using Graph API
+        const templates = await getTemplatesViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!templates) {
             return res.status(404).json({
                 success: false,
                 message: 'Master file not found'
             });
         }
 
-        // Get templates and find specific one
-        const templates = excelProcessor.getTemplates(masterWorkbook);
+        // Find specific template
         const template = templates.find(t => t.Template_ID === templateId);
 
         if (!template) {
@@ -119,20 +111,12 @@ router.post('/', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        let masterWorkbook = await downloadMasterFile(graphClient);
+        // Add template using Graph API
+        const templateId = await addTemplateViaGraphAPI(graphClient, templateData);
         
-        if (!masterWorkbook) {
-            // Create new master file if it doesn't exist
-            masterWorkbook = excelProcessor.createMasterFile();
+        if (!templateId) {
+            throw new Error('Failed to create template');
         }
-
-        // Add template to master file
-        const templateId = excelProcessor.addTemplate(masterWorkbook, templateData);
-
-        // Save updated master file
-        const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Template created: ${templateId}`);
 
@@ -166,47 +150,15 @@ router.put('/:templateId', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Update template using Graph API
+        const updateSuccess = await updateTemplateViaGraphAPI(graphClient, templateId, updates);
         
-        if (!masterWorkbook) {
+        if (!updateSuccess) {
             return res.status(404).json({
                 success: false,
-                message: 'Master file not found'
+                message: 'Template not found or update failed'
             });
         }
-
-        // Update template in master file
-        const templatesSheet = masterWorkbook.Sheets['Templates'];
-        const templatesData = XLSX.utils.sheet_to_json(templatesSheet);
-        
-        // Find and update template
-        let templateFound = false;
-        for (let i = 0; i < templatesData.length; i++) {
-            if (templatesData[i].Template_ID === templateId) {
-                Object.assign(templatesData[i], updates);
-                templateFound = true;
-                break;
-            }
-        }
-
-        if (!templateFound) {
-            return res.status(404).json({
-                success: false,
-                message: 'Template not found'
-            });
-        }
-
-        // Recreate templates sheet
-        const newTemplatesSheet = XLSX.utils.json_to_sheet(templatesData);
-        newTemplatesSheet['!cols'] = [
-            {width: 20}, {width: 30}, {width: 20}, {width: 50}, {width: 80}, {width: 10}
-        ];
-        masterWorkbook.Sheets['Templates'] = newTemplatesSheet;
-
-        // Save updated master file
-        const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Template updated: ${templateId}`);
 
@@ -236,40 +188,15 @@ router.delete('/:templateId', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Delete template using Graph API
+        const deleteSuccess = await deleteTemplateViaGraphAPI(graphClient, templateId);
         
-        if (!masterWorkbook) {
+        if (!deleteSuccess) {
             return res.status(404).json({
                 success: false,
-                message: 'Master file not found'
+                message: 'Template not found or delete failed'
             });
         }
-
-        // Remove template from master file
-        const templatesSheet = masterWorkbook.Sheets['Templates'];
-        let templatesData = XLSX.utils.sheet_to_json(templatesSheet);
-        
-        const originalLength = templatesData.length;
-        templatesData = templatesData.filter(template => template.Template_ID !== templateId);
-
-        if (templatesData.length === originalLength) {
-            return res.status(404).json({
-                success: false,
-                message: 'Template not found'
-            });
-        }
-
-        // Recreate templates sheet
-        const newTemplatesSheet = XLSX.utils.json_to_sheet(templatesData);
-        newTemplatesSheet['!cols'] = [
-            {width: 20}, {width: 30}, {width: 20}, {width: 50}, {width: 80}, {width: 10}
-        ];
-        masterWorkbook.Sheets['Templates'] = newTemplatesSheet;
-
-        // Save updated master file
-        const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
 
         console.log(`✅ Template deleted: ${templateId}`);
 
@@ -299,18 +226,17 @@ router.post('/:templateId/preview', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get template using Graph API
+        const templates = await getTemplatesViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!templates) {
             return res.status(404).json({
                 success: false,
                 message: 'Master file not found'
             });
         }
 
-        // Get template
-        const templates = excelProcessor.getTemplates(masterWorkbook);
+        // Find specific template
         const template = templates.find(t => t.Template_ID === templateId);
 
         if (!template) {
@@ -349,49 +275,17 @@ router.patch('/:templateId/toggle', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Toggle template status using Graph API
+        const toggleResult = await toggleTemplateStatusViaGraphAPI(graphClient, templateId);
         
-        if (!masterWorkbook) {
+        if (!toggleResult.success) {
             return res.status(404).json({
                 success: false,
-                message: 'Master file not found'
+                message: 'Template not found or toggle failed'
             });
         }
-
-        // Toggle template status
-        const templatesSheet = masterWorkbook.Sheets['Templates'];
-        const templatesData = XLSX.utils.sheet_to_json(templatesSheet);
         
-        let templateFound = false;
-        let newStatus = 'No';
-        
-        for (let i = 0; i < templatesData.length; i++) {
-            if (templatesData[i].Template_ID === templateId) {
-                newStatus = templatesData[i].Active === 'Yes' ? 'No' : 'Yes';
-                templatesData[i].Active = newStatus;
-                templateFound = true;
-                break;
-            }
-        }
-
-        if (!templateFound) {
-            return res.status(404).json({
-                success: false,
-                message: 'Template not found'
-            });
-        }
-
-        // Recreate templates sheet
-        const newTemplatesSheet = XLSX.utils.json_to_sheet(templatesData);
-        newTemplatesSheet['!cols'] = [
-            {width: 20}, {width: 30}, {width: 20}, {width: 50}, {width: 80}, {width: 10}
-        ];
-        masterWorkbook.Sheets['Templates'] = newTemplatesSheet;
-
-        // Save updated master file
-        const masterBuffer = excelProcessor.workbookToBuffer(masterWorkbook);
-        await advancedExcelUpload(graphClient, masterBuffer, 'LGA-Master-Email-List.xlsx', '/LGA-Email-Automation');
+        const newStatus = toggleResult.newStatus;
 
         console.log(`✅ Template status toggled: ${templateId} -> ${newStatus}`);
 
@@ -421,10 +315,10 @@ router.get('/type/:templateType', requireDelegatedAuth, async (req, res) => {
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
-        // Download master file
-        const masterWorkbook = await downloadMasterFile(graphClient);
+        // Get templates using Graph API
+        const allTemplates = await getTemplatesViaGraphAPI(graphClient);
         
-        if (!masterWorkbook) {
+        if (!allTemplates) {
             return res.json({
                 success: true,
                 templates: [],
@@ -432,8 +326,7 @@ router.get('/type/:templateType', requireDelegatedAuth, async (req, res) => {
             });
         }
 
-        // Get templates and filter by type
-        const allTemplates = excelProcessor.getTemplates(masterWorkbook);
+        // Filter templates by type
         const filteredTemplates = allTemplates.filter(template => 
             template.Template_Type === templateType
         );
@@ -553,12 +446,15 @@ function generateTemplateRecommendations(templateData, validation, stats) {
     return recommendations;
 }
 
-// Helper function to download master file
-async function downloadMasterFile(graphClient) {
+// Graph API template management functions
+
+// Get templates using Graph API
+async function getTemplatesViaGraphAPI(graphClient) {
     try {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
         
+        // Get Excel file ID
         const files = await graphClient
             .api(`/me/drive/root:${masterFolderPath}:/children`)
             .filter(`name eq '${masterFileName}'`)
@@ -569,15 +465,249 @@ async function downloadMasterFile(graphClient) {
             return null;
         }
 
-        const fileContent = await graphClient
-            .api(`/me/drive/items/${files.value[0].id}/content`)
+        const fileId = files.value[0].id;
+        
+        // Get Templates worksheet data
+        const usedRange = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/usedRange`)
             .get();
-
-        return excelProcessor.bufferToWorkbook(fileContent);
+        
+        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+            return [];
+        }
+        
+        // Convert to template objects
+        const headers = usedRange.values[0];
+        const rows = usedRange.values.slice(1);
+        
+        return rows.map(row => {
+            const template = {};
+            headers.forEach((header, index) => {
+                template[header] = row[index] || '';
+            });
+            return template;
+        }).filter(template => template.Template_ID);
+        
     } catch (error) {
-        console.error('❌ Master file download error:', error);
+        console.error('❌ Get templates via Graph API error:', error);
         return null;
     }
+}
+
+// Add template using Graph API
+async function addTemplateViaGraphAPI(graphClient, templateData) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            throw new Error('Master file not found');
+        }
+
+        const fileId = files.value[0].id;
+        
+        // Generate template ID
+        const templateId = `template_${Date.now()}`;
+        
+        // Prepare template row data
+        const templateRow = [
+            templateId,
+            templateData.Template_Name || '',
+            templateData.Template_Type || '',
+            templateData.Subject || '',
+            templateData.Body || '',
+            templateData.Active || 'Yes'
+        ];
+        
+        // Add row to Templates sheet
+        await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/tables('TemplatesTable')/rows`)
+            .post({
+                values: [templateRow]
+            });
+        
+        console.log(`✅ Template added via Graph API: ${templateId}`);
+        return templateId;
+        
+    } catch (error) {
+        console.error('❌ Add template via Graph API error:', error);
+        return null;
+    }
+}
+
+// Update template using Graph API
+async function updateTemplateViaGraphAPI(graphClient, templateId, updates) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return false;
+        }
+
+        const fileId = files.value[0].id;
+        
+        // Get Templates worksheet data to find the row
+        const usedRange = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/usedRange`)
+            .get();
+        
+        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+            return false;
+        }
+        
+        const headers = usedRange.values[0];
+        const rows = usedRange.values.slice(1);
+        
+        // Find template row
+        const templateIdIndex = headers.findIndex(h => h === 'Template_ID');
+        let targetRowIndex = -1;
+        
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i][templateIdIndex] === templateId) {
+                targetRowIndex = i + 2; // +2 for 1-based and header row
+                break;
+            }
+        }
+        
+        if (targetRowIndex === -1) {
+            return false;
+        }
+        
+        // Update each field
+        for (const [field, value] of Object.entries(updates)) {
+            const colIndex = headers.findIndex(h => h === field);
+            if (colIndex !== -1) {
+                const cellAddress = `${getExcelColumnLetter(colIndex)}${targetRowIndex}`;
+                
+                await graphClient
+                    .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/range(address='${cellAddress}')`)
+                    .patch({
+                        values: [[value]]
+                    });
+            }
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Update template via Graph API error:', error);
+        return false;
+    }
+}
+
+// Delete template using Graph API
+async function deleteTemplateViaGraphAPI(graphClient, templateId) {
+    try {
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        // Get Excel file ID
+        const files = await graphClient
+            .api(`/me/drive/root:${masterFolderPath}:/children`)
+            .filter(`name eq '${masterFileName}'`)
+            .get();
+
+        if (files.value.length === 0) {
+            return false;
+        }
+
+        const fileId = files.value[0].id;
+        
+        // Get Templates worksheet data to find the row
+        const usedRange = await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/usedRange`)
+            .get();
+        
+        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
+            return false;
+        }
+        
+        const headers = usedRange.values[0];
+        const rows = usedRange.values.slice(1);
+        
+        // Find template row
+        const templateIdIndex = headers.findIndex(h => h === 'Template_ID');
+        let targetRowIndex = -1;
+        
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i][templateIdIndex] === templateId) {
+                targetRowIndex = i + 1; // +1 for 0-based table rows (excluding header)
+                break;
+            }
+        }
+        
+        if (targetRowIndex === -1) {
+            return false;
+        }
+        
+        // Delete row from table
+        await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/tables('TemplatesTable')/rows/itemAt(index=${targetRowIndex})`)
+            .delete();
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Delete template via Graph API error:', error);
+        return false;
+    }
+}
+
+// Toggle template status using Graph API
+async function toggleTemplateStatusViaGraphAPI(graphClient, templateId) {
+    try {
+        // First get current status
+        const templates = await getTemplatesViaGraphAPI(graphClient);
+        if (!templates) {
+            return { success: false };
+        }
+        
+        const template = templates.find(t => t.Template_ID === templateId);
+        if (!template) {
+            return { success: false };
+        }
+        
+        // Toggle status
+        const newStatus = template.Active === 'Yes' ? 'No' : 'Yes';
+        
+        // Update using the update function
+        const updateSuccess = await updateTemplateViaGraphAPI(graphClient, templateId, { Active: newStatus });
+        
+        return {
+            success: updateSuccess,
+            newStatus: newStatus
+        };
+        
+    } catch (error) {
+        console.error('❌ Toggle template status via Graph API error:', error);
+        return { success: false };
+    }
+}
+
+// Helper function to get Excel column letter
+function getExcelColumnLetter(columnIndex) {
+    let result = '';
+    let index = columnIndex;
+    
+    while (index >= 0) {
+        result = String.fromCharCode(65 + (index % 26)) + result;
+        index = Math.floor(index / 26) - 1;
+    }
+    
+    return result;
 }
 
 

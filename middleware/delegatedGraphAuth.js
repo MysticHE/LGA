@@ -36,14 +36,21 @@ class DelegatedGraphAuth {
             }
         };
         
-        this.msalInstance = new msal.ConfidentialClientApplication(this.msalConfig);
-        this.userTokens = new Map(); // In-memory cache
-        
-        // Load existing sessions on startup
-        this.loadPersistedSessions();
-        
-        this.validateConfig();
-        console.log('✅ Delegated Microsoft Graph authentication initialized with persistent storage');
+        // Only initialize if credentials are available
+        if (this.clientId && this.clientSecret && this.tenantId) {
+            this.msalInstance = new msal.ConfidentialClientApplication(this.msalConfig);
+            this.userTokens = new Map(); // In-memory cache
+            
+            // Load existing sessions on startup
+            this.loadPersistedSessions();
+            
+            this.validateConfig();
+            console.log('✅ Delegated Microsoft Graph authentication initialized with persistent storage');
+        } else {
+            console.log('⚠️ Azure credentials not provided - Microsoft Graph features disabled');
+            this.msalInstance = null;
+            this.userTokens = new Map();
+        }
     }
 
     validateConfig() {
@@ -51,19 +58,17 @@ class DelegatedGraphAuth {
         const missing = required.filter(key => !process.env[key]);
         
         if (missing.length > 0) {
-            console.error('❌ Azure Configuration Error:');
-            console.error(`   Missing environment variables: ${missing.join(', ')}`);
-            console.error('   Required for email automation:');
-            console.error('   - AZURE_TENANT_ID: Your Azure tenant ID');
-            console.error('   - AZURE_CLIENT_ID: Your app registration client ID'); 
-            console.error('   - AZURE_CLIENT_SECRET: Your app registration client secret');
-            console.error('📋 Please check your Render environment variables');
-            throw new Error(`Missing required Azure environment variables: ${missing.join(', ')}`);
+            console.log('⚠️ Azure Configuration Warning:');
+            console.log(`   Missing environment variables: ${missing.join(', ')}`);
+            console.log('   Email automation features will be disabled');
         }
     }
 
     // Get authorization URL for user login
     getAuthUrl(sessionId) {
+        if (!this.msalInstance) {
+            throw new Error('Azure authentication not available - missing credentials');
+        }
         const authUrlParameters = {
             scopes: [
                 'https://graph.microsoft.com/User.Read',
