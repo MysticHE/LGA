@@ -498,6 +498,37 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+/* Upload Loading Indicator */
+.upload-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2xl);
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.upload-loading .spinner {
+    width: 32px;
+    height: 32px;
+    border-width: 3px;
+}
+
+.loading-text {
+    text-align: center;
+}
+
+.loading-text > div:first-child {
+    font-weight: var(--font-weight-medium);
+    color: var(--grey-700);
+    margin-bottom: var(--space-sm);
+}
+
+.loading-subtext {
+    font-size: 0.9em;
+    color: var(--grey-500);
+}
+
 /* Professional Modal */
 .modal {
     display: none;

@@ -1158,6 +1158,7 @@ async function exportMasterFileViaGraphAPI(graphClient) {
 // Calculate statistics from leads data
 function calculateStatsFromLeads(leadsData) {
     const today = new Date().toISOString().split('T')[0];
+    console.log(`📅 Today's date for comparison: ${today}`);
     
     const stats = {
         totalLeads: leadsData.length,
@@ -1185,6 +1186,10 @@ function calculateStatsFromLeads(leadsData) {
         // Check if due today (regardless of status)
         const nextEmailDate = lead.Next_Email_Date ? 
             new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+        
+        if (nextEmailDate) {
+            console.log(`📧 Lead: ${lead.Email || 'Unknown'} | Next_Email_Date: ${lead.Next_Email_Date} | Parsed: ${nextEmailDate} | Today: ${today} | Due: ${nextEmailDate <= today}`);
+        }
         
         if (nextEmailDate && nextEmailDate <= today) {
             stats.dueToday++;

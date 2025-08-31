@@ -35,9 +35,6 @@
                     <button class="btn" onclick="refreshDashboard()" title="Refresh Dashboard Data">
                         Refresh
                     </button>
-                    <button class="btn btn-outline" onclick="showInsights()" title="View Analytics">
-                        Insights
-                    </button>
                 </div>
             </div>
             <div class="stats-grid">
@@ -92,17 +89,17 @@
                     <input type="file" id="fileInput" accept=".xlsx,.xls" />
                 </div>
                 <div id="uploadProgress" class="hidden">
-                    <div class="progress-container">
-                        <div class="progress-bar" id="progressBar"></div>
+                    <div class="upload-loading">
+                        <div class="spinner"></div>
+                        <div class="loading-text">
+                            <div id="uploadStatus">Uploading and processing Excel file...</div>
+                            <div class="loading-subtext">Please wait while we process your lead data</div>
+                        </div>
                     </div>
-                    <div id="uploadStatus" class="text-center"></div>
                 </div>
                 <div id="uploadResults" class="hidden">
-                    <div class="flex-between mb-lg">
+                    <div class="mb-lg">
                         <h4>Upload Results</h4>
-                        <button class="btn btn-success" onclick="viewMasterList()" title="View Updated Master List">
-                            View List
-                        </button>
                     </div>
                     <div id="uploadSummary"></div>
                 </div>
