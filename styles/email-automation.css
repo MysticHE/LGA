@@ -559,7 +559,6 @@ body {
 .auth-status {
     padding: var(--space-md);
     border-radius: var(--border-radius);
-    margin-bottom: var(--space-lg);
     font-weight: var(--font-weight-medium);
     font-size: 14px;
 }
