@@ -23,6 +23,27 @@ class EmailScheduler {
         console.log('📅 Email Scheduler initialized with reply detection');
     }
 
+    // Utility function to convert Excel serial numbers to JavaScript dates
+    parseExcelDate(dateValue) {
+        if (!dateValue) return null;
+        
+        // Handle Excel serial numbers (like 45907)
+        if (typeof dateValue === 'number' && dateValue > 40000) {
+            // Convert Excel serial number to JavaScript date
+            // Excel epoch is January 1, 1900 (but Excel treats 1900 as leap year incorrectly)
+            const excelEpoch = new Date(1900, 0, 1);
+            const jsDate = new Date(excelEpoch.getTime() + (dateValue - 2) * 24 * 60 * 60 * 1000);
+            return jsDate.toISOString().split('T')[0];
+        } else {
+            // Handle regular date strings
+            try {
+                return new Date(dateValue).toISOString().split('T')[0];
+            } catch (error) {
+                return null;
+            }
+        }
+    }
+
     /**
      * Start the automated email scheduler (DISABLED - Manual control only)
      */
@@ -148,8 +169,7 @@ class EmailScheduler {
             // Filter leads due today
             const today = new Date().toISOString().split('T')[0];
             const dueLeads = allLeads.filter(lead => {
-                const nextEmailDate = lead.Next_Email_Date ? 
-                    new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+                const nextEmailDate = this.parseExcelDate(lead.Next_Email_Date);
                 
                 return nextEmailDate && nextEmailDate <= today &&
                     !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
@@ -792,8 +812,7 @@ class EmailScheduler {
                         if (allLeads) {
                             const today = new Date().toISOString().split('T')[0];
                             const dueLeads = allLeads.filter(lead => {
-                                const nextEmailDate = lead.Next_Email_Date ? 
-                                    new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+                                const nextEmailDate = this.parseExcelDate(lead.Next_Email_Date);
                                 return nextEmailDate && nextEmailDate <= today &&
                                     !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
                             });

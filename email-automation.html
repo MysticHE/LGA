@@ -379,6 +379,27 @@
         let masterListData = [];
         let templates = [];
 
+        // Utility function to convert Excel serial numbers to JavaScript dates
+        function parseExcelDateForDisplay(dateValue) {
+            if (!dateValue) return null;
+            
+            // Handle Excel serial numbers (like 45907)
+            if (typeof dateValue === 'number' && dateValue > 40000) {
+                // Convert Excel serial number to JavaScript date
+                // Excel epoch is January 1, 1900 (but Excel treats 1900 as leap year incorrectly)
+                const excelEpoch = new Date(1900, 0, 1);
+                const jsDate = new Date(excelEpoch.getTime() + (dateValue - 2) * 24 * 60 * 60 * 1000);
+                return jsDate;
+            } else {
+                // Handle regular date strings
+                try {
+                    return new Date(dateValue);
+                } catch (error) {
+                    return null;
+                }
+            }
+        }
+
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
             initializeEmailAutomation();
@@ -857,8 +878,8 @@
                     <td><span class="status-badge status-${(lead.Status || 'new').toLowerCase()}">${lead.Status || 'New'}</span></td>
                     <td title="${lead.Campaign_Stage || 'First_Contact'}">${(lead.Campaign_Stage || 'First_Contact').replace('_', ' ')}</td>
                     <td title="${lead.Email_Choice || 'AI_Generated'}">${(lead.Email_Choice || 'AI_Generated').replace('_', ' ')}</td>
-                    <td title="${lead.Last_Email_Date ? new Date(lead.Last_Email_Date).toLocaleString() : 'Never sent'}">${lead.Last_Email_Date ? new Date(lead.Last_Email_Date).toLocaleDateString() : '-'}</td>
-                    <td title="${lead.Next_Email_Date ? new Date(lead.Next_Email_Date).toLocaleString() : 'Not scheduled'}">${lead.Next_Email_Date ? new Date(lead.Next_Email_Date).toLocaleDateString() : '-'}</td>
+                    <td title="${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleString() : 'Never sent'}">${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleDateString() : '-'}</td>
+                    <td title="${lead.Next_Email_Date ? parseExcelDateForDisplay(lead.Next_Email_Date).toLocaleString() : 'Not scheduled'}">${lead.Next_Email_Date ? parseExcelDateForDisplay(lead.Next_Email_Date).toLocaleDateString() : '-'}</td>
                     <td>
                         <div class="flex gap-sm">
                             <button class="btn" onclick="editLead('${lead.Email}')" title="Edit lead details">Edit</button>

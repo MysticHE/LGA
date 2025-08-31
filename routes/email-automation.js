@@ -1155,6 +1155,27 @@ async function exportMasterFileViaGraphAPI(graphClient) {
     }
 }
 
+// Utility function to convert Excel serial numbers to JavaScript dates
+function parseExcelDate(dateValue) {
+    if (!dateValue) return null;
+    
+    // Handle Excel serial numbers (like 45907)
+    if (typeof dateValue === 'number' && dateValue > 40000) {
+        // Convert Excel serial number to JavaScript date
+        // Excel epoch is January 1, 1900 (but Excel treats 1900 as leap year incorrectly)
+        const excelEpoch = new Date(1900, 0, 1);
+        const jsDate = new Date(excelEpoch.getTime() + (dateValue - 2) * 24 * 60 * 60 * 1000);
+        return jsDate.toISOString().split('T')[0];
+    } else {
+        // Handle regular date strings
+        try {
+            return new Date(dateValue).toISOString().split('T')[0];
+        } catch (error) {
+            return null;
+        }
+    }
+}
+
 // Calculate statistics from leads data
 function calculateStatsFromLeads(leadsData) {
     const today = new Date().toISOString().split('T')[0];
@@ -1184,8 +1205,7 @@ function calculateStatsFromLeads(leadsData) {
         if (status === 'New') stats.newRecords++;
         
         // Check if due today (regardless of status)
-        const nextEmailDate = lead.Next_Email_Date ? 
-            new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+        const nextEmailDate = parseExcelDate(lead.Next_Email_Date);
         
         if (nextEmailDate) {
             console.log(`📧 Lead: ${lead.Email || 'Unknown'} | Next_Email_Date: ${lead.Next_Email_Date} | Parsed: ${nextEmailDate} | Today: ${today} | Due: ${nextEmailDate <= today}`);
