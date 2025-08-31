@@ -89,7 +89,7 @@ body {
     background: var(--white);
     padding: var(--space-md) 0;
     box-shadow: var(--shadow-sm);
-    margin-bottom: var(--space-xl);
+    margin-bottom: var(--space-lg);
     border-bottom: var(--border-width) solid var(--grey-200);
 }
 
