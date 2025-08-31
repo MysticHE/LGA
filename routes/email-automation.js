@@ -1182,12 +1182,11 @@ function calculateStatsFromLeads(leadsData) {
         // Count new records (leads with 'New' status)
         if (status === 'New') stats.newRecords++;
         
-        // Check if due today
+        // Check if due today (regardless of status)
         const nextEmailDate = lead.Next_Email_Date ? 
             new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
         
-        if (nextEmailDate && nextEmailDate <= today &&
-            !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status)) {
+        if (nextEmailDate && nextEmailDate <= today) {
             stats.dueToday++;
         }
     });
