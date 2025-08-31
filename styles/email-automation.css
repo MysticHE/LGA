@@ -81,7 +81,7 @@ body {
     padding: var(--space-lg);
     display: flex;
     flex-direction: column;
-    gap: var(--space-xl);
+    gap: var(--space-lg);
 }
 
 /* Navigation */
@@ -139,7 +139,7 @@ body {
 .main-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: var(--space-xl);
+    gap: var(--space-lg);
 }
 
 .full-width {
