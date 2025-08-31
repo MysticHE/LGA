@@ -27,18 +27,13 @@ class ExcelProcessor {
             'Campaign_Stage': 'text', // First_Contact|Follow_Up_1|Follow_Up_2|Completed
             'Email_Choice': 'text', // AI_Generated|Email_Template_1|Email_Template_2
             'Template_Used': 'text',
-            'Email_Content_Sent': 'text',
             'Last_Email_Date': 'date',
             'Next_Email_Date': 'date',
             'Follow_Up_Days': 'number',
             'Email_Count': 'number',
-            'Max_Emails': 'number',
-            'Auto_Send_Enabled': 'text', // Yes|No
             'Read_Date': 'date',
             'Reply_Date': 'date',
-            'Email Sent': 'text', // Yes|No (legacy compatibility)
-            'Email Status': 'text', // Status text (legacy compatibility)
-            'Sent Date': 'date' // Send timestamp (legacy compatibility)
+            'Email Sent': 'text' // Yes|No (legacy compatibility)
         };
     }
 

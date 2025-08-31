@@ -2,7 +2,6 @@ const cron = require('node-cron');
 const axios = require('axios');
 const { getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
-// Removed: const { advancedExcelUpload } = require('../routes/excel-upload-fix'); - Now using direct Graph API updates
 
 /**
  * Background Email Scheduler
@@ -138,16 +137,23 @@ class EmailScheduler {
                 throw new Error('Unable to get Graph client for session');
             }
 
-            // Download master file for this session
-            const masterWorkbook = await this.downloadMasterFile(graphClient);
+            // Get leads due for email today using Graph API
+            const allLeads = await this.getLeadsViaGraphAPI(graphClient);
             
-            if (!masterWorkbook) {
-                console.log(`📋 No master file found for session: ${sessionId}`);
+            if (!allLeads || allLeads.length === 0) {
+                console.log(`📋 No leads found for session: ${sessionId}`);
                 return { emailsSent: 0, leadsProcessed: 0 };
             }
 
-            // Get leads due for email today
-            const dueLeads = this.excelProcessor.getLeadsDueToday(masterWorkbook);
+            // Filter leads due today
+            const today = new Date().toISOString().split('T')[0];
+            const dueLeads = allLeads.filter(lead => {
+                const nextEmailDate = lead.Next_Email_Date ? 
+                    new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+                
+                return nextEmailDate && nextEmailDate <= today &&
+                    !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
+            });
             
             if (dueLeads.length === 0) {
                 console.log(`📭 No leads due for email in session: ${sessionId}`);
@@ -179,13 +185,11 @@ class EmailScheduler {
                 leadsProcessed += batchResults.leadsProcessed;
                 errors.push(...batchResults.errors);
 
-                // Update master file with batch results
+                // Update leads using Graph API (replaced file-based updates)
                 if (batchResults.updates.length > 0) {
-                    await this.updateMasterFileWithResults(
-                        graphClient, 
-                        masterWorkbook, 
-                        batchResults.updates
-                    );
+                    for (const update of batchResults.updates) {
+                        await this.updateLeadViaGraphAPI(graphClient, update.email, update.updates);
+                    }
                 }
 
                 // Add delay between batches to respect rate limits
@@ -311,65 +315,7 @@ class EmailScheduler {
         return results;
     }
 
-    /**
-     * Update master file with email sending results
-     */
-    async updateMasterFileWithResults(graphClient, masterWorkbook, updates) {
-        try {
-            for (const update of updates) {
-                masterWorkbook = this.excelProcessor.updateLeadInMaster(
-                    masterWorkbook, 
-                    update.email, 
-                    update.updates
-                );
-            }
 
-            // Save updated master file
-            const masterBuffer = this.excelProcessor.workbookToBuffer(masterWorkbook);
-            await advancedExcelUpload(
-                graphClient, 
-                masterBuffer, 
-                'LGA-Master-Email-List.xlsx', 
-                '/LGA-Email-Automation'
-            );
-
-            console.log(`📊 Updated master file with ${updates.length} lead updates`);
-
-        } catch (error) {
-            console.error('❌ Error updating master file:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * DEPRECATED: Download master file from OneDrive
-     * This method is being phased out in favor of direct Graph API Excel operations
-     * TODO: Migrate remaining email automation functions to use getSentEmailsViaGraphAPI pattern
-     */
-    async downloadMasterFile(graphClient) {
-        try {
-            const masterFileName = 'LGA-Master-Email-List.xlsx';
-            const masterFolderPath = '/LGA-Email-Automation';
-            
-            const files = await graphClient
-                .api(`/me/drive/root:${masterFolderPath}:/children`)
-                .filter(`name eq '${masterFileName}'`)
-                .get();
-
-            if (files.value.length === 0) {
-                return null;
-            }
-
-            const fileContent = await graphClient
-                .api(`/me/drive/items/${files.value[0].id}/content`)
-                .get();
-
-            return this.excelProcessor.bufferToWorkbook(fileContent);
-        } catch (error) {
-            console.error('❌ Master file download error:', error);
-            return null;
-        }
-    }
 
 
     /**
@@ -842,9 +788,15 @@ class EmailScheduler {
                 try {
                     const graphClient = await this.authProvider.getGraphClient(sessionId);
                     if (graphClient) {
-                        const masterWorkbook = await this.downloadMasterFile(graphClient);
-                        if (masterWorkbook) {
-                            const dueLeads = this.excelProcessor.getLeadsDueToday(masterWorkbook);
+                        const allLeads = await this.getLeadsViaGraphAPI(graphClient);
+                        if (allLeads) {
+                            const today = new Date().toISOString().split('T')[0];
+                            const dueLeads = allLeads.filter(lead => {
+                                const nextEmailDate = lead.Next_Email_Date ? 
+                                    new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
+                                return nextEmailDate && nextEmailDate <= today &&
+                                    !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
+                            });
                             stats.totalLeadsDue += dueLeads.length;
                         }
                     }

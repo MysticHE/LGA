@@ -5,7 +5,6 @@ const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
-// Removed: const { advancedExcelUpload } = require('./excel-upload-fix'); - Now using direct Graph API updates
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -1166,6 +1165,7 @@ function calculateStatsFromLeads(leadsData) {
         emailsSent: 0,
         emailsRead: 0,
         repliesReceived: 0,
+        newRecords: 0,
         statusBreakdown: {}
     };
     
@@ -1178,6 +1178,9 @@ function calculateStatsFromLeads(leadsData) {
         if (lead.Last_Email_Date) stats.emailsSent++;
         if (lead.Read_Date) stats.emailsRead++;
         if (lead.Reply_Date) stats.repliesReceived++;
+        
+        // Count new records (leads with 'New' status)
+        if (status === 'New') stats.newRecords++;
         
         // Check if due today
         const nextEmailDate = lead.Next_Email_Date ? 

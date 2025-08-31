@@ -807,17 +807,12 @@ async function createExcelFileWithTable(client, filePath, leads) {
     try {
         console.log(`🆕 Creating Excel file with uniform table processing for ${leads.length} leads`);
         
-        // Create empty Excel workbook with just headers (no data rows)
-        const wb = XLSX.utils.book_new();
+        // Create proper Excel workbook with all sheets (Leads, Templates, Campaign_History)
+        const ExcelProcessor = require('../utils/excelProcessor');
+        const excelProcessor = new ExcelProcessor();
+        const wb = excelProcessor.createMasterFile([]);
         
-        // Get standard column structure from normalization
-        const sampleNormalized = normalizeLeadData({});
-        const headers = Object.keys(sampleNormalized);
-        
-        // Create worksheet with headers only
-        const ws = XLSX.utils.json_to_sheet([], { header: headers });
-        ws['!cols'] = getColumnWidths();
-        XLSX.utils.book_append_sheet(wb, ws, EXCEL_CONFIG.WORKSHEET_NAME);
+        // Note: createMasterFile() already creates all three sheets with proper structure
         
         // Convert to buffer
         const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
