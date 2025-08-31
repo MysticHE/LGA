@@ -74,11 +74,14 @@ body {
     font-weight: var(--font-weight-normal);
 }
 
-/* Layout Container */
+/* Layout Container - Ensures consistent spacing between all sections */
 .container {
     max-width: 1440px;
     margin: 0 auto;
     padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl);
 }
 
 /* Navigation */
@@ -137,12 +140,12 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
     gap: var(--space-xl);
-    margin-bottom: var(--space-xl);
 }
 
 .full-width {
     grid-column: 1 / -1;
 }
+
 
 /* Professional Cards */
 .card {
