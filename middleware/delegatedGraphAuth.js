@@ -150,6 +150,12 @@ class DelegatedGraphAuth {
             throw new Error('User not authenticated');
         }
 
+        // Handle sessions that need refresh (restored from persistent storage)
+        if (tokenData.needsRefresh || !tokenData.accessToken) {
+            console.log(`🔄 Session ${sessionId} needs token refresh (restored from storage)`);
+            return await this.refreshSessionToken(sessionId);
+        }
+
         // Check if token is still valid (with 5 minute buffer)
         const now = new Date();
         const expiresOn = new Date(tokenData.expiresOn);
@@ -160,10 +166,26 @@ class DelegatedGraphAuth {
         }
 
         // Token is expired or will expire soon, refresh it
+        console.log(`🔄 Token expiring soon for session ${sessionId}, refreshing...`);
+        return await this.refreshSessionToken(sessionId);
+    }
+
+    /**
+     * Refresh token for a specific session
+     */
+    async refreshSessionToken(sessionId) {
+        const tokenData = this.userTokens.get(sessionId);
+        
+        if (!tokenData || !tokenData.refreshToken) {
+            console.error(`❌ No refresh token available for session ${sessionId}`);
+            this.userTokens.delete(sessionId);
+            throw new Error('Authentication expired, please login again');
+        }
+
         try {
             const refreshTokenRequest = {
                 refreshToken: tokenData.refreshToken,
-                scopes: [
+                scopes: tokenData.scopes || [
                     'https://graph.microsoft.com/User.Read',
                     'https://graph.microsoft.com/Files.ReadWrite.All',
                     'https://graph.microsoft.com/Mail.Send',
@@ -173,20 +195,36 @@ class DelegatedGraphAuth {
 
             const response = await this.msalInstance.acquireTokenByRefreshToken(refreshTokenRequest);
             
-            // Update stored tokens
-            this.userTokens.set(sessionId, {
+            // Update stored tokens with refreshed data
+            const updatedTokenData = {
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken || tokenData.refreshToken,
                 expiresOn: response.expiresOn,
                 account: response.account,
-                scopes: response.scopes
-            });
+                scopes: response.scopes,
+                createdAt: tokenData.createdAt,
+                needsRefresh: false, // Clear the refresh flag
+                hasStoredRefreshToken: true
+            };
+
+            this.userTokens.set(sessionId, updatedTokenData);
 
             console.log(`✅ Token refreshed for user: ${response.account.username}`);
+            
+            // Save updated session to persistent storage (async, don't wait)
+            setImmediate(async () => {
+                try {
+                    await persistentStorage.saveSessions(this.userTokens);
+                    console.log(`💾 Updated session saved to storage: ${sessionId}`);
+                } catch (saveError) {
+                    console.error('❌ Failed to save updated session:', saveError);
+                }
+            });
+
             return response.accessToken;
 
         } catch (error) {
-            console.error('Token refresh error:', error.message);
+            console.error(`❌ Token refresh failed for session ${sessionId}:`, error.message);
             // Remove invalid tokens
             this.userTokens.delete(sessionId);
             throw new Error('Authentication expired, please login again');
@@ -225,7 +263,7 @@ class DelegatedGraphAuth {
         return Array.from(this.userTokens.keys());
     }
 
-    // Load persisted sessions on startup
+    // Load persisted sessions on startup with complete token data
     async loadPersistedSessions() {
         try {
             const sessions = await persistentStorage.loadSessions();
@@ -234,19 +272,86 @@ class DelegatedGraphAuth {
                 // Only load sessions that haven't expired
                 const expiresOn = new Date(sessionData.expiresOn);
                 if (expiresOn > new Date()) {
-                    // Create minimal session entry (tokens will be refreshed when needed)
-                    this.userTokens.set(sessionId, {
+                    // Create complete session entry with decrypted refresh tokens
+                    const restoredSession = {
                         account: sessionData.account,
                         expiresOn: sessionData.expiresOn,
-                        needsRefresh: true, // Flag to refresh tokens when accessed
-                        createdAt: sessionData.createdAt
-                    });
+                        needsRefresh: sessionData.needsRefresh || true,
+                        createdAt: sessionData.createdAt,
+                        scopes: sessionData.scopes,
+                        hasStoredRefreshToken: sessionData.hasStoredRefreshToken
+                    };
+
+                    // Include refresh token if available (already decrypted by persistentStorage)
+                    if (sessionData.refreshToken) {
+                        restoredSession.refreshToken = sessionData.refreshToken;
+                        console.log(`✅ Restored session with refresh token: ${sessionId}`);
+                    } else if (sessionData.hasStoredRefreshToken) {
+                        console.warn(`⚠️ Session ${sessionId} should have refresh token but decryption failed`);
+                    }
+
+                    this.userTokens.set(sessionId, restoredSession);
                 }
             }
             
-            console.log(`🔄 Restored ${this.userTokens.size} sessions from persistent storage`);
+            console.log(`🔄 Restored ${this.userTokens.size} sessions from persistent storage with background capability`);
+            
+            // Start background token refresh for restored sessions
+            if (this.userTokens.size > 0) {
+                console.log('🚀 Starting background token refresh for restored sessions...');
+                setImmediate(() => this.refreshExpiringSessions());
+            }
         } catch (error) {
             console.error('❌ Failed to load persisted sessions:', error);
+        }
+    }
+
+    /**
+     * Proactively refresh tokens that will expire soon
+     * This keeps sessions active for background operations
+     */
+    async refreshExpiringSessions() {
+        try {
+            const now = new Date();
+            const refreshThreshold = 15 * 60 * 1000; // Refresh if expires within 15 minutes
+            let refreshedCount = 0;
+            const refreshPromises = [];
+
+            console.log(`🔄 Checking ${this.userTokens.size} sessions for token refresh...`);
+
+            for (const [sessionId, tokenData] of this.userTokens.entries()) {
+                const expiresOn = new Date(tokenData.expiresOn);
+                const timeUntilExpiry = expiresOn.getTime() - now.getTime();
+                
+                // Skip if session needs refresh or expires soon
+                if (tokenData.needsRefresh || timeUntilExpiry < refreshThreshold) {
+                    if (tokenData.refreshToken) {
+                        console.log(`🔄 Proactively refreshing session: ${sessionId} (expires in ${Math.round(timeUntilExpiry / 60000)} minutes)`);
+                        refreshPromises.push(
+                            this.refreshSessionToken(sessionId)
+                                .then(() => {
+                                    refreshedCount++;
+                                    console.log(`✅ Background refresh successful: ${sessionId}`);
+                                })
+                                .catch(error => {
+                                    console.error(`❌ Background refresh failed for ${sessionId}:`, error.message);
+                                })
+                        );
+                    } else {
+                        console.warn(`⚠️ Session ${sessionId} needs refresh but no refresh token available`);
+                    }
+                }
+            }
+
+            if (refreshPromises.length > 0) {
+                await Promise.allSettled(refreshPromises);
+                console.log(`🎉 Background token refresh completed: ${refreshedCount}/${refreshPromises.length} sessions refreshed`);
+            } else {
+                console.log(`✅ All tokens are fresh, no refresh needed`);
+            }
+
+        } catch (error) {
+            console.error('❌ Background token refresh error:', error);
         }
     }
 

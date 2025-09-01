@@ -17,10 +17,11 @@ class EmailScheduler {
         this.excelProcessor = new ExcelProcessor();
         this.authProvider = getDelegatedAuthProvider();
         
-        // Start reply detection job
+        // Start background jobs
         this.startReplyDetectionJob();
+        this.startTokenRefreshJob();
         
-        console.log('📅 Email Scheduler initialized with reply detection');
+        console.log('📅 Email Scheduler initialized with reply detection and token refresh');
     }
 
     // Utility function to convert Excel serial numbers to JavaScript dates
@@ -72,6 +73,11 @@ class EmailScheduler {
             this.replyDetectionJob.destroy();
         }
 
+        if (this.tokenRefreshJob) {
+            this.tokenRefreshJob.stop();
+            this.tokenRefreshJob.destroy();
+        }
+
         this.isRunning = false;
         console.log('🛑 Email Scheduler stopped');
     }
@@ -91,6 +97,54 @@ class EmailScheduler {
         });
         
         console.log('💬 Reply detection job started (runs every 5 minutes)');
+    }
+
+    /**
+     * Start background token refresh job
+     * Runs every 30 minutes to keep sessions active
+     */
+    startTokenRefreshJob() {
+        // Run every 30 minutes
+        this.tokenRefreshJob = cron.schedule('*/30 * * * *', async () => {
+            await this.refreshSessionTokens();
+        }, {
+            scheduled: true,
+            timezone: "Asia/Singapore"
+        });
+        
+        console.log('🔄 Background token refresh job started (runs every 30 minutes)');
+    }
+
+    /**
+     * Background token refresh to keep sessions alive
+     */
+    async refreshSessionTokens() {
+        try {
+            console.log('🔄 Running background token refresh...');
+            
+            const activeSessions = this.authProvider.getActiveSessions();
+            
+            if (activeSessions.length === 0) {
+                console.log('📭 No active sessions for token refresh');
+                return;
+            }
+
+            console.log(`🔄 Refreshing tokens for ${activeSessions.length} sessions...`);
+            
+            // Use the new background refresh method
+            await this.authProvider.refreshExpiringSessions();
+            
+            // Also cleanup any expired sessions
+            const cleanedCount = await this.authProvider.cleanupExpiredSessions();
+            if (cleanedCount > 0) {
+                console.log(`🧹 Cleaned up ${cleanedCount} expired sessions during token refresh`);
+            }
+
+            console.log('✅ Background token refresh completed successfully');
+            
+        } catch (error) {
+            console.error('❌ Background token refresh job error:', error);
+        }
     }
 
 
