@@ -362,7 +362,7 @@ Joel Lee`;
         .email-container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
         .email-body { margin-bottom: 30px; }
         .cta-section { text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px; }
-        .cta-button { background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px; margin: 10px 0; }
+        .cta-button { background-color: #28a745; color: white !important; padding: 15px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px; margin: 10px 0; }
         .cta-button:hover { background-color: #218838; }
         .cta-text { font-size: 14px; color: #666; margin-top: 10px; }
         .signature { border-top: 1px solid #e0e0e0; padding-top: 20px; margin-top: 30px; }
@@ -395,16 +395,14 @@ Joel Lee`;
         
         // Create mailto link with pre-filled reply
         const subject = encodeURIComponent('Re: Insurance Inquiry - Keen to Know More');
-        const body = encodeURIComponent(`KEEN TO KNOW MORE
-
-Hi Joel,
+        const body = encodeURIComponent(`Hi Joel,
 
 I'm interested in learning more about Inspro's insurance solutions for ${companyName}. Please send me detailed information about your services.
 
 Best regards,
 ${leadName}`);
         
-        const mailtoLink = `mailto:joellee@inspro.com.sg?subject=${subject}&body=${body}`;
+        const mailtoLink = `mailto:BenefitsCare@inspro.com.sg?subject=${subject}&body=${body}`;
         
         return `
         <div class="cta-section">
