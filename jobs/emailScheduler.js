@@ -2,6 +2,8 @@ const cron = require('node-cron');
 const axios = require('axios');
 const { getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
+const EmailDelayUtils = require('../utils/emailDelayUtils');
+const BounceDetector = require('../utils/bounceDetector');
 
 /**
  * Background Email Scheduler
@@ -16,12 +18,15 @@ class EmailScheduler {
         this.baseURL = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000';
         this.excelProcessor = new ExcelProcessor();
         this.authProvider = getDelegatedAuthProvider();
+        this.emailDelayUtils = new EmailDelayUtils();
+        this.bounceDetector = new BounceDetector();
         
         // Start background jobs
         this.startReplyDetectionJob();
         this.startTokenRefreshJob();
+        this.startBounceDetectionJob();
         
-        console.log('📅 Email Scheduler initialized with reply detection and token refresh');
+        console.log('📅 Email Scheduler initialized with reply detection, token refresh, and bounce detection');
     }
 
     // Utility function to convert Excel serial numbers to JavaScript dates
@@ -78,6 +83,11 @@ class EmailScheduler {
             this.tokenRefreshJob.destroy();
         }
 
+        if (this.bounceDetectionJob) {
+            this.bounceDetectionJob.stop();
+            this.bounceDetectionJob.destroy();
+        }
+
         this.isRunning = false;
         console.log('🛑 Email Scheduler stopped');
     }
@@ -113,6 +123,22 @@ class EmailScheduler {
         });
         
         console.log('🔄 Background token refresh job started (runs every 30 minutes)');
+    }
+
+    /**
+     * Start bounce detection job
+     * Runs every 15 minutes to check for bounced emails
+     */
+    startBounceDetectionJob() {
+        // Run every 15 minutes
+        this.bounceDetectionJob = cron.schedule('*/15 * * * *', async () => {
+            await this.checkForBouncedEmails();
+        }, {
+            scheduled: true,
+            timezone: "Asia/Singapore"
+        });
+        
+        console.log('📮 Bounce detection job started (runs every 15 minutes)');
     }
 
     /**
@@ -245,14 +271,20 @@ class EmailScheduler {
             let leadsProcessed = 0;
             const errors = [];
 
+            console.log(`⏱️ Estimated processing time: ${this.emailDelayUtils.estimateBulkSendingTime(dueLeads.length).formatted}`);
+
             for (let i = 0; i < dueLeads.length; i += batchSize) {
                 const batch = dueLeads.slice(i, i + batchSize);
+                const batchIndex = Math.floor(i / batchSize);
+                
+                console.log(`📦 Processing batch ${batchIndex + 1}/${Math.ceil(dueLeads.length / batchSize)} (${batch.length} leads)`);
                 
                 const batchResults = await this.processBatch(
                     graphClient, 
                     batch, 
                     templates, 
-                    sessionId
+                    sessionId,
+                    i // Pass current index for delay calculation
                 );
                 
                 emailsSent += batchResults.emailsSent;
@@ -266,9 +298,9 @@ class EmailScheduler {
                     }
                 }
 
-                // Add delay between batches to respect rate limits
+                // Add smart delay between batches
                 if (i + batchSize < dueLeads.length) {
-                    await this.delay(2000); // 2 second delay
+                    await this.emailDelayUtils.batchDelay(batchIndex, batchSize);
                 }
             }
 
@@ -290,7 +322,7 @@ class EmailScheduler {
     /**
      * Process a batch of leads
      */
-    async processBatch(graphClient, leads, templates, sessionId) {
+    async processBatch(graphClient, leads, templates, sessionId, startIndex = 0) {
         const EmailContentProcessor = require('../utils/emailContentProcessor');
         const emailContentProcessor = new EmailContentProcessor();
         
@@ -301,7 +333,9 @@ class EmailScheduler {
             updates: []
         };
 
-        for (const lead of leads) {
+        for (let j = 0; j < leads.length; j++) {
+            const lead = leads[j];
+            const globalIndex = startIndex + j;
             try {
                 console.log(`📧 Processing lead: ${lead.Email} (${lead.Name})`);
                 results.leadsProcessed++;
@@ -350,6 +384,12 @@ class EmailScheduler {
 
                 results.emailsSent++;
 
+                // Add smart delay between emails within batch (skip delay for last email in batch)
+                if (j < leads.length - 1) {
+                    await this.emailDelayUtils.smartDelay(results.emailsSent);
+                    console.log(`📧 Email sent to ${lead.Email} (${results.emailsSent} total)`);
+                }
+
                 // Prepare update for master file
                 const updates = {
                     Status: 'Sent',
@@ -374,15 +414,17 @@ class EmailScheduler {
 
                 console.log(`✅ Email sent successfully to: ${lead.Email}`);
 
-                // Small delay between emails
-                await this.delay(500);
-
             } catch (error) {
                 console.error(`❌ Failed to process lead ${lead.Email}:`, error.message);
                 results.errors.push({
                     email: lead.Email,
                     error: error.message
                 });
+                
+                // Add delay after failures to maintain sending pattern
+                if (j < leads.length - 1) {
+                    await this.emailDelayUtils.randomDelay(15, 45); // Shorter delay after failures
+                }
             }
         }
 
@@ -457,6 +499,72 @@ class EmailScheduler {
             
         } catch (error) {
             console.error('❌ Reply detection job error:', error);
+        }
+    }
+
+    /**
+     * Check for bounced emails across all active sessions
+     */
+    async checkForBouncedEmails() {
+        try {
+            console.log('📮 Running bounce detection job...');
+            
+            const activeSessions = this.authProvider.getActiveSessions();
+            
+            if (activeSessions.length === 0) {
+                console.log('📭 No active sessions for bounce detection');
+                return;
+            }
+            
+            console.log(`📮 Checking for bounces in ${activeSessions.length} sessions...`);
+            
+            let totalBounces = 0;
+            
+            for (const sessionId of activeSessions) {
+                try {
+                    const graphClient = await this.authProvider.getGraphClient(sessionId);
+                    
+                    if (!graphClient) {
+                        console.log(`⚠️ Could not get Graph client for session: ${sessionId}`);
+                        continue;
+                    }
+                    
+                    // Check for bounces in the last hour (since this runs every 15 minutes)
+                    const bounces = await this.bounceDetector.checkInboxForBounces(graphClient, 1);
+                    
+                    if (bounces.length > 0) {
+                        console.log(`📮 Found ${bounces.length} bounces for session: ${sessionId}`);
+                        
+                        // Process bounces and update master list
+                        const results = await this.bounceDetector.processBounces(
+                            bounces, 
+                            async (email, updates) => {
+                                return await this.updateExcelViaGraphAPI(graphClient, email, updates);
+                            }
+                        );
+                        
+                        totalBounces += results.bounced;
+                        
+                        console.log(`✅ Processed ${results.processed} bounces for session: ${sessionId}`);
+                        
+                        if (results.errors.length > 0) {
+                            console.log(`⚠️ ${results.errors.length} bounce processing errors for session: ${sessionId}`);
+                        }
+                    }
+                    
+                } catch (sessionError) {
+                    console.error(`❌ Bounce detection error for session ${sessionId}:`, sessionError);
+                }
+            }
+            
+            if (totalBounces > 0) {
+                console.log(`📮 Bounce detection completed: ${totalBounces} emails marked as bounced`);
+            } else {
+                console.log(`📮 Bounce detection completed: No bounces found`);
+            }
+            
+        } catch (error) {
+            console.error('❌ Bounce detection job error:', error);
         }
     }
 

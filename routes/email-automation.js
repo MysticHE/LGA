@@ -5,6 +5,7 @@ const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
+const EmailDelayUtils = require('../utils/emailDelayUtils');
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -25,6 +26,7 @@ const upload = multer({
 // Initialize processors
 const excelProcessor = new ExcelProcessor();
 const emailContentProcessor = new EmailContentProcessor();
+const emailDelayUtils = new EmailDelayUtils();
 
 /**
  * Enhanced corruption detection to handle Excel table format parsing issues
@@ -810,6 +812,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             Next_Email_Date: calculateNextEmailDate(new Date(), lead.Follow_Up_Days || 7),
             'Email Sent': 'Yes',
             'Email Status': 'Sent',
+            'Email Bounce': 'No', // Initialize bounce status
             'Sent Date': new Date().toISOString(),
             'Sent By': senderEmail
         };
@@ -875,11 +878,16 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
             sent: 0,
             failed: 0,
             trackingEnabled: trackReads,
-            errors: []
+            errors: [],
+            totalEmails: leads.length,
+            estimatedTime: emailDelayUtils.estimateBulkSendingTime(leads.length)
         };
 
-        // Process each lead
-        for (const lead of leads) {
+        console.log(`⏱️ Estimated campaign duration: ${results.estimatedTime.formatted}, completion: ${results.estimatedTime.completionTime}`);
+
+        // Process each lead with random delays
+        for (let i = 0; i < leads.length; i++) {
+            const lead = leads[i];
             try {
                 if (!lead.Email) {
                     results.failed++;
@@ -922,25 +930,48 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                     Email_Choice: emailChoice,
                     'Email Sent': 'Yes',
                     'Email Status': 'Sent',
+                    'Email Bounce': 'No', // Initialize bounce status
                     'Sent Date': new Date().toISOString()
                 };
 
                 await updateLeadViaGraphAPI(graphClient, lead.Email, updates);
                 results.sent++;
 
+                // Add random delay between emails (skip delay for last email)
+                if (i < leads.length - 1) {
+                    const delayMs = await emailDelayUtils.progressiveDelay(i, leads.length);
+                    console.log(`📧 Email ${i + 1}/${leads.length} sent to ${lead.Email} (${results.sent} successful, ${results.failed} failed)`);
+                }
+
             } catch (emailError) {
                 console.error(`❌ Failed to send email to ${lead.Email}:`, emailError.message);
                 results.failed++;
                 results.errors.push(`${lead.Email}: ${emailError.message}`);
+                
+                // Add delay even after failures to maintain sending pattern
+                if (i < leads.length - 1) {
+                    await emailDelayUtils.randomDelay(15, 45); // Shorter delay after failures
+                }
             }
         }
 
         console.log(`✅ Campaign completed: ${results.sent} sent, ${results.failed} failed`);
 
+        // Calculate actual completion time
+        const actualEndTime = new Date();
+        const actualDuration = Math.round((actualEndTime - new Date(Date.now() - results.estimatedTime.totalSeconds * 1000)) / 1000);
+        
         res.json({
             success: true,
             message: `Campaign completed: ${results.sent} emails sent, ${results.failed} failed`,
-            ...results
+            ...results,
+            timing: {
+                estimated: results.estimatedTime,
+                actualDurationSeconds: actualDuration,
+                actualDurationFormatted: emailDelayUtils.formatDelayTime(actualDuration * 1000),
+                completedAt: actualEndTime.toLocaleTimeString()
+            },
+            delayStats: emailDelayUtils.getDelayStats()
         });
 
     } catch (error) {

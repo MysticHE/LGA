@@ -11,6 +11,8 @@ const emailAutomationRoutes = require('./routes/email-automation');
 const emailTemplatesRoutes = require('./routes/email-templates');
 const emailTrackingRoutes = require('./routes/email-tracking');
 const emailSchedulerRoutes = require('./routes/email-scheduler');
+const emailDelayTestRoutes = require('./routes/email-delay-test');
+const emailBounceRoutes = require('./routes/email-bounce');
 const authRoutes = require('./routes/auth');
 
 // Check Azure configuration before initializing email services
@@ -78,6 +80,8 @@ app.use('/api/email-automation/templates', emailTemplatesRoutes);
 app.use('/api/email-templates', emailTemplatesRoutes);
 app.use('/api/email', emailTrackingRoutes);
 app.use('/api/email-scheduler', emailSchedulerRoutes);  // Fixed: Use correct path
+app.use('/api/email-delay', emailDelayTestRoutes);
+app.use('/api/email-bounce', emailBounceRoutes);
 app.use('/auth', authRoutes);
 
 // Serve the main application

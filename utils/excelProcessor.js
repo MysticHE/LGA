@@ -54,6 +54,7 @@ class ExcelProcessor {
             'Email_Count': 'number',
             'Read_Date': 'date',
             'Reply_Date': 'date',
+            'Email Bounce': 'text', // Yes|No
             'Email Sent': 'text' // Yes|No (legacy compatibility)
         };
     }
