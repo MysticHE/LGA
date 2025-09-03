@@ -993,4 +993,58 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+/**
+ * Bridge function to call Microsoft Graph table append API from email automation
+ * This replaces the old file replacement approach with table-based appending
+ */
+async function appendLeadsToOneDriveTable(auth, requestData) {
+    try {
+        console.log(`🔗 BRIDGE: Calling Microsoft Graph table append API`);
+        
+        // Get the base URL for internal API calls
+        const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
+        const host = process.env.RENDER_EXTERNAL_URL ? 
+            new URL(process.env.RENDER_EXTERNAL_URL).host : 
+            'localhost:3000';
+        
+        // Call our own Microsoft Graph table append endpoint
+        const response = await axios.post(`${protocol}://${host}/api/microsoft-graph/onedrive/append-to-table`, requestData, {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Id': auth.sessionId
+            },
+            timeout: 30000 // 30 second timeout
+        });
+        
+        if (response.data.success) {
+            console.log(`✅ BRIDGE SUCCESS: Table append completed - ${response.data.action}`);
+            return response.data;
+        } else {
+            console.error(`❌ BRIDGE ERROR: Table append failed`, response.data);
+            return {
+                success: false,
+                message: response.data.message || 'Unknown error',
+                error: response.data.error
+            };
+        }
+        
+    } catch (error) {
+        console.error(`❌ BRIDGE EXCEPTION: Failed to call table append API`, error);
+        
+        // Extract meaningful error message
+        let errorMessage = 'Failed to append to table';
+        if (error.response && error.response.data && error.response.data.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        return {
+            success: false,
+            message: errorMessage,
+            error: error.code || 'BRIDGE_ERROR'
+        };
+    }
+}
+
 module.exports = router;
