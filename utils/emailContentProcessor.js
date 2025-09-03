@@ -456,7 +456,7 @@ ${leadName}`);
                 <strong>Inspro Insurance Brokers Pte Ltd (199307139Z)</strong><br><br>
                 
                 38 Jalan Pemimpin M38 #02-08 Singapore 577178<br>
-                M: 9627 0143 E: <a href="mailto:joellee@inspro.com.sg" style="color: #0066cc;">joellee@inspro.com.sg</a> 
+                E: <a href="mailto:joellee@inspro.com.sg" style="color: #0066cc;">joellee@inspro.com.sg</a> 
                 W: <a href="https://www.inspro.com.sg" style="color: #0066cc;">www.inspro.com.sg</a>
             </div>
             
