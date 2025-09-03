@@ -240,6 +240,37 @@ normalized['Email Bounce'] = 'No'; // Initialize bounce status
 - **Status Integration:** Works with email automation status updates and tracking systems
 - **Graph API Integration:** Fixed function ensures Email Bounce column appears in Excel tables created via Microsoft Graph API
 
+### Email Bounce Detection Enhancement (Fixed ✅)
+**Issue:** Microsoft Outlook bounce notifications were not being detected by the automated bounce detection system, leaving bounced emails unmarked in Excel files.
+
+**Root Cause:** Bounce detection patterns in `utils/bounceDetector.js` only covered traditional mail server bounce formats (postmaster, mailer-daemon) but not Microsoft Outlook bounce notifications.
+
+**Solution Implemented:**
+- **Enhanced Subject Patterns:** Added detection for "delivery has failed to these recipients" (Microsoft Outlook format)
+- **Updated Sender Patterns:** Added `outlook@microsoft.com` and `microsoftexchange` domains
+- **Email Extraction Pattern:** Added `(email@domain.com)` pattern to extract emails from "Name (email)" format
+- **Comprehensive Testing:** Verified detection works with actual bounce emails like "Arvind Singh (123@qwe.com.sg)"
+
+**Key Changes:**
+```javascript
+// Enhanced subject patterns for Microsoft Outlook
+/delivery has failed to these recipients/i, // Microsoft Outlook
+/delivery failed/i
+
+// Updated sender patterns  
+/outlook@microsoft\.com/i, // Microsoft Outlook bounces
+/microsoftexchange/i
+
+// Email extraction for Outlook format
+/\(([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\)/i, // "Name (email@domain.com)"
+```
+
+**Benefits:**
+- ✅ **Automatic Detection:** Microsoft Outlook bounces now detected and marked in Excel
+- ✅ **Accurate Email Extraction:** Correctly extracts email addresses from Outlook bounce format
+- ✅ **Background Processing:** Bounce detection runs every 15 minutes via cron job
+- ✅ **Excel Integration:** Bounced emails automatically marked with "Email Bounce: Yes" and "Status: Bounced"
+
 ### Email Signature Placeholder Removal (Fixed)
 **Issue:** Professional signature replacement wasn't working - emails still showed placeholder text like `[Your Name]`, `[Your Title]`, `[Your Position]` instead of Joel Lee's Inspro Insurance Brokers signature.
 
