@@ -396,32 +396,29 @@ Reply Tracking: Cron Job → Inbox Check → Email Match → Graph API → Updat
 - `POST /api/email/test-read-update` - Manual read status test
 - `GET /api/email/diagnostic/:email` - Email tracking diagnostics
 
-### Email Delay Implementation Fix (Fixed)
-**Issue:** Bulk email campaigns were not implementing delays between emails despite having a comprehensive delay system, causing emails to be sent rapidly which could trigger spam filters.
+### Email Delay Implementation Fix (Fixed ✅)
+**Issue:** Bulk email campaigns were not implementing delays between emails, causing recipients to receive emails simultaneously which could trigger spam filters.
 
-**Root Cause:** In `routes/email-automation.js`, the delay function was called but not awaited. Line 943 had `const delayMs = await emailDelayUtils.progressiveDelay(i, leads.length);` which calculated the delay but didn't wait for it.
+**Root Cause:** Frontend was calling `routes/email-scheduler.js` which only had 100ms delays, while delay fixes were being applied to unused `routes/email-automation.js`.
 
 **Solution Implemented:**
-- **Fixed Await Pattern:** Changed to `await emailDelayUtils.progressiveDelay(i, leads.length);` to properly wait for delays
-- **Progressive Delay System:** 30-120 second random delays that increase as campaign progresses
+- **Correct File Identified:** Fixed delays in `routes/email-scheduler.js` (actual file used by frontend)
+- **Progressive Delay System:** 30-120 second random delays between emails  
 - **Smart Pattern Avoidance:** Delays help avoid being flagged as spam by email providers
-- **Shorter Failure Delays:** 15-45 seconds after failures to maintain sending pattern
+- **Proper Execution Order:** Delays execute before Excel updates to prevent blocking
 
 **Key Changes:**
 ```javascript
-// BEFORE (line 943) - calculated delay but didn't wait
-const delayMs = await emailDelayUtils.progressiveDelay(i, leads.length);
-
-// AFTER (line 943) - properly waits for the delay
-await emailDelayUtils.progressiveDelay(i, leads.length);
+// Added proper delays in email-scheduler.js
+const delaySeconds = Math.floor(Math.random() * (120 - 30 + 1)) + 30; // 30-120 seconds
+console.log(`⏳ Adding ${delaySeconds}s delay before next email...`);
+await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
 ```
 
-**Delay Configuration:**
-- **Base Delays:** 30-120 seconds random between each email
-- **Progressive Increase:** Delays get longer as campaign progresses (1.0x to 1.5x multiplier)
-- **Smart Timing:** No delay on last email for efficiency
-- **Failure Recovery:** Shorter delays (15-45s) after email failures
-- **Time Estimation:** Campaign duration properly calculated and displayed to user
+**Architecture Clarification:**
+- **`email-scheduler.js`** - Campaign execution with delays (ACTIVE - used by frontend)
+- **`email-automation.js`** - Master list operations and single email sends (ACTIVE - used by frontend)
+- Both files serve different purposes and are necessary
 
 ### Persistent Session Management for 24/7 Email Reply Detection (COMPLETED ✅)
 **Issue:** Email reply detection stopped when users closed their browsers because sessions were only stored in memory and required active browser connections.
