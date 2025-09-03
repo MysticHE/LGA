@@ -4,6 +4,7 @@ const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
 const excelUpdateQueue = require('../utils/excelUpdateQueue');
+const { updateLeadViaGraphAPI } = require('../utils/excelGraphAPI');
 // const persistentStorage = require('../utils/persistentStorage'); // Removed - using simplified Excel lookup
 const router = express.Router();
 
@@ -374,13 +375,11 @@ async function updateEmailReadStatus(trackingId) {
                 // Queue Excel update to prevent race conditions
                 updateSuccess = await excelUpdateQueue.queueUpdate(
                     email, // Use email as file identifier
-                    async () => {
-                        return await updateExcelViaGraphAPI(graphClient, email, {
-                            Status: 'Read',
-                            Read_Date: new Date().toISOString().split('T')[0],
-                            'Last Updated': new Date().toISOString()
-                        });
-                    },
+                    () => updateLeadViaGraphAPI(graphClient, email, {
+                        Status: 'Read',
+                        Read_Date: new Date().toISOString().split('T')[0],
+                        'Last Updated': new Date().toISOString()
+                    }),
                     { type: 'read-tracking', email: email, source: 'tracking-pixel' }
                 );
                 
@@ -406,202 +405,4 @@ async function updateEmailReadStatus(trackingId) {
     }
 }
 
-// Direct Graph API Excel update - find email and update cells (NEW EFFICIENT METHOD)
-async function updateExcelViaGraphAPI(graphClient, email, updates) {
-    try {
-        const masterFileName = 'LGA-Master-Email-List.xlsx';
-        const masterFolderPath = '/LGA-Email-Automation';
-        
-        console.log(`🔍 Graph API: Searching for ${email} in Excel file via Graph API...`);
-        
-        // Get the Excel file ID
-        const files = await graphClient
-            .api(`/me/drive/root:${masterFolderPath}:/children`)
-            .filter(`name eq '${masterFileName}'`)
-            .get();
-
-        if (files.value.length === 0) {
-            console.log(`❌ Master file not found: ${masterFileName}`);
-            return false;
-        }
-
-        const fileId = files.value[0].id;
-        
-        // Try to get worksheet info - use Sheet1 or first available worksheet
-        const worksheets = await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
-            .get();
-            
-        if (worksheets.value.length === 0) {
-            console.log(`❌ No worksheets found in Excel file`);
-            return false;
-        }
-        
-        const worksheetName = worksheets.value[0].name;
-        console.log(`📊 Using worksheet: ${worksheetName}`);
-        
-        // Get all data from the worksheet to find the email
-        const usedRange = await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/usedRange`)
-            .get();
-        
-        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
-            console.log(`❌ No data found in worksheet`);
-            return false;
-        }
-        
-        const headers = usedRange.values[0];
-        const rows = usedRange.values.slice(1); // Skip header row
-        
-        console.log(`🔍 Found ${rows.length} data rows, searching for email: ${email}`);
-        console.log(`📋 Headers:`, headers);
-        
-        // Find email column index
-        const emailColumnIndex = headers.findIndex(header => 
-            header && typeof header === 'string' && 
-            header.toLowerCase().includes('email') && 
-            !header.toLowerCase().includes('date') &&
-            !header.toLowerCase().includes('count')
-        );
-        
-        if (emailColumnIndex === -1) {
-            console.log(`❌ Email column not found in headers`);
-            return false;
-        }
-        
-        console.log(`📧 Email column found at index: ${emailColumnIndex} (${headers[emailColumnIndex]})`);
-        
-        // Find the row with matching email
-        let targetRowIndex = -1;
-        for (let i = 0; i < rows.length; i++) {
-            const rowEmail = rows[i][emailColumnIndex];
-            if (rowEmail && typeof rowEmail === 'string' && rowEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
-                targetRowIndex = i;
-                console.log(`✅ Found matching email in row ${i + 2} (Excel row, including header)`);
-                break;
-            }
-        }
-        
-        if (targetRowIndex === -1) {
-            console.log(`❌ Email ${email} not found in Excel file`);
-            return false;
-        }
-        
-        // Excel row number (1-based, including header)
-        const excelRowNumber = targetRowIndex + 2;
-        
-        // Find column indices for fields we want to update
-        const fieldColumnMap = {};
-        for (const field of Object.keys(updates)) {
-            const columnIndex = headers.findIndex(header => 
-                header && typeof header === 'string' && 
-                (header === field || header.replace(/[_\s]/g, '').toLowerCase() === field.replace(/[_\s]/g, '').toLowerCase())
-            );
-            
-            if (columnIndex !== -1) {
-                // Convert column index to Excel column letter
-                const columnLetter = getExcelColumnLetter(columnIndex);
-                fieldColumnMap[field] = { index: columnIndex, letter: columnLetter };
-                console.log(`📍 Field '${field}' found at column ${columnIndex} (${columnLetter}): ${headers[columnIndex]}`);
-            } else {
-                console.log(`⚠️ Field '${field}' not found in headers`);
-            }
-        }
-        
-        // Update each field directly via Graph API
-        let updatedCount = 0;
-        for (const [field, value] of Object.entries(updates)) {
-            if (fieldColumnMap[field]) {
-                const columnLetter = fieldColumnMap[field].letter;
-                const cellAddress = `${columnLetter}${excelRowNumber}`;
-                
-                try {
-                    console.log(`🔄 Updating cell ${cellAddress} with '${value}'`);
-                    
-                    await graphClient
-                        .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/range(address='${cellAddress}')`)
-                        .patch({
-                            values: [[value]]
-                        });
-                    
-                    console.log(`✅ Updated ${field} in cell ${cellAddress}`);
-                    updatedCount++;
-                    
-                } catch (cellUpdateError) {
-                    console.error(`❌ Failed to update cell ${cellAddress}:`, cellUpdateError.message);
-                }
-            }
-        }
-        
-        if (updatedCount > 0) {
-            console.log(`🎉 Successfully updated ${updatedCount} fields for ${email} via Graph API!`);
-            return true;
-        } else {
-            console.log(`❌ No fields were successfully updated for ${email}`);
-            return false;
-        }
-        
-    } catch (error) {
-        console.error(`❌ Graph API Excel update failed:`, error);
-        return false;
-    }
-}
-
-// Helper function to convert column index to Excel column letter
-function getExcelColumnLetter(columnIndex) {
-    let result = '';
-    let index = columnIndex;
-    
-    while (index >= 0) {
-        result = String.fromCharCode(65 + (index % 26)) + result;
-        index = Math.floor(index / 26) - 1;
-    }
-    
-    return result;
-}
-
-
-
-// Helper function to get campaign tracking stats
-async function getCampaignTrackingStats(campaignId) {
-    // This would typically query a database for campaign-specific tracking
-    // For now, return placeholder stats
-    return {
-        totalSent: 0,
-        totalRead: 0,
-        totalReplied: 0,
-        readRate: 0,
-        replyRate: 0
-    };
-}
-
-// DEPRECATED: Helper function for downloading master file
-// TODO: Migrate all functions to use direct Graph API updates instead
-async function downloadMasterFile(graphClient, useCache = true) {
-    try {
-        const masterFileName = 'LGA-Master-Email-List.xlsx';
-        const masterFolderPath = '/LGA-Email-Automation';
-        
-        const files = await graphClient
-            .api(`/me/drive/root:${masterFolderPath}:/children`)
-            .filter(`name eq '${masterFileName}'`)
-            .get();
-
-        if (files.value.length === 0) {
-            return null;
-        }
-
-        const fileContent = await graphClient
-            .api(`/me/drive/items/${files.value[0].id}/content`)
-            .get();
-
-        return excelProcessor.bufferToWorkbook(fileContent);
-    } catch (error) {
-        console.error('❌ Master file download error:', error);
-        return null;
-    }
-}
-
-// Export helper functions for use by other modules
 module.exports = router;
-module.exports.updateExcelViaGraphAPI = updateExcelViaGraphAPI;

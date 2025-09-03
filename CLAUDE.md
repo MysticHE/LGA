@@ -582,7 +582,9 @@ await excelUpdateQueue.queueUpdate(
 
 **Benefits Achieved:**
 - ✅ **Visible Delays:** Email campaigns now show `⏳ Waiting Xs before next email...` logs
-- ✅ **No Excel Conflicts:** Read tracking and campaign updates processed sequentially per email
+- ✅ **No Excel Conflicts:** Read tracking and campaign updates processed sequentially per email via shared queue
 - ✅ **Campaign Reliability:** No more mid-campaign disruptions from concurrent Excel operations
 - ✅ **Retry Logic:** Failed Excel updates retry with exponential backoff (3 attempts max)
 - ✅ **Performance Monitoring:** Queue status logging for Excel operation visibility
+- ✅ **Centralized Excel Operations:** Created `utils/excelGraphAPI.js` for shared Excel functions to prevent code duplication
+- ✅ **Complete Race Condition Prevention:** Both email automation and read tracking use same queued Excel operations
