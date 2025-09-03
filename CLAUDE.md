@@ -420,6 +420,46 @@ await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
 - **`email-automation.js`** - Master list operations and single email sends (ACTIVE - used by frontend)
 - Both files serve different purposes and are necessary
 
+### Email Automation Delay and Race Condition Fixes (COMPLETED ✅)
+**Issue 1:** Email campaigns were not implementing delays between emails despite having a comprehensive delay system. Logs showed emails being sent immediately without any delay intervals.
+
+**Root Cause:** Console.log for email success was positioned inside the delay condition, preventing both delay execution and logging visibility.
+
+**Issue 2:** Excel API race conditions were disrupting email campaigns when recipients opened emails during active campaigns. Read tracking and campaign updates tried to modify the same Excel file simultaneously.
+
+**Root Cause:** Both email automation and read tracking called `updateExcelViaGraphAPI()` concurrently on the same file, causing Microsoft Graph API conflicts.
+
+**Solution Implemented:**
+- **Fixed Delay Logging:** Moved console.log outside delay condition in `routes/email-automation.js:949` to show email status before delays
+- **Excel Update Queue System:** Created `utils/excelUpdateQueue.js` with serialized Excel operations per email address
+- **Race Condition Prevention:** All Excel updates now queued with retry logic and 500ms spacing between operations
+- **Enhanced Logging:** Added detailed queue status logging for monitoring Excel update flow
+
+**Key Changes:**
+```javascript
+// Fixed delay visibility
+console.log(`📧 Email ${i + 1}/${leads.length} sent to ${lead.Email}`);
+if (i < leads.length - 1) {
+    await emailDelayUtils.progressiveDelay(i, leads.length); // Now shows ⏳ logs
+}
+
+// Queued Excel updates prevent conflicts
+await excelUpdateQueue.queueUpdate(
+    lead.Email,
+    async () => updateLeadViaGraphAPI(graphClient, lead.Email, updates),
+    { type: 'campaign-send', email: lead.Email }
+);
+```
+
+**Benefits Achieved:**
+- ✅ **Visible Delays:** Email campaigns now show `⏳ Waiting Xs before next email...` logs
+- ✅ **No Excel Conflicts:** Read tracking and campaign updates processed sequentially per email via shared queue
+- ✅ **Campaign Reliability:** No more mid-campaign disruptions from concurrent Excel operations
+- ✅ **Retry Logic:** Failed Excel updates retry with exponential backoff (3 attempts max)
+- ✅ **Performance Monitoring:** Queue status logging for Excel operation visibility
+- ✅ **Centralized Excel Operations:** Created `utils/excelGraphAPI.js` for shared Excel functions to prevent code duplication
+- ✅ **Complete Race Condition Prevention:** Both email automation and read tracking use same queued Excel operations
+
 ### Persistent Session Management for 24/7 Email Reply Detection (COMPLETED ✅)
 **Issue:** Email reply detection stopped when users closed their browsers because sessions were only stored in memory and required active browser connections.
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
+const excelUpdateQueue = require('../utils/excelUpdateQueue');
 const router = express.Router();
 
 // Initialize processors
@@ -581,42 +582,64 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
     return { sent, results, errors };
 }
 
-// Helper function to update leads after campaign using Graph API
+// Helper function to update leads after campaign using Excel queue to prevent race conditions
 async function updateLeadsAfterCampaign(graphClient, results, followUpDays) {
     try {
-        console.log(`📝 Updating ${results.length} leads after campaign using Graph API...`);
+        console.log(`📝 Queuing Excel updates for ${results.length} leads after campaign...`);
         
-        // Update each lead that received an email
+        // Queue each lead update to prevent race conditions with read tracking
+        const updatePromises = [];
+        
         for (const result of results) {
             if (result.emailSent) {
                 const leadEmail = result.Email.toLowerCase();
-                console.log(`🔄 Updating lead: ${leadEmail}`);
+                console.log(`📋 Queuing Excel update for lead: ${leadEmail}`);
                 
-                try {
-                    // Update individual lead using Graph API (matching exact Excel column names)
-                    await updateLeadStatusViaGraph(graphClient, leadEmail, {
-                        Status: 'Sent',                                               // Column M
-                        Campaign_Stage: 'Email_Sent',                                // Column N  
-                        Template_Used: result.templateUsed || 'AI_Generated',        // Column P
-                        Last_Email_Date: new Date().toISOString().split('T')[0],     // Column R
-                        Next_Email_Date: calculateNextEmailDate(new Date(), followUpDays || 7), // Column S
-                        Email_Count: (result.originalLead?.Email_Count || 0) + 1,    // Column U
-                        'Email Sent': 'Yes',                                         // Column Z
-                        'Email Status': 'Sent',                                      // Column AA
-                        'Sent Date': new Date().toISOString()                       // Column AB
-                    });
-                    
-                    console.log(`✅ Updated lead: ${leadEmail}`);
-                } catch (updateError) {
-                    console.error(`❌ Failed to update lead ${leadEmail}:`, updateError.message);
-                }
+                const updates = {
+                    Status: 'Sent',                                               // Column M
+                    Campaign_Stage: 'Email_Sent',                                // Column N  
+                    Template_Used: result.templateUsed || 'AI_Generated',        // Column P
+                    Last_Email_Date: new Date().toISOString().split('T')[0],     // Column R
+                    Next_Email_Date: calculateNextEmailDate(new Date(), followUpDays || 7), // Column S
+                    Email_Count: (result.originalLead?.Email_Count || 0) + 1,    // Column U
+                    'Email Sent': 'Yes',                                         // Column Z
+                    'Email Status': 'Sent',                                      // Column AA
+                    'Sent Date': new Date().toISOString()                       // Column AB
+                };
+                
+                // Queue the Excel update to prevent race conditions
+                const updatePromise = excelUpdateQueue.queueUpdate(
+                    leadEmail, // Use email as queue identifier
+                    () => updateLeadStatusViaGraph(graphClient, leadEmail, updates),
+                    { type: 'campaign-complete', email: leadEmail, source: 'email-scheduler' }
+                ).catch(updateError => {
+                    console.error(`❌ Queued update failed for ${leadEmail}:`, updateError.message);
+                    return { error: updateError, email: leadEmail };
+                });
+                
+                updatePromises.push(updatePromise);
             }
         }
 
-        console.log(`✅ Updated ${results.length} leads after campaign`);
+        // Wait for all queued updates to complete
+        console.log(`⏳ Waiting for ${updatePromises.length} queued Excel updates to complete...`);
+        const updateResults = await Promise.allSettled(updatePromises);
+        
+        const successful = updateResults.filter(result => result.status === 'fulfilled' && !result.value?.error).length;
+        const failed = updateResults.length - successful;
+        
+        console.log(`✅ Campaign Excel updates completed: ${successful} successful, ${failed} failed`);
+        
+        if (failed > 0) {
+            const failedEmails = updateResults
+                .filter(result => result.status === 'rejected' || result.value?.error)
+                .map(result => result.value?.email || 'unknown')
+                .join(', ');
+            console.warn(`⚠️ Some Excel updates failed: ${failedEmails}`);
+        }
 
     } catch (error) {
-        console.error('❌ Error updating leads after campaign:', error);
+        console.error('❌ Error queuing leads updates after campaign:', error);
         throw error;
     }
 }
