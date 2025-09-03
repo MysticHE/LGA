@@ -396,6 +396,33 @@ Reply Tracking: Cron Job → Inbox Check → Email Match → Graph API → Updat
 - `POST /api/email/test-read-update` - Manual read status test
 - `GET /api/email/diagnostic/:email` - Email tracking diagnostics
 
+### Email Delay Implementation Fix (Fixed)
+**Issue:** Bulk email campaigns were not implementing delays between emails despite having a comprehensive delay system, causing emails to be sent rapidly which could trigger spam filters.
+
+**Root Cause:** In `routes/email-automation.js`, the delay function was called but not awaited. Line 943 had `const delayMs = await emailDelayUtils.progressiveDelay(i, leads.length);` which calculated the delay but didn't wait for it.
+
+**Solution Implemented:**
+- **Fixed Await Pattern:** Changed to `await emailDelayUtils.progressiveDelay(i, leads.length);` to properly wait for delays
+- **Progressive Delay System:** 30-120 second random delays that increase as campaign progresses
+- **Smart Pattern Avoidance:** Delays help avoid being flagged as spam by email providers
+- **Shorter Failure Delays:** 15-45 seconds after failures to maintain sending pattern
+
+**Key Changes:**
+```javascript
+// BEFORE (line 943) - calculated delay but didn't wait
+const delayMs = await emailDelayUtils.progressiveDelay(i, leads.length);
+
+// AFTER (line 943) - properly waits for the delay
+await emailDelayUtils.progressiveDelay(i, leads.length);
+```
+
+**Delay Configuration:**
+- **Base Delays:** 30-120 seconds random between each email
+- **Progressive Increase:** Delays get longer as campaign progresses (1.0x to 1.5x multiplier)
+- **Smart Timing:** No delay on last email for efficiency
+- **Failure Recovery:** Shorter delays (15-45s) after email failures
+- **Time Estimation:** Campaign duration properly calculated and displayed to user
+
 ### Persistent Session Management for 24/7 Email Reply Detection (COMPLETED ✅)
 **Issue:** Email reply detection stopped when users closed their browsers because sessions were only stored in memory and required active browser connections.
 
