@@ -228,10 +228,17 @@ normalized['Email Bounce'] = 'No'; // Initialize bounce status
 {width: 15}, // Email Bounce
 ```
 
+**Critical Fix Applied:**
+- **Duplicate Function Issue:** Fixed missing "Email Bounce" field in `normalizeLeadData()` function in `routes/microsoft-graph.js`
+- **Root Cause:** Two different `normalizeLeadData` functions existed - one in `utils/excelProcessor.js` (correct) and one in `routes/microsoft-graph.js` (missing Email Bounce)
+- **Solution:** Added `'Email Bounce': lead['Email Bounce'] || 'No'` to microsoft-graph.js normalizeLeadData function
+- **Result:** All new Excel files created via any route now properly include Email Bounce column
+
 **Usage:**
-- **New Files:** When no Excel file exists in OneDrive, system creates new file with "Email Bounce" column
-- **Bounce Detection:** Automated bounce detection updates this field to "Yes" when bounces detected
+- **New Files:** When no Excel file exists in OneDrive, system creates new file with "Email Bounce" column in position 22
+- **Bounce Detection:** Automated bounce detection updates this field to "Yes" when bounces detected  
 - **Status Integration:** Works with email automation status updates and tracking systems
+- **Graph API Integration:** Fixed function ensures Email Bounce column appears in Excel tables created via Microsoft Graph API
 
 ### Email Signature Placeholder Removal (Fixed)
 **Issue:** Professional signature replacement wasn't working - emails still showed placeholder text like `[Your Name]`, `[Your Title]`, `[Your Position]` instead of Joel Lee's Inspro Insurance Brokers signature.
