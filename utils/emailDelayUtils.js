@@ -99,6 +99,7 @@ class EmailDelayUtils {
     async progressiveDelay(emailIndex, totalEmails) {
         // Skip delay for first email
         if (emailIndex === 0) {
+            console.log(`⚡ First email - no delay needed`);
             return 0;
         }
 
