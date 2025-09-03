@@ -249,15 +249,12 @@ class ExcelProcessor {
         normalized['Next_Email_Date'] = this.calculateNextEmailDate(new Date(), 7);
         normalized['Follow_Up_Days'] = 7;
         normalized['Email_Count'] = 0;
-        normalized['Max_Emails'] = 3;
-        normalized['Auto_Send_Enabled'] = 'Yes';
         normalized['Read_Date'] = '';
         normalized['Reply_Date'] = '';
+        normalized['Email Bounce'] = 'No'; // Initialize bounce status
         
-        // Legacy compatibility
+        // Legacy compatibility  
         normalized['Email Sent'] = '';
-        normalized['Email Status'] = 'Not Sent';
-        normalized['Sent Date'] = '';
 
         return normalized;
     }
@@ -678,18 +675,14 @@ class ExcelProcessor {
             {width: 20}, // Campaign_Stage
             {width: 20}, // Email_Choice
             {width: 20}, // Template_Used
-            {width: 40}, // Email_Content_Sent
             {width: 18}, // Last_Email_Date
             {width: 18}, // Next_Email_Date
             {width: 15}, // Follow_Up_Days
             {width: 12}, // Email_Count
-            {width: 12}, // Max_Emails
-            {width: 18}, // Auto_Send_Enabled
             {width: 18}, // Read_Date
             {width: 18}, // Reply_Date
-            {width: 12}, // Email Sent
-            {width: 15}, // Email Status
-            {width: 18}  // Sent Date
+            {width: 15}, // Email Bounce
+            {width: 12}  // Email Sent (legacy compatibility)
         ];
     }
 
