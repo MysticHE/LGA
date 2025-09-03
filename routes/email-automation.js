@@ -993,6 +993,64 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+// Calculate statistics from leads data
+function calculateStatsFromLeads(leadsData) {
+    const today = new Date().toISOString().split('T')[0];
+    console.log(`📅 Today's date for comparison: ${today}`);
+    
+    const stats = {
+        totalLeads: leadsData.length,
+        dueToday: 0,
+        emailsSent: 0,
+        emailsRead: 0,
+        repliesReceived: 0,
+        newRecords: 0,
+        statusBreakdown: {}
+    };
+    
+    leadsData.forEach(lead => {
+        // Count by status
+        const status = lead.Status || 'New';
+        stats.statusBreakdown[status] = (stats.statusBreakdown[status] || 0) + 1;
+        
+        // Count specific metrics
+        if (lead.Last_Email_Date) stats.emailsSent++;
+        if (lead.Read_Date) stats.emailsRead++;
+        if (lead.Reply_Date) stats.repliesReceived++;
+        
+        // Count new records (leads with 'New' status)
+        if (status === 'New') stats.newRecords++;
+        
+        // Check if due today (regardless of status)
+        const nextEmailDate = parseExcelDate(lead.Next_Email_Date);
+        
+        if (nextEmailDate && nextEmailDate <= today) {
+            stats.dueToday++;
+        }
+    });
+    
+    return stats;
+}
+
+// Parse Excel date values (handles both serial numbers and date strings)
+function parseExcelDate(dateValue) {
+    if (!dateValue) return null;
+    
+    // Handle Excel serial numbers (like 45907)
+    if (typeof dateValue === 'number' && dateValue > 40000) {
+        const excelEpoch = new Date(1900, 0, 1);
+        const jsDate = new Date(excelEpoch.getTime() + (dateValue - 2) * 24 * 60 * 60 * 1000);
+        return jsDate.toISOString().split('T')[0];
+    } else {
+        // Handle regular date strings
+        try {
+            return new Date(dateValue).toISOString().split('T')[0];
+        } catch (error) {
+            return null;
+        }
+    }
+}
+
 /**
  * Bridge function to call Microsoft Graph table append API from email automation
  * This replaces the old file replacement approach with table-based appending
