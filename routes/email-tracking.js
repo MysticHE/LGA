@@ -3,6 +3,7 @@ const XLSX = require('xlsx'); // Still needed for legacy diagnostic function - T
 const axios = require('axios');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const ExcelProcessor = require('../utils/excelProcessor');
+const excelUpdateQueue = require('../utils/excelUpdateQueue');
 // const persistentStorage = require('../utils/persistentStorage'); // Removed - using simplified Excel lookup
 const router = express.Router();
 
@@ -370,12 +371,18 @@ async function updateEmailReadStatus(trackingId) {
             try {
                 const graphClient = await authProvider.getGraphClient(sessionId);
                 
-                // Use direct Graph API to find and update the email
-                updateSuccess = await updateExcelViaGraphAPI(graphClient, email, {
-                    Status: 'Read',
-                    Read_Date: new Date().toISOString().split('T')[0],
-                    'Last Updated': new Date().toISOString()
-                });
+                // Queue Excel update to prevent race conditions
+                updateSuccess = await excelUpdateQueue.queueUpdate(
+                    email, // Use email as file identifier
+                    async () => {
+                        return await updateExcelViaGraphAPI(graphClient, email, {
+                            Status: 'Read',
+                            Read_Date: new Date().toISOString().split('T')[0],
+                            'Last Updated': new Date().toISOString()
+                        });
+                    },
+                    { type: 'read-tracking', email: email, source: 'tracking-pixel' }
+                );
                 
                 if (updateSuccess) {
                     console.log(`✅ Direct Graph API update successful for ${email} in session ${sessionId}`);

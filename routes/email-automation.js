@@ -6,6 +6,7 @@ const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middlewar
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
 const EmailDelayUtils = require('../utils/emailDelayUtils');
+const excelUpdateQueue = require('../utils/excelUpdateQueue');
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -935,13 +936,21 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                     'Sent Date': new Date().toISOString()
                 };
 
-                await updateLeadViaGraphAPI(graphClient, lead.Email, updates);
+                // Queue Excel update to prevent race conditions
+                await excelUpdateQueue.queueUpdate(
+                    lead.Email, // Use email as file identifier
+                    async () => {
+                        return await updateLeadViaGraphAPI(graphClient, lead.Email, updates);
+                    },
+                    { type: 'campaign-send', email: lead.Email, source: 'email-automation' }
+                );
                 results.sent++;
+
+                console.log(`📧 Email ${i + 1}/${leads.length} sent to ${lead.Email} (${results.sent} successful, ${results.failed} failed)`);
 
                 // Add random delay between emails (skip delay for last email)
                 if (i < leads.length - 1) {
                     await emailDelayUtils.progressiveDelay(i, leads.length);
-                    console.log(`📧 Email ${i + 1}/${leads.length} sent to ${lead.Email} (${results.sent} successful, ${results.failed} failed)`);
                 }
 
             } catch (emailError) {
