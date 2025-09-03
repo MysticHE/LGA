@@ -327,7 +327,7 @@ Joel Lee`;
     /**
      * Convert email content to HTML format with tracking and professional signature
      */
-    convertToHTML(emailContent, leadEmail = null) {
+    convertToHTML(emailContent, leadEmail = null, leadData = null) {
         let htmlBody = emailContent.body || '';
         
         // Clean placeholder signatures from body
@@ -335,6 +335,9 @@ Joel Lee`;
         
         // Convert line breaks to HTML
         htmlBody = htmlBody.replace(/\n/g, '<br>');
+        
+        // Add professional CTA button for direct reply
+        const ctaButton = this.generateCTAButton(leadData);
         
         // Add professional Inspro signature
         const professionalSignature = this.generateProfessionalSignature();
@@ -347,7 +350,7 @@ Joel Lee`;
             trackingPixel = `<img src="${baseUrl}/api/email/track-read?id=${encodeURIComponent(trackingId)}" width="1" height="1" style="display:none;" alt="" />`;
         }
         
-        // Wrap in enhanced HTML structure with professional signature
+        // Wrap in enhanced HTML structure with CTA button and professional signature
         const html = `
 <!DOCTYPE html>
 <html>
@@ -358,6 +361,10 @@ Joel Lee`;
     <style>
         .email-container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
         .email-body { margin-bottom: 30px; }
+        .cta-section { text-align: center; margin: 30px 0; padding: 20px; background-color: #f8f9fa; border-radius: 8px; }
+        .cta-button { background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px; margin: 10px 0; }
+        .cta-button:hover { background-color: #218838; }
+        .cta-text { font-size: 14px; color: #666; margin-top: 10px; }
         .signature { border-top: 1px solid #e0e0e0; padding-top: 20px; margin-top: 30px; }
         .logo { margin-bottom: 10px; }
         .contact-info { font-size: 13px; color: #666; }
@@ -369,6 +376,7 @@ Joel Lee`;
         <div class="email-body">
             ${htmlBody}
         </div>
+        ${ctaButton}
         ${professionalSignature}
         ${trackingPixel}
     </div>
@@ -376,6 +384,40 @@ Joel Lee`;
 </html>`;
 
         return html;
+    }
+
+    /**
+     * Generate professional CTA button for direct email reply
+     */
+    generateCTAButton(leadData = null) {
+        const companyName = leadData?.['Company Name'] || leadData?.Company || 'your company';
+        const leadName = leadData?.Name || '';
+        
+        // Create mailto link with pre-filled reply
+        const subject = encodeURIComponent('Re: Insurance Inquiry - Keen to Know More');
+        const body = encodeURIComponent(`KEEN TO KNOW MORE
+
+Hi Joel,
+
+I'm interested in learning more about Inspro's insurance solutions for ${companyName}. Please send me detailed information about your services.
+
+Best regards,
+${leadName}`);
+        
+        const mailtoLink = `mailto:joellee@inspro.com.sg?subject=${subject}&body=${body}`;
+        
+        return `
+        <div class="cta-section">
+            <div style="margin-bottom: 15px; font-size: 16px; color: #333;">
+                <strong>Interested in our insurance solutions?</strong>
+            </div>
+            <a href="${mailtoLink}" class="cta-button">
+                📞 Yes, I'm Keen to Know More
+            </a>
+            <div class="cta-text">
+                Click the button above to send us a quick reply, or simply respond to this email.
+            </div>
+        </div>`;
     }
 
     /**
@@ -426,6 +468,27 @@ Joel Lee`;
                 <p><strong>Confidentiality Notice:</strong> This e-mail is intended for the named addressee only. It contains information which may be privileged and confidential. Unless you are the named addressee you may neither use it, copy it nor disclose it to anyone else. If you have received it in error please notify the sender immediately by email or telephone. Thank You.</p>
             </div>
         </div>`;
+    }
+
+    /**
+     * Create email message object for Microsoft Graph API
+     */
+    createEmailMessage(emailContent, leadEmail, leadData = null, trackReads = false) {
+        return {
+            subject: emailContent.subject,
+            body: {
+                contentType: 'HTML',
+                content: this.convertToHTML(emailContent, trackReads ? leadEmail : null, leadData)
+            },
+            toRecipients: [
+                {
+                    emailAddress: {
+                        address: leadEmail,
+                        name: leadData?.Name || leadEmail
+                    }
+                }
+            ]
+        };
     }
 
     /**

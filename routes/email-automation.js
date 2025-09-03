@@ -782,7 +782,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             subject: emailContent.subject,
             body: {
                 contentType: 'HTML',
-                content: emailContentProcessor.convertToHTML(emailContent, lead.Email)
+                content: emailContentProcessor.convertToHTML(emailContent, lead.Email, lead)
             },
             toRecipients: [
                 {
@@ -914,7 +914,8 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                 const emailMessage = emailContentProcessor.createEmailMessage(
                     emailContent, 
                     lead.Email, 
-                    trackReads ? req.sessionId : null
+                    lead,
+                    trackReads
                 );
 
                 await graphClient

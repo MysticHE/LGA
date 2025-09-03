@@ -503,7 +503,7 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 subject: emailContent.subject,
                 body: {
                     contentType: 'HTML',
-                    content: emailContentProcessor.convertToHTML(emailContent, lead.Email)
+                    content: emailContentProcessor.convertToHTML(emailContent, lead.Email, lead)
                 },
                 toRecipients: [
                     {
