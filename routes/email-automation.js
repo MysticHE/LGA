@@ -937,17 +937,10 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                     'Sent Date': new Date().toISOString()
                 };
 
-                // Queue Excel update to prevent race conditions
-                await excelUpdateQueue.queueUpdate(
-                    lead.Email, // Use email as file identifier
-                    () => updateLeadViaGraphAPI(graphClient, lead.Email, updates),
-                    { type: 'campaign-send', email: lead.Email, source: 'email-automation' }
-                );
                 results.sent++;
-
                 console.log(`📧 Email ${i + 1}/${leads.length} sent to ${lead.Email} (${results.sent} successful, ${results.failed} failed)`);
 
-                // Add random delay between emails (skip delay for last email)
+                // Add random delay between emails BEFORE Excel updates (skip delay for last email)
                 console.log(`🔍 DELAY DEBUG: i=${i}, leads.length=${leads.length}, shouldDelay=${i < leads.length - 1}`);
                 if (i < leads.length - 1) {
                     console.log(`⏳ Adding delay before email ${i + 2}/${leads.length}...`);
@@ -955,6 +948,18 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                     console.log(`✅ Delay completed: ${Math.round(delayMs / 1000)}s - Ready for next email`);
                 } else {
                     console.log(`🏁 Last email - no delay needed`);
+                }
+
+                // Queue Excel update AFTER delay to prevent blocking
+                try {
+                    await excelUpdateQueue.queueUpdate(
+                        lead.Email, // Use email as file identifier
+                        () => updateLeadViaGraphAPI(graphClient, lead.Email, updates),
+                        { type: 'campaign-send', email: lead.Email, source: 'email-automation' }
+                    );
+                } catch (excelError) {
+                    console.error(`⚠️ Excel update failed for ${lead.Email}: ${excelError.message}`);
+                    // Continue campaign even if Excel update fails
                 }
 
             } catch (emailError) {
