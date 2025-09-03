@@ -542,9 +542,9 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
             console.log(`📧 Email sent to: ${lead.Email}`);
 
             // Add progressive delay between emails (skip delay for last email)
-            const leadIndex = processedLeads.indexOf(lead);
-            console.log(`🔍 DELAY DEBUG: leadIndex=${leadIndex}, totalLeads=${processedLeads.length}, shouldDelay=${leadIndex < processedLeads.length - 1}`);
-            if (leadIndex < processedLeads.length - 1) {
+            const leadIndex = leads.indexOf(lead);
+            console.log(`🔍 DELAY DEBUG: leadIndex=${leadIndex}, totalLeads=${leads.length}, shouldDelay=${leadIndex < leads.length - 1}`);
+            if (leadIndex < leads.length - 1) {
                 const delaySeconds = Math.floor(Math.random() * (120 - 30 + 1)) + 30; // 30-120 seconds
                 console.log(`⏳ Adding ${delaySeconds}s delay before next email...`);
                 await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
