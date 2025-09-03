@@ -18,7 +18,9 @@ class BounceDetector {
                 /delivery failure/i,
                 /message not delivered/i,
                 /mail delivery subsystem/i,
-                /automatic reply/i
+                /automatic reply/i,
+                /delivery has failed to these recipients/i, // Microsoft Outlook
+                /delivery failed/i
             ],
             
             // Sender patterns (bounce notifications usually come from these)
@@ -29,7 +31,9 @@ class BounceDetector {
                 /@.*no-reply/i,
                 /delivery-status/i,
                 /bounce/i,
-                /mail.*delivery/i
+                /mail.*delivery/i,
+                /outlook@microsoft\.com/i, // Microsoft Outlook bounces
+                /microsoftexchange/i
             ],
             
             // Body content patterns for bounce reasons
@@ -137,6 +141,9 @@ class BounceDetector {
             // Generic patterns
             /original.*recipient[:\s]*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
             /failed.*delivery.*to[:\s]*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+            
+            // Microsoft Outlook format: "Name (email@domain.com)"
+            /\(([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\)/i,
             
             // Extract from subject line as fallback
             /undelivered.*to[:\s]*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i
