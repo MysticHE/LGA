@@ -949,7 +949,9 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
 
                 // Add random delay between emails (skip delay for last email)
                 if (i < leads.length - 1) {
-                    await emailDelayUtils.progressiveDelay(i, leads.length);
+                    console.log(`⏳ Adding delay before email ${i + 2}/${leads.length}...`);
+                    const delayMs = await emailDelayUtils.progressiveDelay(i, leads.length);
+                    console.log(`✅ Delay completed: ${Math.round(delayMs / 1000)}s - Ready for next email`);
                 }
 
             } catch (emailError) {
