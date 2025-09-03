@@ -1239,6 +1239,7 @@ function normalizeLeadData(lead) {
         'Email_Count': lead['Email_Count'] || 0,
         'Read_Date': lead['Read_Date'] || '',
         'Reply_Date': lead['Reply_Date'] || '',
+        'Email Bounce': lead['Email Bounce'] || 'No', // Initialize bounce status
         
         // Legacy compatibility columns
         'Email Sent': lead['Email Sent'] || '',
