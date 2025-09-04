@@ -51,6 +51,10 @@ class EmailContentProcessor {
         // Parse AI content to extract subject and body
         const parsed = this.parseEmailContent(aiContent);
         
+        // Fix Issue 2 & 3: Personalize square bracket placeholders and ensure greeting
+        let personalizedBody = this.personalizeSquareBrackets(parsed.body, lead);
+        personalizedBody = this.ensureProperGreeting(personalizedBody, lead);
+        
         // Final subject with proper fallback
         let finalSubject = parsed.subject;
         if (!finalSubject) {
@@ -59,13 +63,13 @@ class EmailContentProcessor {
 
         console.log(`📧 Final email structure for ${lead.Email}:`, {
             subject: finalSubject,
-            bodyStart: parsed.body.substring(0, 100) + '...',
+            bodyStart: personalizedBody.substring(0, 100) + '...',
             usedFallback: !parsed.subject
         });
         
         return {
             subject: finalSubject,
-            body: parsed.body,
+            body: personalizedBody,
             contentType: 'AI_Generated',
             variables: this.extractVariables(aiContent)
         };
@@ -430,6 +434,7 @@ ${leadName}`);
             .replace(/\[Your Title\]\s*/gi, '')
             .replace(/\[Your Position\]\s*/gi, '')  
             .replace(/\[Your Contact Information\]\s*/gi, '')
+            .replace(/\[Your Company\]\s*/gi, '') // Fix Issue 1: Remove [Your Company]
             .replace(/Inspro Insurance Brokers(?:\s*\n)?\s*/gi, '')
             // Remove "Best regards," if followed by placeholders
             .replace(/Best regards,\s*\n\s*\[Your Name\]/gi, '')
@@ -577,6 +582,44 @@ ${leadName}`);
             variableCount: this.extractVariables(subject + ' ' + body).length,
             estimatedReadTime: Math.ceil(body.split(/\s+/).length / 200) // Average 200 words per minute
         };
+    }
+
+    /**
+     * Fix Issue 2: Personalize square bracket placeholders in AI-generated content
+     */
+    personalizeSquareBrackets(body, lead) {
+        if (!body || !lead) return body;
+
+        const leadName = lead.Name || 'there';
+        const companyName = lead['Company Name'] || lead.Company || 'your company';
+        
+        return body
+            .replace(/\[Owner's Name\]/gi, leadName)
+            .replace(/\[Owner Name\]/gi, leadName)
+            .replace(/\[Name\]/gi, leadName)
+            .replace(/\[Your Company\]/gi, companyName)
+            .replace(/\[Company Name\]/gi, companyName)
+            .replace(/\[Company\]/gi, companyName);
+    }
+
+    /**
+     * Fix Issue 3: Ensure proper greeting at start of email
+     */
+    ensureProperGreeting(body, lead) {
+        if (!body || !lead) return body;
+
+        const leadName = lead.Name || 'there';
+        const bodyTrimmed = body.trim();
+        
+        // Check if body already starts with a proper greeting
+        const hasGreeting = /^(Dear|Hi|Hello|Hey)\s+/i.test(bodyTrimmed);
+        
+        if (!hasGreeting) {
+            // Add proper greeting at the start
+            return `Dear ${leadName},\n\n${bodyTrimmed}`;
+        }
+        
+        return body;
     }
 
 }

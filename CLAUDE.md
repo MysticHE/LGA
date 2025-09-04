@@ -636,6 +636,52 @@ previewExclusionDomains(file) {
 - ✅ **Bulk Domain Management**: Handle hundreds of domains via Excel upload
 - ✅ **User-Friendly**: Clear preview and status messages throughout process
 
+### Email Personalization Fixes (COMPLETED ✅)
+**Issue 1:** Emails still contained `[Your Company]` placeholder text despite signature cleanup system.
+**Issue 2:** AI-generated emails showed `Dear [Owner's Name]` instead of personalized greetings with actual lead names.
+**Issue 3:** Some emails were missing greeting lines entirely, starting abruptly without "Dear..." or "Hi..." salutations.
+
+**Root Cause:** 
+- Missing `[Your Company]` pattern in placeholder removal system
+- No square bracket placeholder personalization for AI-generated content 
+- No greeting detection and insertion logic for emails lacking proper salutations
+
+**Solution Implemented:**
+- **Enhanced Placeholder Removal:** Added `[Your Company]` to `removePlaceholderSignatures()` function
+- **Square Bracket Personalization:** New `personalizeSquareBrackets()` function replaces `[Owner's Name]`, `[Company Name]`, etc. with actual lead data
+- **Greeting Insurance:** New `ensureProperGreeting()` function automatically adds "Dear [Name]," when greeting is missing
+- **Integrated Processing:** Both functions applied during AI content processing in `getAIGeneratedContent()`
+
+**Key Changes:**
+```javascript
+// Enhanced placeholder removal in utils/emailContentProcessor.js:433
+.replace(/\[Your Company\]\s*/gi, '') // Fix Issue 1: Remove [Your Company]
+
+// Square bracket personalization
+personalizeSquareBrackets(body, lead) {
+    return body
+        .replace(/\[Owner's Name\]/gi, leadName)
+        .replace(/\[Your Company\]/gi, companyName)
+        // ... other patterns
+}
+
+// Greeting detection and insertion
+ensureProperGreeting(body, lead) {
+    const hasGreeting = /^(Dear|Hi|Hello|Hey)\s+/i.test(bodyTrimmed);
+    if (!hasGreeting) {
+        return `Dear ${leadName},\n\n${bodyTrimmed}`;
+    }
+    return body;
+}
+```
+
+**Benefits Achieved:**
+- ✅ **No More [Your Company]:** All placeholder company references removed from emails
+- ✅ **Personalized Greetings:** `Dear [Owner's Name]` becomes `Dear John Smith,` with actual lead names
+- ✅ **Universal Greeting Coverage:** All emails guaranteed to start with proper personalized greeting
+- ✅ **Comprehensive Personalization:** Handles multiple square bracket placeholder variations
+- ✅ **Backward Compatible:** Works with existing AI-generated content without breaking changes
+
 ## Important Notes
 
 - **No Test Framework:** This project has no automated tests. Manual testing required.
