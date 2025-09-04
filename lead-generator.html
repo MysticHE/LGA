@@ -3393,6 +3393,54 @@ Best regards,
             }
         }
 
+        // Preview exclusion domains immediately after file upload
+        async function previewExclusionDomains(file, statusDiv, manualDomainsInput) {
+            try {
+                const formData = new FormData();
+                formData.append('exclusionsFile', file);
+                
+                const response = await fetch('/api/email-automation/extract-exclusion-domains', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to analyze file');
+                }
+                
+                const result = await response.json();
+                
+                if (result.success && result.domains.length > 0) {
+                    statusDiv.innerHTML = `✅ <strong>${result.domains.length} domains</strong> will be excluded from lead generation<br>` +
+                        `📁 ${file.name} (${(file.size/1024).toFixed(1)} KB)<br>` +
+                        `🔍 Sample: ${result.domains.slice(0, 5).join(', ')}${result.domains.length > 5 ? '...' : ''}`;
+                    statusDiv.style.color = '#28a745';
+                    
+                    // Clear and disable manual domains input
+                    manualDomainsInput.value = '';
+                    manualDomainsInput.placeholder = `${result.domains.length} domains loaded from file - manual entry disabled`;
+                    manualDomainsInput.disabled = true;
+                } else {
+                    statusDiv.innerHTML = `⚠️ No domains found in ${file.name}. Check for "domain Email Address" column.`;
+                    statusDiv.style.color = '#ffc107';
+                    
+                    // Re-enable manual entry
+                    manualDomainsInput.placeholder = 'gmail.com, yahoo.com, outlook.com';
+                    manualDomainsInput.disabled = false;
+                }
+                
+            } catch (error) {
+                console.error('Preview error:', error);
+                statusDiv.innerHTML = `❌ Error analyzing file: ${error.message}`;
+                statusDiv.style.color = '#dc3545';
+                
+                // Re-enable manual entry on error
+                manualDomainsInput.placeholder = 'gmail.com, yahoo.com, outlook.com';
+                manualDomainsInput.disabled = false;
+            }
+        }
+
         // Handle exclusion file upload
         function handleExclusionFileUpload() {
             const fileInput = document.getElementById('exclusionsFileUpload');
@@ -3420,13 +3468,12 @@ Best regards,
                         return;
                     }
                     
-                    statusDiv.innerHTML = `✅ Selected: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
-                    statusDiv.style.color = '#28a745';
+                    // Show loading while extracting domains
+                    statusDiv.innerHTML = `⏳ Analyzing ${file.name} for exclusion domains...`;
+                    statusDiv.style.color = '#ffc107';
                     
-                    // Clear manual domains input when file is selected
-                    manualDomainsInput.value = '';
-                    manualDomainsInput.placeholder = 'File upload selected - manual entry disabled';
-                    manualDomainsInput.disabled = true;
+                    // Immediately extract and preview domains
+                    previewExclusionDomains(file, statusDiv, manualDomainsInput);
                 } else {
                     statusDiv.innerHTML = '';
                     
