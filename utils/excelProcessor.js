@@ -46,7 +46,6 @@ class ExcelProcessor {
             'AI_Generated_Email': 'text',
             'Status': 'text', // New|Sent|Read|Replied|Bounced|Unsubscribed
             'Campaign_Stage': 'text', // First_Contact|Follow_Up_1|Follow_Up_2|Completed
-            'Email_Choice': 'text', // AI_Generated|Email_Template_1|Email_Template_2
             'Template_Used': 'text',
             'Last_Email_Date': 'date',
             'Next_Email_Date': 'date',
@@ -455,9 +454,7 @@ class ExcelProcessor {
         // Set default automation settings
         normalized['Status'] = 'New';
         normalized['Campaign_Stage'] = 'First_Contact';
-        normalized['Email_Choice'] = templateChoice;
         normalized['Template_Used'] = '';
-        normalized['Email_Content_Sent'] = '';
         normalized['Last_Email_Date'] = '';
         normalized['Next_Email_Date'] = this.calculateNextEmailDate(new Date(), 7);
         normalized['Follow_Up_Days'] = 7;
@@ -666,7 +663,6 @@ class ExcelProcessor {
             const today = new Date().toISOString().split('T')[0];
             
             return data.filter(lead => {
-                if (lead.Auto_Send_Enabled !== 'Yes') return false;
                 if (['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status)) return false;
                 
                 const nextEmailDate = parseExcelDate(lead.Next_Email_Date);
@@ -704,7 +700,6 @@ class ExcelProcessor {
                 const nextEmailDate = parseExcelDate(lead.Next_Email_Date);
                 
                 if (nextEmailDate && nextEmailDate <= today && 
-                    lead.Auto_Send_Enabled === 'Yes' && 
                     !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status)) {
                     stats.dueToday++;
                 }
@@ -886,7 +881,6 @@ class ExcelProcessor {
             {width: 60}, // AI_Generated_Email
             {width: 15}, // Status
             {width: 20}, // Campaign_Stage
-            {width: 20}, // Email_Choice
             {width: 20}, // Template_Used
             {width: 18}, // Last_Email_Date
             {width: 18}, // Next_Email_Date

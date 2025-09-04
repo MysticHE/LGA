@@ -4,6 +4,7 @@ const { getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth')
 const ExcelProcessor = require('../utils/excelProcessor');
 const EmailDelayUtils = require('../utils/emailDelayUtils');
 const BounceDetector = require('../utils/bounceDetector');
+const { getExcelColumnLetter } = require('../utils/excelGraphAPI');
 
 /**
  * Background Email Scheduler
@@ -341,7 +342,7 @@ class EmailScheduler {
                 results.leadsProcessed++;
 
                 // Determine email content type
-                const emailChoice = lead.Email_Choice || 'AI_Generated';
+                const emailChoice = 'AI_Generated';
 
                 // Process email content
                 const emailContent = await emailContentProcessor.processEmailContent(
@@ -396,7 +397,6 @@ class EmailScheduler {
                     Last_Email_Date: new Date().toISOString().split('T')[0],
                     Email_Count: (lead.Email_Count || 0) + 1,
                     Template_Used: emailContent.contentType,
-                    Email_Content_Sent: emailContent.subject + '\n\n' + emailContent.body,
                     Next_Email_Date: this.excelProcessor.calculateNextEmailDate(
                         new Date(), 
                         lead.Follow_Up_Days || 7

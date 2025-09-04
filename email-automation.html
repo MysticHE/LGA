@@ -239,7 +239,6 @@
                             <th>Company</th>
                             <th>Status</th>
                             <th>Campaign Stage</th>
-                            <th>Email Choice</th>
                             <th>Last Email</th>
                             <th>Next Email</th>
                             <th>Actions</th>
@@ -877,7 +876,6 @@
                     <td title="${lead['Company Name'] || 'No company'}">${lead['Company Name'] || '<span class="text-muted">No company</span>'}</td>
                     <td><span class="status-badge status-${(lead.Status || 'new').toLowerCase()}">${lead.Status || 'New'}</span></td>
                     <td title="${lead.Campaign_Stage || 'First_Contact'}">${(lead.Campaign_Stage || 'First_Contact').replace('_', ' ')}</td>
-                    <td title="${lead.Email_Choice || 'AI_Generated'}">${(lead.Email_Choice || 'AI_Generated').replace('_', ' ')}</td>
                     <td title="${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleString() : 'Never sent'}">${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleDateString() : '-'}</td>
                     <td title="${lead.Next_Email_Date ? parseExcelDateForDisplay(lead.Next_Email_Date).toLocaleString() : 'Not scheduled'}">${lead.Next_Email_Date ? parseExcelDateForDisplay(lead.Next_Email_Date).toLocaleDateString() : '-'}</td>
                     <td>
@@ -1206,7 +1204,7 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                         newLeadsMessage += `${index + 1}. ${lead.Name || 'Unknown'}\n`;
                         newLeadsMessage += `   📧 ${lead.Email}\n`;
                         newLeadsMessage += `   🏢 ${lead['Company Name'] || 'No company'}\n`;
-                        newLeadsMessage += `   📅 Ready to send: ${lead.Auto_Send_Enabled === 'Yes' ? 'Yes' : 'No'}\n\n`;
+                        newLeadsMessage += `\n`;
                     });
                     
                     alert(newLeadsMessage);

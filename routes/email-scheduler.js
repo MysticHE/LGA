@@ -2,6 +2,7 @@ const express = require('express');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
 const excelUpdateQueue = require('../utils/excelUpdateQueue');
+const { getExcelColumnLetter, getLeadsViaGraphAPI, updateLeadViaGraphAPI } = require('../utils/excelGraphAPI');
 const router = express.Router();
 
 // Initialize processors
@@ -401,30 +402,16 @@ function getTargetLeadsFromData(allLeads, targetCriteria) {
             // Enhanced debugging for 'new' lead filtering
             const newLeadsFiltered = allLeads.filter(lead => {
                 const isNew = lead.Status === 'New';
-                const isAutoEnabled = lead.Auto_Send_Enabled === 'Yes';
                 
                 console.log(`🔍 LEAD FILTER DEBUG - ${lead.Email}:`, {
                     Status: lead.Status,
                     isNew: isNew,
-                    Auto_Send_Enabled: lead.Auto_Send_Enabled,
-                    isAutoEnabled: isAutoEnabled,
-                    willInclude: isNew && isAutoEnabled
+                    willInclude: isNew
                 });
                 
-                return isNew && isAutoEnabled;
+                return isNew;
             });
             
-            // TEMPORARY FIX: If no leads match strict criteria, try relaxed criteria for debugging
-            if (newLeadsFiltered.length === 0) {
-                console.log(`⚠️  No leads match strict criteria, checking with relaxed filters...`);
-                const relaxedFilter = allLeads.filter(lead => lead.Status === 'New');
-                console.log(`📋 Leads with just Status='New': ${relaxedFilter.length}`);
-                
-                if (relaxedFilter.length > 0) {
-                    console.log(`🔧 TEMPORARY: Using relaxed criteria (ignoring Auto_Send_Enabled for debugging)`);
-                    return relaxedFilter; // Return leads with just Status='New' for debugging
-                }
-            }
             
             return newLeadsFiltered;
 
@@ -435,20 +422,18 @@ function getTargetLeadsFromData(allLeads, targetCriteria) {
                     new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
                 
                 return nextEmailDate && nextEmailDate <= today && 
-                       lead.Auto_Send_Enabled === 'Yes' &&
                        !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
             });
 
         case 'all_new':
             const todayAllNew = new Date().toISOString().split('T')[0];
             return allLeads.filter(lead => {
-                if (lead.Status === 'New' && lead.Auto_Send_Enabled === 'Yes') return true;
+                if (lead.Status === 'New') return true;
                 
                 const nextEmailDate = lead.Next_Email_Date ? 
                     new Date(lead.Next_Email_Date).toISOString().split('T')[0] : null;
                 
                 return nextEmailDate && nextEmailDate <= todayAllNew && 
-                       lead.Auto_Send_Enabled === 'Yes' &&
                        !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
             });
 
@@ -969,8 +954,7 @@ async function downloadMasterFileRaw(graphClient, useCache = true) {
                 console.log(`   - First lead sample:`, {
                     Name: leadsData[0].Name,
                     Email: leadsData[0].Email,
-                    Status: leadsData[0].Status,
-                    Auto_Send_Enabled: leadsData[0].Auto_Send_Enabled
+                    Status: leadsData[0].Status
                 });
             }
         } else {
@@ -1087,75 +1071,9 @@ function calculateNextEmailDate(fromDate, followUpDays) {
 }
 
 // Helper function to get Excel column letter from number (A, B, C, ... Z, AA, AB, etc.)
-function getExcelColumnLetter(columnNumber) {
-    let result = '';
-    while (columnNumber > 0) {
-        const remainder = (columnNumber - 1) % 26;
-        result = String.fromCharCode(65 + remainder) + result;
-        columnNumber = Math.floor((columnNumber - 1) / 26);
-    }
-    return result;
-}
 
 // Graph API helper functions for migrated functionality
 
-async function getLeadsViaGraphAPI(graphClient) {
-    try {
-        const masterFileName = 'LGA-Master-Email-List.xlsx';
-        const masterFolderPath = '/LGA-Email-Automation';
-        
-        // Get Excel file ID
-        const files = await graphClient
-            .api(`/me/drive/root:${masterFolderPath}:/children`)
-            .filter(`name eq '${masterFileName}'`)
-            .get();
-
-        if (files.value.length === 0) {
-            return null;
-        }
-
-        const fileId = files.value[0].id;
-        
-        // Get worksheets to find the correct sheet name
-        const worksheets = await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
-            .get();
-            
-        // Find Leads sheet (or first sheet)
-        const leadsSheet = worksheets.value.find(sheet => 
-            sheet.name === 'Leads' || sheet.name.toLowerCase().includes('lead')
-        ) || worksheets.value[0];
-        
-        if (!leadsSheet) {
-            return null;
-        }
-        
-        // Get leads data
-        const usedRange = await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/usedRange`)
-            .get();
-        
-        if (!usedRange || !usedRange.values || usedRange.values.length <= 1) {
-            return [];
-        }
-        
-        // Convert to lead objects
-        const headers = usedRange.values[0];
-        const rows = usedRange.values.slice(1);
-        
-        return rows.map(row => {
-            const lead = {};
-            headers.forEach((header, index) => {
-                lead[header] = row[index] || '';
-            });
-            return lead;
-        }).filter(lead => lead.Email);
-        
-    } catch (error) {
-        console.error('❌ Get leads via Graph API error:', error);
-        return null;
-    }
-}
 
 async function getTemplatesViaGraphAPI(graphClient) {
     try {

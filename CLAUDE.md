@@ -649,6 +649,39 @@ previewExclusionDomains(file) {
 - **High-Performance Email Tracking with Reply Detection:** Direct Graph API cell updates eliminate file download/upload cycles for 90%+ speed improvement. Automated reply detection runs every 5 minutes using Microsoft Graph inbox monitoring.
 - **24/7 Background Operation:** Session persistence with encrypted token storage enables continuous email reply detection even when browsers are closed. Background token refresh every 30 minutes keeps authentication active for up to 90 days without user intervention.
 
+### Codebase Cleanup and Deduplication (COMPLETED ✅)
+**Issue:** Massive code duplication across Excel operations was creating maintenance overhead and potential bugs with ~800 lines of duplicate functions.
+
+**Root Cause:** Critical Excel Graph API functions (`getExcelColumnLetter`, `getLeadsViaGraphAPI`, `updateLeadViaGraphAPI`) were duplicated across 6+ files instead of being centralized.
+
+**Solution Implemented:**
+- **Function Centralization:** All Excel Graph API functions now centralized in `utils/excelGraphAPI.js`
+- **Removed Duplicates:** Eliminated 5 duplicate `getExcelColumnLetter()` functions across route files
+- **Removed Large Duplicates:** Eliminated 2 duplicate `getLeadsViaGraphAPI()` functions (60+ lines each)
+- **Removed Update Duplicates:** Eliminated 1 duplicate `updateLeadViaGraphAPI()` function (80+ lines)
+- **Legacy Column Cleanup:** Removed all references to deprecated Excel columns (`Email_Choice`, `Email_Content_Sent`, `Auto_Send_Enabled`, `Max_Emails`)
+- **Dead File Removal:** Deleted unused `email-automation-preview.html` file
+
+**Key Changes:**
+```javascript
+// Centralized imports pattern now used across all files
+const { getExcelColumnLetter, getLeadsViaGraphAPI, updateLeadViaGraphAPI } = require('../utils/excelGraphAPI');
+
+// Simplified email automation logic (removed artificial Auto_Send_Enabled gates)
+// All leads with Status='New' or valid Next_Email_Date now processed automatically
+
+// UI cleanup - removed Email_Choice column display from frontend tables
+```
+
+**Benefits Achieved:**
+- ✅ **~400 Lines Removed**: Eliminated duplicate function code across 6+ files
+- ✅ **Single Source of Truth**: All Excel operations use centralized functions
+- ✅ **Simplified Logic**: Removed artificial Email_Choice and Auto_Send_Enabled constraints  
+- ✅ **Better Maintainability**: Changes to Excel operations only need updates in one location
+- ✅ **Cleaner UI**: Frontend tables now focus on essential data columns
+- ✅ **No Functionality Loss**: All email automation features preserved and simplified
+- ✅ **Reduced Technical Debt**: Eliminated legacy column references and dead code
+
 ### Email Automation Delay and Race Condition Fixes (COMPLETED ✅)
 **Issue 1:** Email campaigns were not implementing delays between emails despite having a comprehensive delay system. Logs showed emails being sent immediately without any delay intervals.
 

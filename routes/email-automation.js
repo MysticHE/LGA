@@ -978,7 +978,7 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
         // Process email content
         const emailContent = await emailContentProcessor.processEmailContent(
             lead, 
-            emailChoice || lead.Email_Choice || 'AI_Generated', 
+            emailChoice || 'AI_Generated', 
             templates
         );
 
@@ -1143,7 +1143,6 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                     Last_Email_Date: new Date().toISOString().split('T')[0],
                     Email_Count: (lead.Email_Count || 0) + 1,
                     Template_Used: emailContent.contentType,
-                    Email_Choice: emailChoice,
                     'Email Sent': 'Yes',
                     'Email Status': 'Sent',
                     'Email Bounce': 'No', // Initialize bounce status

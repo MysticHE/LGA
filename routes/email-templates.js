@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
+const { getExcelColumnLetter } = require('../utils/excelGraphAPI');
 const router = express.Router();
 
 // Initialize processors
@@ -697,18 +698,6 @@ async function toggleTemplateStatusViaGraphAPI(graphClient, templateId) {
     }
 }
 
-// Helper function to get Excel column letter
-function getExcelColumnLetter(columnIndex) {
-    let result = '';
-    let index = columnIndex;
-    
-    while (index >= 0) {
-        result = String.fromCharCode(65 + (index % 26)) + result;
-        index = Math.floor(index / 26) - 1;
-    }
-    
-    return result;
-}
 
 
 module.exports = router;

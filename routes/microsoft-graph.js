@@ -1,6 +1,7 @@
 const express = require('express');
 const XLSX = require('xlsx');
 const { requireDelegatedAuth, getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
+const { getExcelColumnLetter } = require('../utils/excelGraphAPI');
 const router = express.Router();
 
 // Apply delegated Graph authentication middleware to protected routes
@@ -1394,20 +1395,6 @@ async function convertExistingDataToTable(client, fileId, worksheetName, tableNa
     }
 }
 
-/**
- * Get Excel column letter from number (A, B, C, ... Z, AA, AB, etc.)
- * @param {number} columnNumber - Column number (1-based)
- * @returns {string} Excel column letter
- */
-function getExcelColumnLetter(columnNumber) {
-    let result = '';
-    while (columnNumber > 0) {
-        const remainder = (columnNumber - 1) % 26;
-        result = String.fromCharCode(65 + remainder) + result;
-        columnNumber = Math.floor((columnNumber - 1) / 26);
-    }
-    return result;
-}
 
 /**
  * Format cell value with proper data type for Excel table operations
