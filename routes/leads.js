@@ -547,6 +547,14 @@ router.post('/start-workflow-job-with-exclusions', upload.single('exclusionsFile
         // Extract exclusion domains from uploaded file
         let excludeEmailDomains = [];
         if (req.file) {
+            // Check for Excel temporary files
+            if (req.file.originalname.startsWith('~$')) {
+                return res.status(400).json({
+                    error: 'Invalid File',
+                    message: 'Cannot process Excel temporary file. Please close Excel and upload the actual file (not the ~$ temporary file).'
+                });
+            }
+            
             console.log(`🚫 Processing exclusions file: ${req.file.originalname} (${req.file.size} bytes)`);
             try {
                 excludeEmailDomains = excelProcessor.parseExclusionDomainsFromExcel(req.file.buffer);

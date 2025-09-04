@@ -450,6 +450,14 @@ router.post('/master-list/upload-with-exclusions', requireDelegatedAuth, upload.
         // Extract exclusion domains if exclusions file provided
         let exclusionDomains = [];
         if (exclusionsFile) {
+            // Check for Excel temporary files
+            if (exclusionsFile.originalname.startsWith('~$')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Cannot process Excel temporary file. Please close Excel and upload the actual file (not the ~$ temporary file).'
+                });
+            }
+            
             exclusionDomains = excelProcessor.parseExclusionDomainsFromExcel(exclusionsFile.buffer);
         }
 

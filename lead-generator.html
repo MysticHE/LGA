@@ -3403,6 +3403,23 @@ Best regards,
                 const file = e.target.files[0];
                 
                 if (file) {
+                    // Check for Excel temporary files
+                    if (file.name.startsWith('~$')) {
+                        statusDiv.innerHTML = `❌ Cannot use temporary Excel file. Please close Excel and select the actual file.`;
+                        statusDiv.style.color = '#dc3545';
+                        fileInput.value = ''; // Clear the invalid file
+                        return;
+                    }
+                    
+                    // Validate file type
+                    const validTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'];
+                    if (!validTypes.includes(file.type)) {
+                        statusDiv.innerHTML = `❌ Please select an Excel file (.xlsx or .xls)`;
+                        statusDiv.style.color = '#dc3545';
+                        fileInput.value = ''; // Clear the invalid file
+                        return;
+                    }
+                    
                     statusDiv.innerHTML = `✅ Selected: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
                     statusDiv.style.color = '#28a745';
                     
