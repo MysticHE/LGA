@@ -1588,6 +1588,13 @@
                                             <input type="text" id="excludeEmailDomains" placeholder="gmail.com, yahoo.com, outlook.com">
                                         </div>
                                         <div class="exclusion-help-text">Separate domains with commas</div>
+                                        
+                                        <!-- Excel Upload Option -->
+                                        <div class="exclusion-upload-option" style="margin-top: 10px;">
+                                            <label for="exclusionsFileUpload" style="font-size: 14px; color: #666;">📁 Or upload Excel file with "domain Email Address" column:</label>
+                                            <input type="file" id="exclusionsFileUpload" accept=".xlsx,.xls" style="margin-top: 5px;">
+                                            <div id="exclusionsFileStatus" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
+                                        </div>
                                     </div>
                                     
                                     <div class="exclusion-input-group">
@@ -2056,27 +2063,58 @@
                     this.currentLeads = []; // Clear previous results
                     this.displayLeads([], {}); // Clear display
                     
-                    // Start background job
-                    const response = await fetch('/api/leads/start-workflow-job', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            jobTitles: formData.jobTitles,
-                            companySizes: formData.companySizes,
-                            generateOutreach: formData.generateOutreach,
-                            useProductMaterials: formData.useProductMaterials,
-                            maxRecords: formData.maxRecords,
-                            chunkSize: 100,
-                            excludeEmailDomains: formData.excludeEmailDomains,
-                            excludeIndustries: formData.excludeIndustries,
-                            saveToOneDrive: formData.saveToOneDrive,
-                            sendEmailCampaign: formData.sendEmailCampaign,
-                            templateChoice: formData.templateChoice,
-                            emailTemplate: formData.emailTemplate,
-                            emailSubject: formData.emailSubject,
-                            trackEmailReads: formData.trackEmailReads
-                        })
-                    });
+                    // Check if exclusion file was uploaded
+                    const exclusionsFileInput = document.getElementById('exclusionsFileUpload');
+                    const hasExclusionFile = exclusionsFileInput.files && exclusionsFileInput.files.length > 0;
+                    
+                    let response;
+                    
+                    if (hasExclusionFile) {
+                        // Use form data with file upload for exclusions
+                        const formDataWithFile = new FormData();
+                        formDataWithFile.append('exclusionsFile', exclusionsFileInput.files[0]);
+                        formDataWithFile.append('jobTitles', JSON.stringify(formData.jobTitles));
+                        formDataWithFile.append('companySizes', JSON.stringify(formData.companySizes));
+                        formDataWithFile.append('generateOutreach', formData.generateOutreach);
+                        formDataWithFile.append('useProductMaterials', formData.useProductMaterials);
+                        formDataWithFile.append('maxRecords', formData.maxRecords);
+                        formDataWithFile.append('excludeIndustries', JSON.stringify(formData.excludeIndustries));
+                        formDataWithFile.append('saveToOneDrive', formData.saveToOneDrive);
+                        formDataWithFile.append('sendEmailCampaign', formData.sendEmailCampaign);
+                        formDataWithFile.append('templateChoice', formData.templateChoice);
+                        formDataWithFile.append('emailTemplate', formData.emailTemplate);
+                        formDataWithFile.append('emailSubject', formData.emailSubject);
+                        formDataWithFile.append('trackEmailReads', formData.trackEmailReads);
+                        
+                        this.addLog(`📁 Using exclusion file: ${exclusionsFileInput.files[0].name}`, 'info');
+                        
+                        response = await fetch('/api/leads/start-workflow-job-with-exclusions', {
+                            method: 'POST',
+                            body: formDataWithFile
+                        });
+                    } else {
+                        // Use regular JSON endpoint without file upload
+                        response = await fetch('/api/leads/start-workflow-job', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jobTitles: formData.jobTitles,
+                                companySizes: formData.companySizes,
+                                generateOutreach: formData.generateOutreach,
+                                useProductMaterials: formData.useProductMaterials,
+                                maxRecords: formData.maxRecords,
+                                chunkSize: 100,
+                                excludeEmailDomains: formData.excludeEmailDomains,
+                                excludeIndustries: formData.excludeIndustries,
+                                saveToOneDrive: formData.saveToOneDrive,
+                                sendEmailCampaign: formData.sendEmailCampaign,
+                                templateChoice: formData.templateChoice,
+                                emailTemplate: formData.emailTemplate,
+                                emailSubject: formData.emailSubject,
+                                trackEmailReads: formData.trackEmailReads
+                            })
+                        });
+                    }
 
                     if (!response.ok) {
                         const error = await response.json();
@@ -2087,6 +2125,16 @@
                     const jobId = result.jobId;
                     
                     this.addLog(`✅ Background job started: ${jobId}`, 'success');
+                    
+                    // Show exclusion stats if file was uploaded
+                    if (result.exclusionStats && result.exclusionStats.domainsExtracted > 0) {
+                        this.addLog(`🚫 Exclusion file processed: ${result.exclusionStats.domainsExtracted} domains will be excluded`, 'info');
+                        this.addLog(`📁 File: ${result.exclusionStats.fileName}`, 'info');
+                        if (result.exclusionStats.domains && result.exclusionStats.domains.length > 0) {
+                            this.addLog(`🔍 Sample domains: ${result.exclusionStats.domains.join(', ')}${result.exclusionStats.domainsExtracted > result.exclusionStats.domains.length ? '...' : ''}`, 'info');
+                        }
+                    }
+                    
                     this.addLog('📡 Polling for progress updates...', 'info');
                     
                     // Start polling for job status
@@ -3345,9 +3393,46 @@ Best regards,
             }
         }
 
+        // Handle exclusion file upload
+        function handleExclusionFileUpload() {
+            const fileInput = document.getElementById('exclusionsFileUpload');
+            const statusDiv = document.getElementById('exclusionsFileStatus');
+            const manualDomainsInput = document.getElementById('excludeEmailDomains');
+            
+            fileInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                
+                if (file) {
+                    statusDiv.innerHTML = `✅ Selected: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+                    statusDiv.style.color = '#28a745';
+                    
+                    // Clear manual domains input when file is selected
+                    manualDomainsInput.value = '';
+                    manualDomainsInput.placeholder = 'File upload selected - manual entry disabled';
+                    manualDomainsInput.disabled = true;
+                } else {
+                    statusDiv.innerHTML = '';
+                    
+                    // Re-enable manual entry when no file selected
+                    manualDomainsInput.placeholder = 'gmail.com, yahoo.com, outlook.com';
+                    manualDomainsInput.disabled = false;
+                }
+            });
+            
+            // Also handle manual input changes
+            manualDomainsInput.addEventListener('input', function(e) {
+                if (e.target.value.trim()) {
+                    // Clear file input when manual entry is used
+                    fileInput.value = '';
+                    statusDiv.innerHTML = '';
+                }
+            });
+        }
+
         // Initialize the application
         document.addEventListener('DOMContentLoaded', () => {
             leadGenerator = new LeadGenerator();
+            handleExclusionFileUpload();
         });
     </script>
 </body>
