@@ -421,6 +421,211 @@ router.post('/master-list/upload', requireDelegatedAuth, upload.single('excelFil
     }
 });
 
+// Upload Excel file with domain exclusion from exclusion list
+router.post('/master-list/upload-with-exclusions', requireDelegatedAuth, upload.fields([
+    { name: 'leadsFile', maxCount: 1 },
+    { name: 'exclusionsFile', maxCount: 1 }
+]), async (req, res) => {
+    try {
+        console.log('📤 Starting Excel file upload with domain exclusions...');
+
+        if (!req.files || !req.files.leadsFile || !req.files.leadsFile[0]) {
+            return res.status(400).json({
+                success: false,
+                message: 'No leads Excel file provided'
+            });
+        }
+
+        const leadsFile = req.files.leadsFile[0];
+        const exclusionsFile = req.files.exclusionsFile ? req.files.exclusionsFile[0] : null;
+
+        console.log(`📊 Processing leads file: ${leadsFile.originalname} (${leadsFile.size} bytes)`);
+        if (exclusionsFile) {
+            console.log(`🚫 Processing exclusions file: ${exclusionsFile.originalname} (${exclusionsFile.size} bytes)`);
+        }
+
+        // Get authenticated Graph client
+        const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
+
+        // Extract exclusion domains if exclusions file provided
+        let exclusionDomains = [];
+        if (exclusionsFile) {
+            exclusionDomains = excelProcessor.parseExclusionDomainsFromExcel(exclusionsFile.buffer);
+        }
+
+        // Parse leads file with domain exclusion
+        const parseResult = excelProcessor.parseUploadedFileWithDomainExclusion(leadsFile.buffer, exclusionDomains);
+        const { leads: filteredLeads, excluded: excludedLeads } = parseResult;
+
+        if (filteredLeads.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid leads found after applying exclusion filters',
+                exclusionStats: {
+                    domainsExcluded: exclusionDomains.length,
+                    leadsExcluded: excludedLeads.length,
+                    exclusionDomains: exclusionDomains.slice(0, 10)
+                }
+            });
+        }
+
+        // Use existing master file logic
+        const masterFileName = 'LGA-Master-Email-List.xlsx';
+        const masterFolderPath = '/LGA-Email-Automation';
+        
+        let masterWorkbook;
+        let existingData = [];
+        let initialExistingCount = 0;
+
+        try {
+            const files = await graphClient
+                .api(`/me/drive/root:${masterFolderPath}:/children`)
+                .filter(`name eq '${masterFileName}'`)
+                .get();
+
+            if (files.value.length > 0) {
+                const fileContent = await graphClient
+                    .api(`/me/drive/items/${files.value[0].id}/content`)
+                    .get();
+                
+                masterWorkbook = excelProcessor.bufferToWorkbook(fileContent);
+                existingData = await getLeadsViaGraphAPI(graphClient) || [];
+                initialExistingCount = existingData.length;
+            } else {
+                console.log('📝 Creating new master file...');
+                masterWorkbook = excelProcessor.createMasterFile(filteredLeads, 'AI_Generated');
+                initialExistingCount = 0;
+            }
+        } catch (fileError) {
+            console.log('📝 Creating new master file due to access error...');
+            masterWorkbook = excelProcessor.createMasterFile(filteredLeads, 'AI_Generated');
+            initialExistingCount = 0;
+        }
+
+        // Merge leads with existing data
+        const mergeResults = excelProcessor.mergeLeadsWithMaster(filteredLeads, existingData);
+        
+        if (mergeResults.newLeads.length === 0) {
+            return res.json({
+                success: true,
+                message: 'All leads were duplicates - no new leads added',
+                breakdown: {
+                    existingLeads: initialExistingCount,
+                    leadsUploaded: filteredLeads.length,
+                    duplicatesSkipped: mergeResults.duplicates.length,
+                    newLeadsAdded: 0,
+                    finalTotal: initialExistingCount,
+                    domainsExcluded: exclusionDomains.length,
+                    leadsExcluded: excludedLeads.length
+                },
+                exclusionStats: {
+                    exclusionDomains: exclusionDomains,
+                    excludedLeads: excludedLeads.map(lead => ({
+                        name: lead.Name || lead.name,
+                        email: lead.Email || lead.email,
+                        reason: lead.excludedReason
+                    }))
+                }
+            });
+        }
+
+        // Upload to OneDrive using table append
+        const appendResult = await appendLeadsToOneDriveTable(
+            { sessionId: req.sessionId },
+            {
+                leads: mergeResults.newLeads,
+                filename: masterFileName,
+                folderPath: masterFolderPath
+            }
+        );
+
+        if (!appendResult.success) {
+            throw new Error(`Failed to append leads to table: ${appendResult.message}`);
+        }
+
+        // Verify upload success
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const verifyData = await getLeadsViaGraphAPI(graphClient);
+        const finalTotalLeads = verifyData ? verifyData.length : initialExistingCount + mergeResults.newLeads.length;
+
+        res.json({
+            success: true,
+            message: `Excel file processed with domain exclusions - ${mergeResults.newLeads.length} new leads added`,
+            breakdown: {
+                existingLeads: initialExistingCount,
+                leadsUploaded: filteredLeads.length,
+                duplicatesSkipped: mergeResults.duplicates.length,
+                newLeadsAdded: mergeResults.newLeads.length,
+                finalTotal: finalTotalLeads,
+                domainsExcluded: exclusionDomains.length,
+                leadsExcluded: excludedLeads.length
+            },
+            exclusionStats: {
+                exclusionDomains: exclusionDomains,
+                excludedLeads: excludedLeads.map(lead => ({
+                    name: lead.Name || lead.name,
+                    email: lead.Email || lead.email,
+                    reason: lead.excludedReason
+                }))
+            },
+            masterFile: {
+                name: masterFileName,
+                location: masterFolderPath,
+                totalLeads: finalTotalLeads
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Excel upload with exclusions error:', error);
+        
+        res.status(500).json({
+            success: false,
+            message: 'Failed to upload and process Excel files with domain exclusions',
+            error: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
+// Extract exclusion domains from uploaded Excel file
+router.post('/extract-exclusion-domains', upload.single('exclusionsFile'), async (req, res) => {
+    try {
+        console.log('🚫 Extracting exclusion domains from uploaded Excel file...');
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No Excel file provided'
+            });
+        }
+
+        console.log(`📊 Processing file: ${req.file.originalname} (${req.file.size} bytes)`);
+
+        // Extract exclusion domains using ExcelProcessor
+        const exclusionDomains = excelProcessor.parseExclusionDomainsFromExcel(req.file.buffer);
+
+        res.json({
+            success: true,
+            message: `Successfully extracted ${exclusionDomains.length} exclusion domains`,
+            domains: exclusionDomains,
+            file: {
+                name: req.file.originalname,
+                size: req.file.size
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Domain extraction error:', error);
+        
+        res.status(500).json({
+            success: false,
+            message: 'Failed to extract exclusion domains from Excel file',
+            error: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
 // Get master list data
 router.get('/master-list/data', requireDelegatedAuth, async (req, res) => {
     try {

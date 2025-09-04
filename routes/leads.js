@@ -11,6 +11,7 @@ const PDFContentProcessor = require('../utils/pdfContentProcessor');
 const ContentAnalyzer = require('../utils/contentAnalyzer');
 const ContentCache = require('../utils/contentCache');
 const { getEnvironmentConfig } = require('../config/contentConfig');
+const ExcelProcessor = require('../utils/excelProcessor');
 
 // Configure multer for memory storage
 const upload = multer({ 
@@ -31,6 +32,7 @@ const config = getEnvironmentConfig();
 const contentProcessor = new PDFContentProcessor();
 const contentAnalyzer = openai ? new ContentAnalyzer(openai) : null;
 const contentCache = new ContentCache();
+const excelProcessor = new ExcelProcessor();
 
 
 // Initialize product materials storage (in-memory, like job storage)
@@ -518,6 +520,117 @@ router.post('/export-excel', async (req, res) => {
 
 // Initialize job storage (in production, use Redis or database)
 global.backgroundJobs = global.backgroundJobs || new Map();
+
+// Start workflow job with exclusion file upload
+router.post('/start-workflow-job-with-exclusions', upload.single('exclusionsFile'), async (req, res) => {
+    try {
+        const { 
+            jobTitles, 
+            companySizes, 
+            maxRecords = 0, 
+            generateOutreach = true, 
+            useProductMaterials = false, 
+            chunkSize = 100,
+            excludeIndustries = [],
+            saveToOneDrive = false,
+            sendEmailCampaign = false,
+            templateChoice = 'AI_Generated',
+            emailTemplate = '',
+            emailSubject = '',
+            trackEmailReads = true
+        } = req.body;
+
+        // Parse JSON arrays from form data if they come as strings
+        const parsedExcludeIndustries = typeof excludeIndustries === 'string' ? 
+            JSON.parse(excludeIndustries || '[]') : excludeIndustries;
+
+        // Extract exclusion domains from uploaded file
+        let excludeEmailDomains = [];
+        if (req.file) {
+            console.log(`🚫 Processing exclusions file: ${req.file.originalname} (${req.file.size} bytes)`);
+            try {
+                excludeEmailDomains = excelProcessor.parseExclusionDomainsFromExcel(req.file.buffer);
+                console.log(`✅ Extracted ${excludeEmailDomains.length} exclusion domains from uploaded file`);
+            } catch (error) {
+                console.error('❌ Failed to extract exclusion domains:', error.message);
+                return res.status(400).json({
+                    error: 'File Processing Error',
+                    message: 'Failed to extract exclusion domains from uploaded file: ' + error.message
+                });
+            }
+        }
+
+        // Generate unique job ID
+        const jobId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+        
+        // Initialize job status
+        const jobStatus = {
+            id: jobId,
+            status: 'started',
+            progress: { step: 1, message: 'Starting workflow with domain exclusions...', total: saveToOneDrive || sendEmailCampaign ? 6 : 4 },
+            startTime: new Date().toISOString(),
+            params: { 
+                jobTitles, 
+                companySizes, 
+                maxRecords, 
+                generateOutreach, 
+                useProductMaterials, 
+                chunkSize, 
+                excludeEmailDomains, 
+                excludeIndustries: parsedExcludeIndustries, 
+                saveToOneDrive, 
+                sendEmailCampaign, 
+                templateChoice, 
+                emailTemplate, 
+                emailSubject, 
+                trackEmailReads,
+                exclusionFileUploaded: !!req.file,
+                exclusionFileName: req.file?.originalname
+            },
+            result: null,
+            error: null,
+            completedAt: null
+        };
+        
+        // Store job status
+        global.backgroundJobs.set(jobId, jobStatus);
+        
+        // Clean up old jobs after 2 hours
+        setTimeout(() => {
+            global.backgroundJobs.delete(jobId);
+        }, 2 * 60 * 60 * 1000);
+
+        // Return job ID immediately to avoid timeout
+        res.json({
+            success: true,
+            jobId: jobId,
+            message: 'Workflow started with domain exclusions. Use /job-status to check progress.',
+            exclusionStats: {
+                domainsExtracted: excludeEmailDomains.length,
+                domains: excludeEmailDomains.slice(0, 10),
+                fileName: req.file?.originalname
+            }
+        });
+        
+        // Run the actual workflow in background
+        processWorkflowJob(jobId, req.protocol, req.get('host')).catch(error => {
+            console.error(`Background job ${jobId} failed:`, error);
+            const job = global.backgroundJobs.get(jobId);
+            if (job) {
+                job.status = 'failed';
+                job.error = error.message;
+                job.completedAt = new Date().toISOString();
+            }
+        });
+        
+    } catch (error) {
+        console.error('Job creation error:', error);
+        res.status(500).json({
+            error: 'Job Creation Error',
+            message: 'Failed to start background job with exclusions'
+        });
+    }
+});
 
 // Background job processing to avoid 5-minute timeout limit
 router.post('/start-workflow-job', async (req, res) => {

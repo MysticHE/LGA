@@ -158,6 +158,114 @@ class ExcelProcessor {
     }
 
     /**
+     * Parse uploaded Excel file to extract exclusion domains from "domain Email Address" column
+     */
+    parseExclusionDomainsFromExcel(fileBuffer) {
+        try {
+            const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+            
+            // Check all sheets for domain exclusion data
+            let domainsFound = [];
+            
+            for (const sheetName of workbook.SheetNames) {
+                const worksheet = workbook.Sheets[sheetName];
+                const data = XLSX.utils.sheet_to_json(worksheet);
+                
+                if (data.length === 0) continue;
+                
+                // Look for domain Email Address column (case insensitive)
+                const headers = Object.keys(data[0] || {});
+                const domainColumn = headers.find(header => 
+                    header.toLowerCase().includes('domain') && 
+                    header.toLowerCase().includes('email') && 
+                    header.toLowerCase().includes('address')
+                );
+                
+                if (domainColumn) {
+                    console.log(`📊 Found domain exclusion column "${domainColumn}" in sheet "${sheetName}"`);
+                    
+                    // Extract domains from this column
+                    const domains = data
+                        .map(row => row[domainColumn])
+                        .filter(domain => domain && typeof domain === 'string')
+                        .map(domain => domain.trim().toLowerCase())
+                        .filter(domain => domain.length > 0 && domain.includes('.'))
+                        .filter((domain, index, arr) => arr.indexOf(domain) === index); // Remove duplicates
+                    
+                    domainsFound.push(...domains);
+                    
+                    console.log(`✅ Extracted ${domains.length} domains from "${domainColumn}"`);
+                }
+            }
+            
+            // Remove duplicates from all sheets combined
+            const uniqueDomains = [...new Set(domainsFound)];
+            
+            console.log(`📊 Total unique exclusion domains found: ${uniqueDomains.length}`);
+            if (uniqueDomains.length > 0) {
+                console.log(`🚫 Domains to exclude:`, uniqueDomains.slice(0, 10).join(', ') + (uniqueDomains.length > 10 ? '...' : ''));
+            }
+            
+            return uniqueDomains;
+        } catch (error) {
+            console.error('❌ Domain extraction error:', error);
+            throw new Error('Failed to extract exclusion domains from Excel file: ' + error.message);
+        }
+    }
+
+    /**
+     * Parse uploaded Excel file and extract leads with domain exclusion
+     */
+    parseUploadedFileWithDomainExclusion(fileBuffer, exclusionDomains = []) {
+        try {
+            const leads = this.parseUploadedFile(fileBuffer);
+            
+            if (exclusionDomains.length === 0) {
+                console.log(`✅ No domain exclusions applied - returning all ${leads.length} leads`);
+                return { leads, excluded: [] };
+            }
+            
+            console.log(`🔍 Applying domain exclusion filter: ${exclusionDomains.length} domains to exclude`);
+            
+            const filteredLeads = [];
+            const excludedLeads = [];
+            
+            leads.forEach(lead => {
+                const email = this.normalizeEmail(lead.Email || lead.email || '');
+                
+                if (email) {
+                    const emailDomain = email.split('@')[1]?.toLowerCase();
+                    
+                    if (emailDomain && exclusionDomains.some(domain => 
+                        emailDomain === domain.toLowerCase() || 
+                        emailDomain.endsWith('.' + domain.toLowerCase())
+                    )) {
+                        excludedLeads.push({
+                            ...lead,
+                            excludedReason: `Domain ${emailDomain} is in exclusion list`
+                        });
+                    } else {
+                        filteredLeads.push(lead);
+                    }
+                } else {
+                    // Keep leads without valid emails for manual review
+                    filteredLeads.push(lead);
+                }
+            });
+            
+            console.log(`✅ Domain filtering complete: ${filteredLeads.length} leads kept, ${excludedLeads.length} leads excluded`);
+            
+            return {
+                leads: filteredLeads,
+                excluded: excludedLeads
+            };
+        } catch (error) {
+            console.error('❌ Excel parsing with exclusion error:', error);
+            throw new Error('Failed to parse Excel file with domain exclusion: ' + error.message);
+        }
+    }
+
+    /**
      * Merge uploaded leads with existing master data
      */
     mergeLeadsWithMaster(uploadedLeads, existingData = []) {
