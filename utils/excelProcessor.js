@@ -173,13 +173,25 @@ class ExcelProcessor {
                 
                 if (data.length === 0) continue;
                 
-                // Look for domain Email Address column (case insensitive)
+                // Look for domain Email Address column (case insensitive, flexible matching)
                 const headers = Object.keys(data[0] || {});
-                const domainColumn = headers.find(header => 
-                    header.toLowerCase().includes('domain') && 
-                    header.toLowerCase().includes('email') && 
-                    header.toLowerCase().includes('address')
-                );
+                console.log(`🔍 Available headers in "${sheetName}":`, headers);
+                
+                const domainColumn = headers.find(header => {
+                    const lowerHeader = header.toLowerCase();
+                    return (
+                        // Exact match variations
+                        lowerHeader === 'domain email address' ||
+                        lowerHeader === 'domain' ||
+                        lowerHeader === 'email domain' ||
+                        lowerHeader === 'email domains' ||
+                        // Partial matches
+                        (lowerHeader.includes('domain') && lowerHeader.includes('email')) ||
+                        (lowerHeader.includes('domain') && lowerHeader.includes('address')) ||
+                        // Common variations
+                        lowerHeader.includes('exclude') && lowerHeader.includes('domain')
+                    );
+                });
                 
                 if (domainColumn) {
                     console.log(`📊 Found domain exclusion column "${domainColumn}" in sheet "${sheetName}"`);

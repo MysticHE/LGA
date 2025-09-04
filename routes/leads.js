@@ -540,7 +540,11 @@ router.post('/start-workflow-job-with-exclusions', upload.single('exclusionsFile
             trackEmailReads = true
         } = req.body;
 
-        // Parse JSON arrays from form data if they come as strings
+        // Parse JSON strings from FormData - all arrays come as strings when using multipart
+        const parsedJobTitles = typeof jobTitles === 'string' ? 
+            JSON.parse(jobTitles || '[]') : jobTitles;
+        const parsedCompanySizes = typeof companySizes === 'string' ? 
+            JSON.parse(companySizes || '[]') : companySizes;
         const parsedExcludeIndustries = typeof excludeIndustries === 'string' ? 
             JSON.parse(excludeIndustries || '[]') : excludeIndustries;
 
@@ -578,8 +582,8 @@ router.post('/start-workflow-job-with-exclusions', upload.single('exclusionsFile
             progress: { step: 1, message: 'Starting workflow with domain exclusions...', total: saveToOneDrive || sendEmailCampaign ? 6 : 4 },
             startTime: new Date().toISOString(),
             params: { 
-                jobTitles, 
-                companySizes, 
+                jobTitles: parsedJobTitles, 
+                companySizes: parsedCompanySizes, 
                 maxRecords, 
                 generateOutreach, 
                 useProductMaterials, 
@@ -1308,6 +1312,52 @@ router.post('/clear-content-cache', (req, res) => {
             error: 'Cache Error',
             message: 'Failed to clear content cache',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Debug endpoint to check Excel file structure
+router.post('/debug-excel-structure', upload.single('excelFile'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                error: 'No file provided'
+            });
+        }
+
+        console.log(`📊 Debugging Excel structure: ${req.file.originalname}`);
+        
+        const XLSX = require('xlsx');
+        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+        
+        const structure = {};
+        
+        for (const sheetName of workbook.SheetNames) {
+            const worksheet = workbook.Sheets[sheetName];
+            const data = XLSX.utils.sheet_to_json(worksheet);
+            
+            if (data.length > 0) {
+                structure[sheetName] = {
+                    rowCount: data.length,
+                    headers: Object.keys(data[0] || {}),
+                    sampleRow: data[0]
+                };
+            }
+        }
+        
+        res.json({
+            success: true,
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+            sheets: workbook.SheetNames,
+            structure: structure
+        });
+        
+    } catch (error) {
+        console.error('Debug Excel error:', error);
+        res.status(500).json({
+            error: 'Debug Error',
+            message: error.message
         });
     }
 });
