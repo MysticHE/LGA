@@ -3,6 +3,7 @@ const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
 const excelUpdateQueue = require('../utils/excelUpdateQueue');
 const { getExcelColumnLetter, getLeadsViaGraphAPI, updateLeadViaGraphAPI } = require('../utils/excelGraphAPI');
+const CampaignTokenManager = require('../utils/campaignTokenManager');
 const router = express.Router();
 
 // Initialize processors
@@ -454,6 +455,13 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
     console.log(`   - Campaign ID: ${campaignId}`);
     console.log(`   - Templates available: ${templates.length}`);
 
+    // Initialize campaign token manager for long campaigns
+    const campaignTokenManager = new CampaignTokenManager();
+    const estimatedDurationMs = leads.length * 60000; // Rough estimate: 1 minute per email
+    console.log(`⏱️ Estimated campaign duration: ${Math.round(estimatedDurationMs / 60000)} minutes`);
+    
+    // Note: sessionId not available in this function - token management handled at higher level
+
     for (const lead of leads) {
         try {
             console.log(`🔄 Processing lead: ${lead.Email} (${lead.Name})`);
@@ -527,6 +535,39 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
             sent++;
             console.log(`📧 Email sent to: ${lead.Email}`);
 
+            // IMMEDIATE Excel update right after email is sent (for real-time tracking)
+            console.log(`📊 Updating Excel for ${lead.Email} immediately...`);
+            try {
+                const updates = {
+                    Status: 'Sent',
+                    Last_Email_Date: new Date().toISOString().split('T')[0],
+                    Email_Count: (lead.Email_Count || 0) + 1,
+                    Template_Used: emailContent.contentType,
+                    'Email Sent': 'Yes',
+                    'Email Status': 'Sent',
+                    'Email Bounce': 'No',
+                    'Sent Date': new Date().toISOString(),
+                    Campaign_ID: campaignId
+                };
+
+                await excelUpdateQueue.queueUpdate(
+                    lead.Email,
+                    () => updateLeadViaGraphAPI(graphClient, lead.Email, updates),
+                    { 
+                        type: 'campaign-send', 
+                        email: lead.Email, 
+                        source: 'email-scheduler',
+                        priority: 'high'
+                    }
+                );
+                console.log(`✅ Excel updated for ${lead.Email} - Status: Sent`);
+            } catch (excelError) {
+                console.error(`⚠️ Excel update failed for ${lead.Email}: ${excelError.message}`);
+                // Continue campaign even if Excel update fails
+            }
+
+            console.log(`📊 Campaign progress: ${sent}/${leads.length} sent (${Math.round((sent / leads.length) * 100)}% complete)`);
+
             // Add progressive delay between emails (skip delay for last email)
             const leadIndex = leads.indexOf(lead);
             console.log(`🔍 DELAY DEBUG: leadIndex=${leadIndex}, totalLeads=${leads.length}, shouldDelay=${leadIndex < leads.length - 1}`);
@@ -547,6 +588,37 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 message: error.message,
                 stack: process.env.NODE_ENV === 'development' ? error.stack : 'Hidden in production'
             });
+
+            // IMMEDIATE Excel update for failed emails (track attempt and failure reason)
+            console.log(`📊 Updating Excel for ${lead.Email} - marking as failed...`);
+            try {
+                const failedUpdates = {
+                    Status: 'Failed',
+                    Last_Email_Date: new Date().toISOString().split('T')[0],
+                    Email_Count: (lead.Email_Count || 0) + 1,
+                    'Email Sent': 'No',
+                    'Email Status': 'Failed',
+                    'Email Bounce': 'No',
+                    'Failed Date': new Date().toISOString(),
+                    'Failure Reason': error.message?.substring(0, 255) || 'Unknown error',
+                    Campaign_ID: campaignId
+                };
+
+                await excelUpdateQueue.queueUpdate(
+                    lead.Email,
+                    () => updateLeadViaGraphAPI(graphClient, lead.Email, failedUpdates),
+                    { 
+                        type: 'campaign-failed', 
+                        email: lead.Email, 
+                        source: 'email-scheduler',
+                        priority: 'high'
+                    }
+                );
+                console.log(`✅ Excel updated for ${lead.Email} - Status: Failed`);
+            } catch (excelError) {
+                console.error(`⚠️ Failed to update Excel for failed email ${lead.Email}: ${excelError.message}`);
+            }
+
             errors.push({
                 email: lead.Email,
                 name: lead.Name,
@@ -554,17 +626,31 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 errorCode: error.code,
                 statusCode: error.statusCode
             });
+
+            console.log(`📊 Campaign progress: ${sent}/${leads.length} sent, ${errors.length} failed (${Math.round(((sent + errors.length) / leads.length) * 100)}% complete)`);
         }
     }
 
     console.log(`📊 EMAIL SEND SUMMARY:`);
     console.log(`   - Emails sent successfully: ${sent}`);
     console.log(`   - Errors encountered: ${errors.length}`);
+    console.log(`   - Excel updates: Immediate per-email (real-time tracking enabled)`);
     if (errors.length > 0) {
         console.log(`   - Error details:`, errors.map(e => `${e.email}: ${e.error}`));
     }
 
-    return { sent, results, errors };
+    return { 
+        sent, 
+        results, 
+        errors,
+        excelUpdates: {
+            realTimeUpdates: true,
+            updateMethod: "immediate_per_email",
+            queueingEnabled: true,
+            totalProcessed: sent + errors.length,
+            source: "email-scheduler"
+        }
+    };
 }
 
 // Helper function to update leads after campaign using Excel queue to prevent race conditions

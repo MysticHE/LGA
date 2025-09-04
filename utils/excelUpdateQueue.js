@@ -27,6 +27,8 @@ class ExcelUpdateQueue {
                 id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 updateFunction,
                 context,
+                priority: context.priority || 'normal', // Support priority levels
+                timestamp: Date.now(),
                 resolve,
                 reject,
                 createdAt: new Date(),
@@ -37,9 +39,21 @@ class ExcelUpdateQueue {
                 this.queues.set(fileId, []);
             }
 
-            this.queues.get(fileId).push(updateItem);
+            // Insert based on priority (high priority first)
+            const queue = this.queues.get(fileId);
+            if (updateItem.priority === 'high') {
+                // Find first non-high priority item and insert before it
+                const insertIndex = queue.findIndex(item => item.priority !== 'high');
+                if (insertIndex === -1) {
+                    queue.push(updateItem);
+                } else {
+                    queue.splice(insertIndex, 0, updateItem);
+                }
+            } else {
+                queue.push(updateItem);
+            }
             
-            console.log(`📋 Queued Excel update: ${context.type || 'update'} for ${context.email || fileId} (queue length: ${this.queues.get(fileId).length})`);
+            console.log(`📋 Queued Excel update: ${context.type || 'update'} for ${context.email || fileId} (priority: ${updateItem.priority}, queue length: ${queue.length})`);
             
             // Start processing if not already running
             this.processQueue(fileId);
@@ -66,12 +80,19 @@ class ExcelUpdateQueue {
             const updateItem = queue.shift();
             
             try {
-                console.log(`⚡ Processing Excel update: ${updateItem.context.type || 'update'} for ${updateItem.context.email || fileId}`);
+                const updateType = updateItem.context.type || 'update';
+                const emailAddress = updateItem.context.email || fileId;
+                const priority = updateItem.priority === 'high' ? '🔥' : '📊';
                 
+                console.log(`${priority} Processing Excel update: ${updateType} for ${emailAddress} (priority: ${updateItem.priority})`);
+                
+                const startTime = Date.now();
                 const result = await this.executeWithRetry(updateItem);
+                const duration = Date.now() - startTime;
+                
                 updateItem.resolve(result);
                 
-                console.log(`✅ Excel update completed: ${updateItem.context.type || 'update'} for ${updateItem.context.email || fileId}`);
+                console.log(`✅ Excel update completed: ${updateType} for ${emailAddress} (${duration}ms, priority: ${updateItem.priority})`);
                 
                 // Small delay between updates to prevent API throttling
                 if (queue.length > 0) {

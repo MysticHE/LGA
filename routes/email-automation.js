@@ -8,6 +8,7 @@ const EmailContentProcessor = require('../utils/emailContentProcessor');
 const EmailDelayUtils = require('../utils/emailDelayUtils');
 const excelUpdateQueue = require('../utils/excelUpdateQueue');
 const { updateLeadViaGraphAPI, getLeadsViaGraphAPI } = require('../utils/excelGraphAPI');
+const CampaignTokenManager = require('../utils/campaignTokenManager');
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -1100,6 +1101,10 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
 
         console.log(`⏱️ Estimated campaign duration: ${results.estimatedTime.formatted}, completion: ${results.estimatedTime.completionTime}`);
 
+        // Initialize campaign token manager for long campaigns
+        const campaignTokenManager = new CampaignTokenManager();
+        campaignTokenManager.startCampaignTracking(req.sessionId, results.estimatedTime.totalMs);
+
         // Process each lead with random delays
         for (let i = 0; i < leads.length; i++) {
             const lead = leads[i];
@@ -1116,6 +1121,20 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                     // For custom templates, create temporary template-like structure
                     emailChoice = 'AI_Generated'; // Process as custom content
                     lead.AI_Generated_Email = `Subject: ${subject}\n\n${emailTemplate}`;
+                }
+
+                // Check if token refresh is needed during campaign (every 10 emails)
+                if (campaignTokenManager.shouldCheckToken(i)) {
+                    console.log(`🔍 Checking token validity during campaign (email ${i + 1}/${leads.length})`);
+                    const tokenValid = await campaignTokenManager.ensureValidToken(req.delegatedAuth, req.sessionId);
+                    if (!tokenValid) {
+                        console.error(`❌ Token refresh failed during campaign at email ${i + 1}`);
+                        results.failed++;
+                        results.errors.push(`Token refresh failed at email ${i + 1} - campaign stopped`);
+                        break; // Stop campaign if token can't be refreshed
+                    }
+                    // Get fresh Graph client if token was refreshed
+                    graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
                 }
 
                 // Process email content
@@ -1150,43 +1169,88 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                 };
 
                 results.sent++;
-                console.log(`📧 Email ${i + 1}/${leads.length} sent to ${lead.Email} (${results.sent} successful, ${results.failed} failed)`);
+                console.log(`📧 Email ${i + 1}/${leads.length} sent to ${lead.Email}`);
 
-                // Add random delay between emails BEFORE Excel updates (skip delay for last email)
-                console.log(`🔍 DELAY DEBUG: i=${i}, leads.length=${leads.length}, shouldDelay=${i < leads.length - 1}`);
+                // IMMEDIATE Excel update right after email is sent (for real-time tracking)
+                console.log(`📊 Updating Excel for ${lead.Email} immediately...`);
+                try {
+                    await excelUpdateQueue.queueUpdate(
+                        lead.Email, // Use email as file identifier
+                        () => updateLeadViaGraphAPI(graphClient, lead.Email, updates),
+                        { 
+                            type: 'campaign-send', 
+                            email: lead.Email, 
+                            source: 'email-automation',
+                            priority: 'high' // High priority for immediate updates
+                        }
+                    );
+                    console.log(`✅ Excel updated for ${lead.Email} - Status: Sent`);
+                } catch (excelError) {
+                    console.error(`⚠️ Excel update failed for ${lead.Email}: ${excelError.message}`);
+                    // Continue campaign even if Excel update fails
+                }
+
+                console.log(`📊 Campaign progress: ${results.sent}/${leads.length} sent, ${results.failed} failed (${Math.round(((results.sent + results.failed) / leads.length) * 100)}% complete)`);
+
+                // Add random delay between emails AFTER Excel updates (skip delay for last email)
                 if (i < leads.length - 1) {
                     console.log(`⏳ Adding delay before email ${i + 2}/${leads.length}...`);
                     const delayMs = await emailDelayUtils.progressiveDelay(i, leads.length);
                     console.log(`✅ Delay completed: ${Math.round(delayMs / 1000)}s - Ready for next email`);
                 } else {
-                    console.log(`🏁 Last email - no delay needed`);
-                }
-
-                // Queue Excel update AFTER delay to prevent blocking
-                try {
-                    await excelUpdateQueue.queueUpdate(
-                        lead.Email, // Use email as file identifier
-                        () => updateLeadViaGraphAPI(graphClient, lead.Email, updates),
-                        { type: 'campaign-send', email: lead.Email, source: 'email-automation' }
-                    );
-                } catch (excelError) {
-                    console.error(`⚠️ Excel update failed for ${lead.Email}: ${excelError.message}`);
-                    // Continue campaign even if Excel update fails
+                    console.log(`🏁 Last email - campaign complete`);
                 }
 
             } catch (emailError) {
                 console.error(`❌ Failed to send email to ${lead.Email}:`, emailError.message);
                 results.failed++;
                 results.errors.push(`${lead.Email}: ${emailError.message}`);
+
+                // IMMEDIATE Excel update for failed emails (track attempt and failure reason)
+                console.log(`📊 Updating Excel for ${lead.Email} - marking as failed...`);
+                try {
+                    const failedUpdates = {
+                        Status: 'Failed',
+                        Last_Email_Date: new Date().toISOString().split('T')[0],
+                        Email_Count: (lead.Email_Count || 0) + 1, // Still increment attempt count
+                        'Email Sent': 'No',
+                        'Email Status': 'Failed',
+                        'Email Bounce': 'No',
+                        'Failed Date': new Date().toISOString(),
+                        'Failure Reason': emailError.message?.substring(0, 255) || 'Unknown error' // Limit length
+                    };
+
+                    await excelUpdateQueue.queueUpdate(
+                        lead.Email,
+                        () => updateLeadViaGraphAPI(graphClient, lead.Email, failedUpdates),
+                        { 
+                            type: 'campaign-failed', 
+                            email: lead.Email, 
+                            source: 'email-automation',
+                            priority: 'high'
+                        }
+                    );
+                    console.log(`✅ Excel updated for ${lead.Email} - Status: Failed`);
+                } catch (excelError) {
+                    console.error(`⚠️ Failed to update Excel for failed email ${lead.Email}: ${excelError.message}`);
+                }
+
+                console.log(`📊 Campaign progress: ${results.sent}/${leads.length} sent, ${results.failed} failed (${Math.round(((results.sent + results.failed) / leads.length) * 100)}% complete)`);
                 
                 // Add delay even after failures to maintain sending pattern
                 if (i < leads.length - 1) {
+                    console.log(`⏳ Adding delay after failure before email ${i + 2}/${leads.length}...`);
                     await emailDelayUtils.randomDelay(15, 45); // Shorter delay after failures
+                    console.log(`✅ Delay completed - Ready for next email`);
                 }
             }
         }
 
         console.log(`✅ Campaign completed: ${results.sent} sent, ${results.failed} failed`);
+
+        // End campaign token tracking and get stats
+        const campaignStats = campaignTokenManager.getCampaignStats(req.sessionId);
+        campaignTokenManager.endCampaignTracking(req.sessionId);
 
         // Calculate actual completion time
         const actualEndTime = new Date();
@@ -1202,11 +1266,31 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                 actualDurationFormatted: emailDelayUtils.formatDelayTime(actualDuration * 1000),
                 completedAt: actualEndTime.toLocaleTimeString()
             },
-            delayStats: emailDelayUtils.getDelayStats()
+            delayStats: emailDelayUtils.getDelayStats(),
+            tokenManagement: {
+                tokenRefreshesPerformed: campaignStats?.tokenRefreshCount || 0,
+                campaignDurationMinutes: campaignStats?.elapsedMinutes || 0,
+                tokenRefreshPreventedDisruption: (campaignStats?.tokenRefreshCount || 0) > 0
+            },
+            excelUpdates: {
+                realTimeUpdates: true,
+                updateMethod: "immediate_per_email",
+                queueingEnabled: true,
+                priorityProcessing: true,
+                tracksSuccessAndFailure: true,
+                totalProcessed: results.sent + results.failed,
+                description: "Excel updated immediately after each email (sent or failed)"
+            }
         });
 
     } catch (error) {
         console.error('❌ Campaign error:', error);
+        
+        // Cleanup campaign tracking on error
+        if (typeof campaignTokenManager !== 'undefined') {
+            campaignTokenManager.endCampaignTracking(req.sessionId);
+        }
+        
         res.status(500).json({
             success: false,
             message: 'Campaign failed',
