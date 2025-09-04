@@ -573,6 +573,69 @@ await getTemplatesViaGraphAPI(graphClient);
 - `routes/email-tracking.js`: One diagnostic function marked with TODO for future migration
 - `jobs/emailScheduler.js`: DEPRECATED file operations marked for removal
 
+### Excel Domain Exclusion for Lead Generation (COMPLETED ✅)
+**Feature:** Added comprehensive Excel-based domain exclusion system for lead generation platform to filter out unwanted email domains during Apollo.io scraping.
+
+**Implementation Details:**
+- **Frontend Excel Upload:** Added file upload field for exclusion domains in lead generation form
+- **Real-Time Preview:** Shows domain count immediately after file upload (before Generate button)
+- **Flexible Excel Support:** Handles headers in any row (1-5), not just first row
+- **Complex Cell Parsing:** Extracts multiple domains per cell separated by line breaks or spaces
+- **Format Handling:** Removes @ symbols, handles formats like "@domain.com" automatically
+- **Smart Column Detection:** Finds domain columns in `__EMPTY` columns and various naming patterns
+
+**New API Endpoints:**
+```javascript
+// Apollo scraping with exclusion file upload
+POST /api/leads/start-workflow-job-with-exclusions
+
+// Excel upload with domain filtering
+POST /api/email-automation/master-list/upload-with-exclusions  
+
+// Test domain extraction
+POST /api/email-automation/extract-exclusion-domains
+
+// Debug Excel structure
+POST /api/leads/debug-excel-structure
+```
+
+**Key Features:**
+- ✅ **Real-Time Preview**: Shows "182 domains will be excluded" immediately on file upload
+- ✅ **Multi-Domain Cells**: Extracts all domains from cells with multiple entries
+- ✅ **Flexible Headers**: Works with headers in row 3+ (like user's Excel with Entity/domain Email Address)
+- ✅ **Smart Detection**: Finds "domain Email Address" column regardless of position
+- ✅ **Comprehensive Stats**: Shows excluded domain count, sample domains, file info
+- ✅ **Form Integration**: Auto-switches between manual entry and file upload
+- ✅ **Validation**: Prevents temp files (~$ prefix), validates Excel formats
+
+**User Experience:**
+1. **Upload Excel File** → System immediately shows "✅ 182 domains will be excluded"
+2. **Preview Domains** → Shows sample domains before lead generation starts
+3. **Generate Leads** → Apollo scraping automatically excludes all uploaded domains
+4. **Results Display** → Shows how many leads filtered out by domain exclusions
+
+**Technical Implementation:**
+```javascript
+// Enhanced domain extraction from complex Excel formats
+parseExclusionDomainsFromExcel() {
+    // Handles: @8ventures.com.sg\r\n@acadiamedia.com.sg\r\n@crystaldash.com
+    // Returns: ["8ventures.com.sg", "acadiamedia.com.sg", "crystaldash.com"]
+}
+
+// Real-time preview without form submission
+previewExclusionDomains(file) {
+    // Calls extract-exclusion-domains endpoint immediately
+    // Shows count and sample domains before Generate button
+}
+```
+
+**Benefits:**
+- ✅ **No Unwanted Leads**: Prevents scraping from excluded company domains
+- ✅ **Instant Feedback**: Users see exclusion impact before processing
+- ✅ **Flexible Excel Support**: Works with any Excel structure or format
+- ✅ **Bulk Domain Management**: Handle hundreds of domains via Excel upload
+- ✅ **User-Friendly**: Clear preview and status messages throughout process
+
 ## Important Notes
 
 - **No Test Framework:** This project has no automated tests. Manual testing required.
