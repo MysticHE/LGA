@@ -169,7 +169,44 @@ class ExcelProcessor {
             
             for (const sheetName of workbook.SheetNames) {
                 const worksheet = workbook.Sheets[sheetName];
-                const data = XLSX.utils.sheet_to_json(worksheet);
+                
+                // Try different header row positions (row 1, 2, 3, etc.)
+                let data = null;
+                let headerRowFound = false;
+                
+                for (let headerRow = 0; headerRow < 5; headerRow++) {
+                    try {
+                        const testData = XLSX.utils.sheet_to_json(worksheet, { 
+                            range: headerRow,  // Start from this row as headers
+                            defval: ''
+                        });
+                        
+                        if (testData.length === 0) continue;
+                        
+                        // Check if this looks like a header row with domain column
+                        const headers = Object.keys(testData[0] || {});
+                        const hasDomainHeader = headers.some(header => {
+                            const lowerHeader = header.toLowerCase();
+                            return lowerHeader.includes('domain') && 
+                                   (lowerHeader.includes('email') || lowerHeader.includes('address'));
+                        });
+                        
+                        if (hasDomainHeader) {
+                            data = testData;
+                            headerRowFound = true;
+                            console.log(`🎯 Found headers in row ${headerRow + 1} of "${sheetName}"`);
+                            break;
+                        }
+                    } catch (e) {
+                        // Try next row
+                        continue;
+                    }
+                }
+                
+                // Fallback to default parsing if no domain headers found
+                if (!data) {
+                    data = XLSX.utils.sheet_to_json(worksheet);
+                }
                 
                 if (data.length === 0) continue;
                 
@@ -218,14 +255,18 @@ class ExcelProcessor {
                     // Extract domains from this column (handle multiple domains per cell and @ symbols)
                     const domains = [];
                     
-                    data.forEach(row => {
+                    data.forEach((row, rowIndex) => {
                         const cellValue = row[domainColumn];
                         if (cellValue && typeof cellValue === 'string') {
-                            // Split by line breaks and commas to handle multiple domains per cell
+                            console.log(`🔍 Row ${rowIndex + 1} cell content: "${cellValue}"`);
+                            
+                            // Split by line breaks, commas, and spaces to handle multiple domains per cell
                             const domainCandidates = cellValue
-                                .split(/[\r\n,;]+/)
+                                .split(/[\r\n,;\s]+/)
                                 .map(domain => domain.trim())
                                 .filter(domain => domain.length > 0);
+                            
+                            console.log(`   📝 Domain candidates:`, domainCandidates);
                             
                             domainCandidates.forEach(candidate => {
                                 // Remove @ symbol if present
@@ -236,9 +277,18 @@ class ExcelProcessor {
                                     cleanDomain = cleanDomain.split('@')[1] || cleanDomain;
                                 }
                                 
-                                // Validate domain format
-                                if (cleanDomain && cleanDomain.includes('.') && !cleanDomain.includes(' ')) {
+                                // Remove any trailing characters like > or <
+                                cleanDomain = cleanDomain.replace(/[<>]+$/, '').trim();
+                                
+                                // Validate domain format (must have . and no spaces)
+                                if (cleanDomain && 
+                                    cleanDomain.includes('.') && 
+                                    !cleanDomain.includes(' ') && 
+                                    cleanDomain.length > 3) {
                                     domains.push(cleanDomain.toLowerCase());
+                                    console.log(`   ✅ Added domain: ${cleanDomain.toLowerCase()}`);
+                                } else {
+                                    console.log(`   ❌ Invalid domain format: "${cleanDomain}"`);
                                 }
                             });
                         }
