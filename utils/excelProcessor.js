@@ -177,7 +177,7 @@ class ExcelProcessor {
                 const headers = Object.keys(data[0] || {});
                 console.log(`🔍 Available headers in "${sheetName}":`, headers);
                 
-                const domainColumn = headers.find(header => {
+                let domainColumn = headers.find(header => {
                     const lowerHeader = header.toLowerCase();
                     return (
                         // Exact match variations
@@ -193,20 +193,63 @@ class ExcelProcessor {
                     );
                 });
                 
+                // Special case: Check __EMPTY columns for domain data
+                if (!domainColumn) {
+                    const emptyColumns = headers.filter(h => h.includes('EMPTY'));
+                    for (const emptyCol of emptyColumns) {
+                        // Check if this column contains domain-like data
+                        const sampleValues = data.slice(0, 3).map(row => row[emptyCol]).filter(v => v);
+                        const hasDomainData = sampleValues.some(value => 
+                            typeof value === 'string' && 
+                            (value.includes('@') || value.includes('.com') || value.includes('.org') || value.includes('.net'))
+                        );
+                        
+                        if (hasDomainData) {
+                            console.log(`🎯 Found domain data in __EMPTY column: "${emptyCol}"`);
+                            domainColumn = emptyCol;
+                            break;
+                        }
+                    }
+                }
+                
                 if (domainColumn) {
                     console.log(`📊 Found domain exclusion column "${domainColumn}" in sheet "${sheetName}"`);
                     
-                    // Extract domains from this column
-                    const domains = data
-                        .map(row => row[domainColumn])
-                        .filter(domain => domain && typeof domain === 'string')
-                        .map(domain => domain.trim().toLowerCase())
-                        .filter(domain => domain.length > 0 && domain.includes('.'))
-                        .filter((domain, index, arr) => arr.indexOf(domain) === index); // Remove duplicates
+                    // Extract domains from this column (handle multiple domains per cell and @ symbols)
+                    const domains = [];
                     
-                    domainsFound.push(...domains);
+                    data.forEach(row => {
+                        const cellValue = row[domainColumn];
+                        if (cellValue && typeof cellValue === 'string') {
+                            // Split by line breaks and commas to handle multiple domains per cell
+                            const domainCandidates = cellValue
+                                .split(/[\r\n,;]+/)
+                                .map(domain => domain.trim())
+                                .filter(domain => domain.length > 0);
+                            
+                            domainCandidates.forEach(candidate => {
+                                // Remove @ symbol if present
+                                let cleanDomain = candidate.replace(/^@+/, '').trim();
+                                
+                                // Extract domain part if it looks like email format
+                                if (cleanDomain.includes('@')) {
+                                    cleanDomain = cleanDomain.split('@')[1] || cleanDomain;
+                                }
+                                
+                                // Validate domain format
+                                if (cleanDomain && cleanDomain.includes('.') && !cleanDomain.includes(' ')) {
+                                    domains.push(cleanDomain.toLowerCase());
+                                }
+                            });
+                        }
+                    });
                     
-                    console.log(`✅ Extracted ${domains.length} domains from "${domainColumn}"`);
+                    // Remove duplicates
+                    const uniqueDomains = [...new Set(domains)];
+                    
+                    domainsFound.push(...uniqueDomains);
+                    
+                    console.log(`✅ Extracted ${uniqueDomains.length} unique domains from "${domainColumn}"`);
                 }
             }
             
