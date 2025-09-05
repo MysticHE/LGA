@@ -156,17 +156,17 @@ class DelegatedGraphAuth {
             return await this.refreshSessionToken(sessionId);
         }
 
-        // Check if token is still valid (with 5 minute buffer)
+        // Check if token is still valid (with 10 minute buffer for better reliability)
         const now = new Date();
         const expiresOn = new Date(tokenData.expiresOn);
         const timeUntilExpiry = expiresOn.getTime() - now.getTime();
         
-        if (timeUntilExpiry > 5 * 60 * 1000) { // More than 5 minutes left
+        if (timeUntilExpiry > 10 * 60 * 1000) { // More than 10 minutes left
             return tokenData.accessToken;
         }
 
-        // Token is expired or will expire soon, refresh it
-        console.log(`🔄 Token expiring soon for session ${sessionId}, refreshing...`);
+        // Token is expired or will expire soon, refresh it proactively
+        console.log(`🔄 Token expiring in ${Math.round(timeUntilExpiry / 60000)} minutes for session ${sessionId}, refreshing proactively...`);
         return await this.refreshSessionToken(sessionId);
     }
 
@@ -183,17 +183,19 @@ class DelegatedGraphAuth {
         }
 
         try {
-            const refreshTokenRequest = {
-                refreshToken: tokenData.refreshToken,
+            // Use acquireTokenSilent instead of acquireTokenByRefreshToken for better token management
+            const silentRequest = {
                 scopes: tokenData.scopes || [
                     'https://graph.microsoft.com/User.Read',
                     'https://graph.microsoft.com/Files.ReadWrite.All',
                     'https://graph.microsoft.com/Mail.Send',
                     'https://graph.microsoft.com/Mail.ReadWrite'
                 ],
+                account: tokenData.account,
+                forceRefresh: true // Force token refresh
             };
 
-            const response = await this.msalInstance.acquireTokenByRefreshToken(refreshTokenRequest);
+            const response = await this.msalInstance.acquireTokenSilent(silentRequest);
             
             // Update stored tokens with refreshed data
             const updatedTokenData = {
@@ -225,19 +227,73 @@ class DelegatedGraphAuth {
 
         } catch (error) {
             console.error(`❌ Token refresh failed for session ${sessionId}:`, error.message);
-            // Remove invalid tokens
-            this.userTokens.delete(sessionId);
-            throw new Error('Authentication expired, please login again');
+            
+            // Handle specific error cases
+            if (error.errorCode === 'invalid_grant' || 
+                error.message.includes('Lifetime validation failed') ||
+                error.message.includes('AADSTS700082')) {
+                // Refresh token expired - user needs to re-authenticate
+                console.error(`🔐 Refresh token expired for session ${sessionId} - clearing session`);
+                this.userTokens.delete(sessionId);
+                throw new Error('Authentication expired, please login again');
+            } else if (error.errorCode === 'consent_required') {
+                // Additional consent required
+                console.error(`📋 Additional consent required for session ${sessionId}`);
+                this.userTokens.delete(sessionId);
+                throw new Error('Additional permissions required, please login again');
+            } else {
+                // Other errors - try one more time with force refresh
+                console.warn(`⚠️ Token refresh failed, trying alternative refresh method...`);
+                try {
+                    // Fallback: Try to refresh using the refresh token directly
+                    const fallbackRequest = {
+                        refreshToken: tokenData.refreshToken,
+                        scopes: tokenData.scopes || [
+                            'https://graph.microsoft.com/User.Read',
+                            'https://graph.microsoft.com/Files.ReadWrite.All',
+                            'https://graph.microsoft.com/Mail.Send',
+                            'https://graph.microsoft.com/Mail.ReadWrite'
+                        ]
+                    };
+                    
+                    const fallbackResponse = await this.msalInstance.acquireTokenByRefreshToken(fallbackRequest);
+                    
+                    // Update with fallback response
+                    const updatedTokenData = {
+                        accessToken: fallbackResponse.accessToken,
+                        refreshToken: fallbackResponse.refreshToken || tokenData.refreshToken,
+                        expiresOn: fallbackResponse.expiresOn,
+                        account: fallbackResponse.account,
+                        scopes: fallbackResponse.scopes,
+                        createdAt: tokenData.createdAt,
+                        needsRefresh: false,
+                        hasStoredRefreshToken: true
+                    };
+
+                    this.userTokens.set(sessionId, updatedTokenData);
+                    console.log(`✅ Fallback token refresh successful for session ${sessionId}`);
+                    
+                    return fallbackResponse.accessToken;
+                } catch (fallbackError) {
+                    console.error(`❌ Fallback token refresh also failed:`, fallbackError.message);
+                    this.userTokens.delete(sessionId);
+                    throw new Error('Authentication expired, please login again');
+                }
+            }
         }
     }
 
     // Create Microsoft Graph client for authenticated user
     async getGraphClient(sessionId) {
-        const accessToken = await this.getAccessToken(sessionId);
-        
         const authProvider = {
             getAccessToken: async () => {
-                return accessToken;
+                // Always get fresh token to handle expiry during long operations
+                try {
+                    return await this.getAccessToken(sessionId);
+                } catch (tokenError) {
+                    console.error(`🔄 Token refresh failed during Graph API call:`, tokenError.message);
+                    throw tokenError;
+                }
             }
         };
 

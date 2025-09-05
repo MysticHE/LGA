@@ -16,7 +16,7 @@ function formatDateForExcel(date = new Date()) {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
-        timeZone: 'UTC'
+        timeZone: 'Asia/Singapore'
     };
     
     return date.toLocaleDateString('en-US', options);
@@ -32,7 +32,7 @@ function formatDateShort(date = new Date()) {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-        timeZone: 'UTC'
+        timeZone: 'Asia/Singapore'
     };
     
     return date.toLocaleDateString('en-US', options);
@@ -51,7 +51,7 @@ function formatDateWithTimezone(date = new Date()) {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
-        timeZone: 'UTC',
+        timeZone: 'Asia/Singapore',
         timeZoneName: 'short'
     };
     
