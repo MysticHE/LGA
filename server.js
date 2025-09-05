@@ -14,6 +14,34 @@ const emailSchedulerRoutes = require('./routes/email-scheduler');
 const emailDelayTestRoutes = require('./routes/email-delay-test');
 const emailBounceRoutes = require('./routes/email-bounce');
 const authRoutes = require('./routes/auth');
+const campaignStatusRoutes = require('./routes/campaign-status');
+const ProcessSingleton = require('./utils/processSingleton');
+
+// 🔒 PROCESS SINGLETON: Prevent multiple server instances
+const singleton = new ProcessSingleton('lga-server');
+
+// Check if another instance is already running
+if (singleton.isAnotherInstanceRunning()) {
+    console.error('❌ Another instance of the server is already running!');
+    console.error('📝 This prevents campaign conflicts and duplicate email sends.');
+    console.error('🚫 Exiting to avoid conflicts.');
+    
+    const runningInfo = singleton.getRunningInstanceInfo();
+    if (runningInfo) {
+        console.error(`📍 Running instance: PID ${runningInfo.pid}, Port ${runningInfo.port}`);
+        console.error(`⏰ Started: ${new Date(runningInfo.startTime).toLocaleString()}`);
+    }
+    
+    console.error('\n💡 To start a new instance:');
+    console.error('   1. Stop the existing server (Ctrl+C)');
+    console.error('   2. Wait a moment for cleanup');
+    console.error('   3. Restart with npm start');
+    
+    process.exit(1);
+}
+
+// Create lock for this instance
+singleton.setupExitHandlers();
 
 // Check Azure configuration before initializing email services
 const requiredAzureVars = ['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET'];
@@ -82,6 +110,7 @@ app.use('/api/email', emailTrackingRoutes);
 app.use('/api/email-scheduler', emailSchedulerRoutes);  // Fixed: Use correct path
 app.use('/api/email-delay', emailDelayTestRoutes);
 app.use('/api/email-bounce', emailBounceRoutes);
+app.use('/api/campaign-status', campaignStatusRoutes);
 app.use('/auth', authRoutes);
 
 // Serve the main application
@@ -136,10 +165,14 @@ app.use('*', (req, res) => {
 
 // Start server
 app.listen(PORT, async () => {
+    // Create singleton lock after successful startup
+    singleton.createLock(PORT);
+    
     console.log(`🚀 Lead Generation Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🌐 Access: http://localhost:${PORT}`);
-    console.log(`✅ Server ready - v1.1.0`);
+    console.log(`🔐 Process singleton protection: ENABLED`);
+    console.log(`✅ Server ready - v1.1.0 (Duplicate Prevention Edition)`);
     
     // Initialize persistent storage and session recovery
     try {

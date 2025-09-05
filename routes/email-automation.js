@@ -10,6 +10,7 @@ const excelUpdateQueue = require('../utils/excelUpdateQueue');
 const { updateLeadViaGraphAPI, getLeadsViaGraphAPI } = require('../utils/excelGraphAPI');
 const CampaignTokenManager = require('../utils/campaignTokenManager');
 const excelDuplicateChecker = require('../utils/excelDuplicateChecker');
+const CampaignLockManager = require('../utils/campaignLockManager');
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -31,6 +32,10 @@ const upload = multer({
 const excelProcessor = new ExcelProcessor();
 const emailContentProcessor = new EmailContentProcessor();
 const emailDelayUtils = new EmailDelayUtils();
+const campaignLockManager = new CampaignLockManager();
+
+// Setup lock cleanup handlers
+campaignLockManager.setupExitHandlers();
 
 /**
  * Enhanced corruption detection to handle Excel table format parsing issues
@@ -1082,6 +1087,16 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
             });
         }
 
+        // 🔒 CAMPAIGN LOCK: Prevent duplicate campaigns
+        const lockAcquired = campaignLockManager.acquireLock(req.sessionId, 'manual');
+        if (!lockAcquired) {
+            return res.status(409).json({
+                success: false,
+                message: 'Another campaign is already running for this session. Please wait for it to complete.',
+                error: 'CAMPAIGN_IN_PROGRESS'
+            });
+        }
+
         console.log(`🚀 Starting email campaign with Excel-based duplicate prevention`);
 
         // Get authenticated Graph client
@@ -1283,6 +1298,9 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
         const actualEndTime = new Date();
         const actualDuration = Math.round((actualEndTime - new Date(Date.now() - results.estimatedTime.totalSeconds * 1000)) / 1000);
         
+        // 🔓 RELEASE LOCK: Campaign completed successfully
+        campaignLockManager.releaseLock(req.sessionId);
+
         res.json({
             success: true,
             message: `Campaign completed: ${results.sent} emails sent, ${results.failed} failed, ${results.duplicates} duplicates prevented`,
@@ -1319,6 +1337,9 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Campaign error:', error.message);
+        
+        // 🔓 RELEASE LOCK: Campaign failed, cleanup
+        campaignLockManager.releaseLock(req.sessionId);
         
         // Cleanup campaign tracking on error
         if (typeof campaignTokenManager !== 'undefined') {

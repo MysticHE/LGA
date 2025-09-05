@@ -4,10 +4,15 @@ const EmailContentProcessor = require('../utils/emailContentProcessor');
 const excelUpdateQueue = require('../utils/excelUpdateQueue');
 const { getExcelColumnLetter, getLeadsViaGraphAPI, updateLeadViaGraphAPI } = require('../utils/excelGraphAPI');
 const CampaignTokenManager = require('../utils/campaignTokenManager');
+const CampaignLockManager = require('../utils/campaignLockManager');
 const router = express.Router();
 
 // Initialize processors
 const emailContentProcessor = new EmailContentProcessor();
+const campaignLockManager = new CampaignLockManager();
+
+// Setup lock cleanup handlers
+campaignLockManager.setupExitHandlers();
 
 /**
  * Email Scheduler and Campaign Management

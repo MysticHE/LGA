@@ -1,0 +1,27 @@
+{
+  "watch": [
+    "*.js",
+    "routes/",
+    "utils/",
+    "middleware/",
+    "jobs/",
+    "config/"
+  ],
+  "ignore": [
+    "*.xlsx",
+    "*.xls",
+    "*.csv",
+    "locks/",
+    "sessions/",
+    "temp/",
+    "node_modules/",
+    "*.log",
+    "*.tmp"
+  ],
+  "ext": "js,json",
+  "delay": "2000",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "verbose": true
+}
