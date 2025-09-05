@@ -1272,6 +1272,11 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
 
             console.log(`✅ Campaign completed: ${results.sent} sent, ${results.failed} failed, ${results.duplicates} duplicates prevented`);
 
+        } catch (campaignError) {
+            console.error('❌ Campaign processing error:', campaignError.message);
+            throw campaignError;
+        }
+
         // End campaign token tracking and get stats
         const campaignStats = campaignTokenManager.getCampaignStats(req.sessionId);
         campaignTokenManager.endCampaignTracking(req.sessionId);
