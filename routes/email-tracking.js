@@ -516,7 +516,10 @@ const trackingFallback = new TrackingFallbackManager();
 async function updateEmailReadStatus(trackingId) {
     try {
         // Parse tracking ID - format: email-timestamp
-        const [email, timestamp] = trackingId.split('-');
+        // Use lastIndexOf to handle emails with hyphens (e.g., user@domain-name.com)
+        const lastDashIndex = trackingId.lastIndexOf('-');
+        const email = lastDashIndex !== -1 ? trackingId.substring(0, lastDashIndex) : trackingId;
+        const timestamp = lastDashIndex !== -1 ? trackingId.substring(lastDashIndex + 1) : '';
         
         if (!email) {
             console.log('❌ Invalid tracking ID format');
