@@ -122,13 +122,13 @@ router.post('/test-read-update', requireDelegatedAuth, async (req, res) => {
             updates = {
                 Status: 'Read',
                 Read_Date: new Date().toISOString().split('T')[0],
-                'Last Updated': new Date().toISOString()
+                'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
             };
         } else if (testType === 'reply') {
             updates = {
                 Status: 'Replied',
                 Reply_Date: new Date().toISOString().split('T')[0],
-                'Last Updated': new Date().toISOString()
+                'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
             };
         }
 
@@ -451,7 +451,7 @@ class TrackingFallbackManager {
                     const updates = {
                         Status: eventType === 'read' ? 'Read' : 'Clicked',
                         Read_Date: date,
-                        'Last Updated': new Date().toISOString()
+                        'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
                     };
 
                     // Queue Excel update
@@ -560,7 +560,7 @@ async function updateEmailReadStatus(trackingId) {
                     () => updateLeadViaGraphAPI(graphClient, email, {
                         Status: 'Read',
                         Read_Date: new Date().toISOString().split('T')[0],
-                        'Last Updated': new Date().toISOString()
+                        'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
                     }),
                     { type: 'read-tracking', email: email, source: 'tracking-pixel' }
                 );

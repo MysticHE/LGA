@@ -130,13 +130,8 @@ class ExcelDuplicateChecker {
             }
         }
 
-        // Priority 5: Check 'Sent Date' column
-        if (lead['Sent Date']) {
-            return {
-                alreadySent: true,
-                reason: `'Sent Date' is ${lead['Sent Date']} - email already sent`
-            };
-        }
+        // Priority 5: 'Sent Date' column removed - using other indicators
+        // This check was removed as 'Sent Date' is no longer updated by the system
 
         // Priority 6: Check Template_Used (indicates email was generated/sent)
         if (lead.Template_Used && lead.Template_Used !== '' && lead.Template_Used !== 'None') {

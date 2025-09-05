@@ -287,7 +287,7 @@ class BounceDetector {
                 const updates = {
                     'Email Bounce': 'Yes',
                     'Status': 'Bounced',
-                    'Last Updated': new Date().toISOString()
+                    'Last Updated': require('./dateFormatter').getCurrentFormattedDate()
                 };
                 
                 // Update the lead via callback

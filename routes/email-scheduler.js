@@ -90,15 +90,17 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
                 leadsData, 
                 emailContentType, 
                 templates, 
-                campaignId
+                campaignId,
+                followUpDays
             );
             
             emailsSent = sendResults.sent;
             results.push(...sendResults.results);
             errors.push(...sendResults.errors);
 
-            // Update leads after campaign using Graph API
-            await updateLeadsAfterCampaign(graphClient, sendResults.results, followUpDays);
+            // Skip bulk updates after campaign - immediate per-email updates are sufficient
+            // to prevent duplicate Excel operations and rate limiting
+            console.log('📊 Skipping bulk campaign updates - real-time updates already completed');
         } else {
             // Schedule emails for later
             emailsQueued = leadsData.length;
@@ -352,12 +354,14 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
                     campaign.targetLeads,
                     campaign.emailContentType,
                     templates,
-                    campaign.Campaign_ID
+                    campaign.Campaign_ID,
+                    campaign.followUpDays || 7
                 );
 
-                // Update leads and campaign status using Graph API
-                await updateLeadsAfterCampaign(graphClient, sendResults.results, campaign.followUpDays);
+                // Skip bulk updates - immediate per-email updates already completed
+                // Update campaign status only
                 await updateCampaignStatusViaGraphAPI(graphClient, campaign.Campaign_ID, 'Active');
+                console.log('📊 Skipping scheduled campaign bulk updates - real-time updates sufficient');
 
                 processed++;
                 results.push({
@@ -444,7 +448,7 @@ function getTargetLeadsFromData(allLeads, targetCriteria) {
 }
 
 // Helper function to send emails to leads
-async function sendEmailsToLeads(graphClient, leads, emailContentType, templates, campaignId) {
+async function sendEmailsToLeads(graphClient, leads, emailContentType, templates, campaignId, followUpDays = 7) {
     const results = [];
     const errors = [];
     let sent = 0;
@@ -487,7 +491,7 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 continue;
             }
 
-            // Send email using Microsoft Graph
+            // Send email using Microsoft Graph with token refresh handling
             const emailMessage = {
                 subject: emailContent.subject,
                 body: {
@@ -506,10 +510,22 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
 
             console.log(`📧 Attempting to send email via Microsoft Graph to: ${lead.Email}`);
 
-            const sendResult = await graphClient.api('/me/sendMail').post({
-                message: emailMessage,
-                saveToSentItems: true
-            });
+            // Handle token refresh for long campaigns
+            let sendResult;
+            try {
+                sendResult = await graphClient.api('/me/sendMail').post({
+                    message: emailMessage,
+                    saveToSentItems: true
+                });
+            } catch (tokenError) {
+                if (tokenError.message.includes('401') || tokenError.message.includes('unauthorized') || 
+                    tokenError.message.includes('Authentication expired')) {
+                    console.log('🔄 Token expired during campaign, attempting to refresh graph client...');
+                    // Note: The calling function should handle token refresh at the session level
+                    throw new Error('Token refresh required - campaign should be restarted');
+                }
+                throw tokenError;
+            }
             
             console.log(`✅ Microsoft Graph sendMail API response:`, sendResult || 'No response body (normal for sendMail)');
 
@@ -529,13 +545,14 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
             try {
                 const updates = {
                     Status: 'Sent',
+                    Campaign_Stage: 'Email_Sent',
                     Last_Email_Date: new Date().toISOString().split('T')[0],
+                    Next_Email_Date: calculateNextEmailDate(new Date(), followUpDays || 7),
                     Email_Count: (lead.Email_Count || 0) + 1,
                     Template_Used: emailContent.contentType,
                     'Email Sent': 'Yes',
                     'Email Status': 'Sent',
                     'Email Bounce': 'No',
-                    'Sent Date': new Date().toISOString(),
                     Campaign_ID: campaignId
                 };
 
@@ -642,67 +659,9 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
     };
 }
 
-// Helper function to update leads after campaign using Excel queue to prevent race conditions
-async function updateLeadsAfterCampaign(graphClient, results, followUpDays) {
-    try {
-        console.log(`📝 Queuing Excel updates for ${results.length} leads after campaign...`);
-        
-        // Queue each lead update to prevent race conditions with read tracking
-        const updatePromises = [];
-        
-        for (const result of results) {
-            if (result.emailSent) {
-                const leadEmail = result.Email.toLowerCase();
-                console.log(`📋 Queuing Excel update for lead: ${leadEmail}`);
-                
-                const updates = {
-                    Status: 'Sent',                                               // Column M
-                    Campaign_Stage: 'Email_Sent',                                // Column N  
-                    Template_Used: result.templateUsed || 'AI_Generated',        // Column P
-                    Last_Email_Date: new Date().toISOString().split('T')[0],     // Column R
-                    Next_Email_Date: calculateNextEmailDate(new Date(), followUpDays || 7), // Column S
-                    Email_Count: (result.originalLead?.Email_Count || 0) + 1,    // Column U
-                    'Email Sent': 'Yes',                                         // Column Z
-                    'Email Status': 'Sent',                                      // Column AA
-                    'Sent Date': new Date().toISOString()                       // Column AB
-                };
-                
-                // Queue the Excel update to prevent race conditions
-                const updatePromise = excelUpdateQueue.queueUpdate(
-                    leadEmail, // Use email as queue identifier
-                    () => updateLeadStatusViaGraph(graphClient, leadEmail, updates),
-                    { type: 'campaign-complete', email: leadEmail, source: 'email-scheduler' }
-                ).catch(updateError => {
-                    console.error(`❌ Queued update failed for ${leadEmail}:`, updateError.message);
-                    return { error: updateError, email: leadEmail };
-                });
-                
-                updatePromises.push(updatePromise);
-            }
-        }
-
-        // Wait for all queued updates to complete
-        console.log(`⏳ Waiting for ${updatePromises.length} queued Excel updates to complete...`);
-        const updateResults = await Promise.allSettled(updatePromises);
-        
-        const successful = updateResults.filter(result => result.status === 'fulfilled' && !result.value?.error).length;
-        const failed = updateResults.length - successful;
-        
-        console.log(`✅ Campaign Excel updates completed: ${successful} successful, ${failed} failed`);
-        
-        if (failed > 0) {
-            const failedEmails = updateResults
-                .filter(result => result.status === 'rejected' || result.value?.error)
-                .map(result => result.value?.email || 'unknown')
-                .join(', ');
-            console.warn(`⚠️ Some Excel updates failed: ${failedEmails}`);
-        }
-
-    } catch (error) {
-        console.error('❌ Error queuing leads updates after campaign:', error.message);
-        throw error;
-    }
-}
+// REMOVED: updateLeadsAfterCampaign function 
+// This was causing duplicate Excel updates with the same data already updated in real-time
+// Real-time per-email updates (lines 527-556) are sufficient and more accurate
 
 
 function getLeadsByCampaign(allLeads, campaignId) {
@@ -1050,93 +1009,9 @@ async function downloadMasterFileRaw(graphClient, useCache = true) {
 }
 
 
-// Helper function to update individual lead via Graph API
-async function updateLeadStatusViaGraph(graphClient, leadEmail, updates) {
-    try {
-        const masterFileName = 'LGA-Master-Email-List.xlsx';
-        const masterFolderPath = '/LGA-Email-Automation';
-        
-        // Get Excel file ID
-        const files = await graphClient
-            .api(`/me/drive/root:${masterFolderPath}:/children`)
-            .filter(`name eq '${masterFileName}'`)
-            .get();
-
-        if (files.value.length === 0) {
-            throw new Error('Master file not found');
-        }
-
-        const fileId = files.value[0].id;
-        
-        // Get worksheets to find the correct sheet name
-        const worksheets = await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets`)
-            .get();
-            
-        // Find Leads sheet (or first sheet)
-        const leadsSheet = worksheets.value.find(sheet => 
-            sheet.name === 'Leads' || sheet.name.toLowerCase().includes('lead')
-        ) || worksheets.value[0];
-        
-        if (!leadsSheet) {
-            throw new Error('No leads sheet found');
-        }
-        
-        // Find the row containing this lead
-        const tableRange = await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/usedRange`)
-            .get();
-            
-        if (!tableRange || !tableRange.values) {
-            throw new Error('Unable to read worksheet data');
-        }
-        
-        const headers = tableRange.values[0];
-        const emailColIndex = headers.findIndex(h => h && h.toLowerCase() === 'email');
-        
-        if (emailColIndex === -1) {
-            throw new Error('Email column not found');
-        }
-        
-        // Find the row with matching email
-        let targetRowIndex = -1;
-        for (let i = 1; i < tableRange.values.length; i++) {
-            if (tableRange.values[i][emailColIndex] && 
-                tableRange.values[i][emailColIndex].toLowerCase() === leadEmail) {
-                targetRowIndex = i;
-                break;
-            }
-        }
-        
-        if (targetRowIndex === -1) {
-            throw new Error(`Lead with email ${leadEmail} not found`);
-        }
-        
-        console.log(`📍 Found lead at row ${targetRowIndex + 1}`);
-        
-        // Update each field
-        for (const [field, value] of Object.entries(updates)) {
-            const colIndex = headers.findIndex(h => h && h === field);
-            if (colIndex !== -1) {
-                const cellAddress = `${getExcelColumnLetter(colIndex + 1)}${targetRowIndex + 1}`;
-                
-                await graphClient
-                    .api(`/me/drive/items/${fileId}/workbook/worksheets('${leadsSheet.name}')/range(address='${cellAddress}')`)
-                    .patch({
-                        values: [[value]]
-                    });
-                    
-                console.log(`📝 Updated ${field} = ${value} at ${cellAddress}`);
-            } else {
-                console.log(`⚠️ Field ${field} not found in headers`);
-            }
-        }
-        
-    } catch (error) {
-        console.error(`❌ Graph API lead update failed: ${error.message}`);
-        throw error;
-    }
-}
+// REMOVED: updateLeadStatusViaGraph function
+// This was a duplicate Excel update function that caused the same data to be updated twice
+// The system now uses only updateLeadViaGraphAPI from utils/excelGraphAPI.js for all updates
 
 // Helper function to calculate next email date
 function calculateNextEmailDate(fromDate, followUpDays) {

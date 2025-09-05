@@ -1030,7 +1030,6 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             'Email Sent': 'Yes',
             'Email Status': 'Sent',
             'Email Bounce': 'No', // Initialize bounce status
-            'Sent Date': new Date().toISOString(),
             'Sent By': senderEmail
         };
 
@@ -1187,8 +1186,7 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                         Template_Used: emailContent.contentType,
                         'Email Sent': 'Yes',
                         'Email Status': 'Sent',
-                        'Email Bounce': 'No', // Initialize bounce status
-                        'Sent Date': new Date().toISOString()
+                        'Email Bounce': 'No' // Initialize bounce status
                     };
 
                     results.sent++;

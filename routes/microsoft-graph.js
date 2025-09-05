@@ -1181,7 +1181,7 @@ async function updateLeadTrackingInTable(client, fileId, tableName, leadEmail, t
             'Sent Date': trackingData.sentDate || '',
             'Read Date': trackingData.readDate || '',
             'Reply Date': trackingData.replyDate || '',
-            'Last Updated': new Date().toISOString()
+            'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
         };
         
         // Apply updates
@@ -1227,7 +1227,7 @@ function normalizeLeadData(lead) {
         'LinkedIn URL': lead['LinkedIn URL'] || lead.linkedin_url || lead.linkedin || '',
         'Industry': lead['Industry'] || lead.industry || '',
         'Location': lead['Location'] || lead.country || lead.location || '',
-        'Last Updated': lead['Last Updated'] || new Date().toISOString(),
+        'Last Updated': lead['Last Updated'] || require('../utils/dateFormatter').getCurrentFormattedDate(),
         
         // Email automation columns
         'AI_Generated_Email': lead['AI_Generated_Email'] || '',

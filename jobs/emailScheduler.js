@@ -403,8 +403,7 @@ class EmailScheduler {
                     ),
                     'Email Sent': 'Yes',
                     'Email Status': 'Sent',
-                    'Sent Date': new Date().toISOString(),
-                    'Last Updated': new Date().toISOString()
+                    'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
                 };
 
                 results.updates.push({
@@ -668,7 +667,7 @@ class EmailScheduler {
             const updates = {
                 Status: 'Replied',
                 Reply_Date: new Date(receivedDateTime).toISOString().split('T')[0],
-                'Last Updated': new Date().toISOString()
+                'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
             };
             
             // Use direct Graph API update method

@@ -207,7 +207,7 @@ router.post('/mark-valid/:email', requireDelegatedAuth, async (req, res) => {
         const updates = {
             'Email Bounce': 'No',
             'Status': 'Sent', // Reset to sent status
-            'Last Updated': new Date().toISOString()
+            'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
         };
         
         const success = await updateLeadViaGraphAPI(graphClient, email, updates);

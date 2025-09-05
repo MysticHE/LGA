@@ -15,7 +15,7 @@ class ExcelUpdateQueue {
     }
 
     /**
-     * Add update to queue for specific Excel file
+     * Add update to queue for specific Excel file with deduplication
      * @param {string} fileId - Excel file identifier (usually email address)
      * @param {Function} updateFunction - Async function to execute
      * @param {object} context - Context data for logging
@@ -27,7 +27,7 @@ class ExcelUpdateQueue {
                 id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 updateFunction,
                 context,
-                priority: context.priority || 'normal', // Support priority levels
+                priority: context.priority || 'normal',
                 timestamp: Date.now(),
                 resolve,
                 reject,
@@ -39,10 +39,37 @@ class ExcelUpdateQueue {
                 this.queues.set(fileId, []);
             }
 
-            // Insert based on priority (high priority first)
             const queue = this.queues.get(fileId);
+            
+            // DEDUPLICATION: Check for duplicate campaign updates
+            if (context.type === 'campaign-complete' || context.type === 'campaign-send') {
+                const duplicateIndex = queue.findIndex(item => 
+                    item.context.email === context.email && 
+                    (item.context.type === 'campaign-complete' || item.context.type === 'campaign-send')
+                );
+                
+                if (duplicateIndex !== -1) {
+                    console.log(`🔄 Deduplicating campaign update for ${context.email} - using existing queue item`);
+                    // Resolve this promise when the existing item completes
+                    const existingItem = queue[duplicateIndex];
+                    const originalResolve = existingItem.resolve;
+                    const originalReject = existingItem.reject;
+                    
+                    existingItem.resolve = (result) => {
+                        originalResolve(result);
+                        resolve(result); // Also resolve this duplicate request
+                    };
+                    existingItem.reject = (error) => {
+                        originalReject(error);
+                        reject(error); // Also reject this duplicate request
+                    };
+                    
+                    return; // Don't add duplicate to queue
+                }
+            }
+
+            // Insert based on priority (high priority first)
             if (updateItem.priority === 'high') {
-                // Find first non-high priority item and insert before it
                 const insertIndex = queue.findIndex(item => item.priority !== 'high');
                 if (insertIndex === -1) {
                     queue.push(updateItem);
@@ -94,9 +121,15 @@ class ExcelUpdateQueue {
                 
                 console.log(`✅ Excel update completed: ${updateType} for ${emailAddress} (${duration}ms, priority: ${updateItem.priority})`);
                 
-                // Small delay between updates to prevent API throttling
+                // Enhanced delay between updates to prevent Graph API rate limiting
                 if (queue.length > 0) {
-                    await this.sleep(500); // 500ms between updates
+                    // Adaptive delay based on queue length and recent failures
+                    const baseDelay = 1000; // 1 second minimum
+                    const queuePenalty = Math.min(queue.length * 200, 2000); // Up to 2 seconds for large queues
+                    const adaptiveDelay = baseDelay + queuePenalty;
+                    
+                    console.log(`⏳ Waiting ${adaptiveDelay}ms before next update (queue: ${queue.length})`);
+                    await this.sleep(adaptiveDelay);
                 }
                 
             } catch (error) {
@@ -134,9 +167,22 @@ class ExcelUpdateQueue {
                 lastError = error;
                 console.log(`⚠️ Excel update attempt ${attempt + 1} failed: ${error.message}`);
                 
-                // Don't retry on authentication errors
-                if (error.message.includes('401') || error.message.includes('unauthorized')) {
+                // Don't retry on authentication errors or specific Graph API issues
+                if (error.message.includes('401') || error.message.includes('unauthorized') ||
+                    error.message.includes('Authentication expired') || 
+                    error.message.includes('Invalid authentication token')) {
+                    console.log('🚨 Authentication error - stopping retries for this update');
                     throw error;
+                }
+                
+                // Reduce retry attempts for rate limiting errors to prevent amplification
+                if (error.message.includes('We\'re sorry. We ran into a problem completing your request') ||
+                    error.message.includes('TooManyRequests') || 
+                    error.message.includes('429')) {
+                    console.log('🚨 Rate limiting detected - using reduced retry strategy');
+                    if (attempt >= 2) { // Only retry twice for rate limiting
+                        throw error;
+                    }
                 }
             }
         }

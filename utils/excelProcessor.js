@@ -446,7 +446,7 @@ class ExcelProcessor {
         normalized['LinkedIn URL'] = lead['LinkedIn URL'] || lead.linkedin_url || lead.linkedin || '';
         normalized['Industry'] = lead.Industry || lead.industry || '';
         normalized['Location'] = lead.Location || lead.country || lead.location || '';
-        normalized['Last Updated'] = new Date().toISOString();
+        normalized['Last Updated'] = require('./dateFormatter').getCurrentFormattedDate();
 
         // Move AI-generated content from Notes to AI_Generated_Email
         normalized['AI_Generated_Email'] = lead.Notes || lead.notes || lead.AI_Generated_Email || '';
@@ -617,7 +617,7 @@ class ExcelProcessor {
                 if (leadEmails.includes(searchEmail)) {
                     console.log(`✅ FOUND: Updating lead ${i} with email ${searchEmail}`);
                     Object.assign(data[i], updates);
-                    data[i]['Last Updated'] = new Date().toISOString();
+                    data[i]['Last Updated'] = require('./dateFormatter').getCurrentFormattedDate();
                     updated = true;
                     break;
                 }
