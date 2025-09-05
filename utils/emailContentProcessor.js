@@ -61,11 +61,7 @@ class EmailContentProcessor {
             finalSubject = `Connecting with ${lead['Company Name'] || 'your company'}`;
         }
 
-        console.log(`📧 Final email structure for ${lead.Email}:`, {
-            subject: finalSubject,
-            bodyStart: personalizedBody.substring(0, 100) + '...',
-            usedFallback: !parsed.subject
-        });
+        console.log(`📧 Email processed for ${lead.Email}`);
         
         return {
             subject: finalSubject,
@@ -150,7 +146,7 @@ class EmailContentProcessor {
         // Remove BOM & trim
         aiContent = aiContent.replace(/^\uFEFF/, '').trim();
 
-        console.log(`📧 Raw AI content to parse:`, aiContent.substring(0, 200) + '...');
+        console.log(`📧 Parsing AI content...`);
 
         // Improved regex: captures "Subject Line:" even with extra spaces or after numbers
         const subjectMatch = aiContent.match(/(?:Subject\s*Line:|^\s*\d+\.\s*Subject\s*Line:)\s*(.+)/im);
@@ -169,12 +165,7 @@ class EmailContentProcessor {
         // Remove placeholder signatures from parsed content
         body = this.removePlaceholderSignatures(body);
 
-        console.log(`📧 Parsed email content:`, {
-            subject: subject,
-            bodyLength: body.length,
-            bodyStart: body.substring(0, 100) + '...',
-            subjectMatchFound: !!subjectMatch
-        });
+        console.log(`📧 Content parsed successfully`);
 
         return {
             subject: subject,

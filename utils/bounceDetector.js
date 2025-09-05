@@ -262,7 +262,7 @@ class BounceDetector {
             return bounces;
             
         } catch (error) {
-            console.error('❌ Error checking inbox for bounces:', error);
+            console.error('❌ Error checking inbox for bounces:', error.message);
             throw error;
         }
     }
@@ -302,7 +302,7 @@ class BounceDetector {
                 }
                 
             } catch (error) {
-                console.error(`❌ Error processing bounce for ${bounce.originalRecipient}:`, error);
+                console.error(`❌ Error processing bounce for ${bounce.originalRecipient}: ${error.message}`);
                 results.errors.push({
                     email: bounce.originalRecipient,
                     error: error.message

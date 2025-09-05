@@ -344,6 +344,174 @@ router.get('/system-status', async (req, res) => {
 
 
 
+// Fallback tracking storage for when no active sessions are available
+const fs = require('fs').promises;
+const path = require('path');
+
+class TrackingFallbackManager {
+    constructor() {
+        this.fallbackDir = path.join(__dirname, '../tracking-fallback');
+        this.ensureFallbackDirectory();
+    }
+
+    async ensureFallbackDirectory() {
+        try {
+            await fs.mkdir(this.fallbackDir, { recursive: true });
+        } catch (error) {
+            console.error('❌ Failed to create tracking fallback directory:', error.message);
+        }
+    }
+
+    // Store tracking event when no sessions are available
+    async storeTrackingEvent(email, eventType = 'read') {
+        try {
+            const event = {
+                email: email,
+                eventType: eventType,
+                timestamp: new Date().toISOString(),
+                date: new Date().toISOString().split('T')[0],
+                processed: false
+            };
+
+            const filename = `tracking_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.json`;
+            const filepath = path.join(this.fallbackDir, filename);
+
+            await fs.writeFile(filepath, JSON.stringify(event, null, 2));
+            console.log(`📦 Tracking event stored for later processing: ${email} (${eventType})`);
+            return true;
+        } catch (error) {
+            console.error('❌ Failed to store tracking event:', error.message);
+            return false;
+        }
+    }
+
+    // Process stored tracking events when sessions become available
+    async processStoredEvents() {
+        try {
+            const files = await fs.readdir(this.fallbackDir);
+            const trackingFiles = files.filter(file => file.startsWith('tracking_') && file.endsWith('.json'));
+
+            if (trackingFiles.length === 0) {
+                return { processed: 0, errors: 0 };
+            }
+
+            console.log(`📦 Processing ${trackingFiles.length} stored tracking events...`);
+
+            let processed = 0;
+            let errors = 0;
+
+            for (const file of trackingFiles) {
+                try {
+                    const filepath = path.join(this.fallbackDir, file);
+                    const data = await fs.readFile(filepath, 'utf8');
+                    const event = JSON.parse(data);
+
+                    if (!event.processed) {
+                        // Try to process the event now
+                        const success = await this.processTrackingEvent(event.email, event.eventType, event.date);
+                        
+                        if (success) {
+                            // Mark as processed and delete file
+                            await fs.unlink(filepath);
+                            processed++;
+                            console.log(`✅ Processed stored tracking event: ${event.email} (${event.eventType})`);
+                        } else {
+                            errors++;
+                        }
+                    }
+                } catch (fileError) {
+                    console.error(`❌ Error processing tracking file ${file}:`, fileError.message);
+                    errors++;
+                }
+            }
+
+            if (processed > 0) {
+                console.log(`✅ Processed ${processed} stored tracking events, ${errors} errors`);
+            }
+
+            return { processed, errors };
+        } catch (error) {
+            console.error('❌ Error processing stored tracking events:', error.message);
+            return { processed: 0, errors: 1 };
+        }
+    }
+
+    // Try to process a single tracking event
+    async processTrackingEvent(email, eventType, date) {
+        try {
+            const activeSessions = authProvider.getActiveSessions();
+            if (activeSessions.length === 0) {
+                return false; // Still no sessions available
+            }
+
+            for (const sessionId of activeSessions) {
+                try {
+                    const graphClient = await authProvider.getGraphClient(sessionId);
+                    
+                    const updates = {
+                        Status: eventType === 'read' ? 'Read' : 'Clicked',
+                        Read_Date: date,
+                        'Last Updated': new Date().toISOString()
+                    };
+
+                    // Queue Excel update
+                    const updateSuccess = await excelUpdateQueue.queueUpdate(
+                        email,
+                        () => updateLeadViaGraphAPI(graphClient, email, updates),
+                        { 
+                            type: 'fallback-tracking', 
+                            email: email, 
+                            source: 'tracking-pixel-fallback',
+                            eventType: eventType
+                        }
+                    );
+                    
+                    if (updateSuccess) {
+                        return true; // Successfully processed
+                    }
+                } catch (sessionError) {
+                    continue; // Try next session
+                }
+            }
+
+            return false; // Failed to process
+        } catch (error) {
+            console.error(`❌ Error processing tracking event for ${email}:`, error.message);
+            return false;
+        }
+    }
+
+    // Clean up old stored events (older than 7 days)
+    async cleanupOldEvents() {
+        try {
+            const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+            const now = new Date();
+            const files = await fs.readdir(this.fallbackDir);
+
+            let cleanedCount = 0;
+            for (const file of files) {
+                if (file.startsWith('tracking_') && file.endsWith('.json')) {
+                    const filepath = path.join(this.fallbackDir, file);
+                    const stats = await fs.stat(filepath);
+
+                    if (now - stats.mtime > maxAge) {
+                        await fs.unlink(filepath);
+                        cleanedCount++;
+                    }
+                }
+            }
+
+            if (cleanedCount > 0) {
+                console.log(`🧹 Cleaned up ${cleanedCount} old tracking fallback files`);
+            }
+        } catch (error) {
+            console.error('❌ Error cleaning up old tracking events:', error.message);
+        }
+    }
+}
+
+const trackingFallback = new TrackingFallbackManager();
+
 // Helper function to update email read status using direct Graph API Excel updates
 async function updateEmailReadStatus(trackingId) {
     try {
@@ -360,11 +528,22 @@ async function updateEmailReadStatus(trackingId) {
         // Get active sessions
         const activeSessions = authProvider.getActiveSessions();
         if (activeSessions.length === 0) {
-            console.log('⚠️ No active sessions found, cannot update tracking');
+            console.log('⚠️ No active sessions found, storing tracking event for later processing');
+            
+            // Store tracking event for later processing
+            const stored = await trackingFallback.storeTrackingEvent(email, 'read');
+            if (stored) {
+                console.log(`📦 Tracking event stored for email: ${email}`);
+            }
             return;
         }
         
         console.log(`🔍 Updating tracking for email: ${email} across ${activeSessions.length} sessions...`);
+        
+        // Try to process any stored events first (if sessions just became available)
+        trackingFallback.processStoredEvents().catch(error => {
+            console.error('❌ Error processing stored tracking events:', error.message);
+        });
         
         // Try each active session
         let updateSuccess = false;
@@ -398,6 +577,8 @@ async function updateEmailReadStatus(trackingId) {
         
         if (!updateSuccess) {
             console.error(`❌ Failed to update ${email} in any of ${activeSessions.length} sessions`);
+            // Store as fallback for retry later
+            await trackingFallback.storeTrackingEvent(email, 'read');
         }
         
     } catch (error) {

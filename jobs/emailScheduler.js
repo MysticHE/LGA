@@ -170,7 +170,7 @@ class EmailScheduler {
             console.log('✅ Background token refresh completed successfully');
             
         } catch (error) {
-            console.error('❌ Background token refresh job error:', error);
+            console.error('❌ Background token refresh job error:', error.message);
         }
     }
 
@@ -221,7 +221,7 @@ class EmailScheduler {
             console.log(`✅ Scheduled email processing completed: ${successful}/${activeSessions.length} sessions, ${totalEmails} emails sent`);
 
         } catch (error) {
-            console.error('❌ Scheduled email processing error:', error);
+            console.error('❌ Scheduled email processing error:', error.message);
         }
     }
 
@@ -315,7 +315,7 @@ class EmailScheduler {
             };
 
         } catch (error) {
-            console.error(`❌ Session processing error for ${sessionId}:`, error);
+            console.error(`❌ Session processing error for ${sessionId}: ${error.message}`);
             throw error;
         }
     }
@@ -498,7 +498,7 @@ class EmailScheduler {
             }
             
         } catch (error) {
-            console.error('❌ Reply detection job error:', error);
+            console.error('❌ Reply detection job error:', error.message);
         }
     }
 
@@ -564,7 +564,7 @@ class EmailScheduler {
             }
             
         } catch (error) {
-            console.error('❌ Bounce detection job error:', error);
+            console.error('❌ Bounce detection job error:', error.message);
         }
     }
 
@@ -655,7 +655,7 @@ class EmailScheduler {
             return repliesFound;
             
         } catch (error) {
-            console.error(`❌ Session reply check error for ${sessionId}:`, error);
+            console.error(`❌ Session reply check error for ${sessionId}: ${error.message}`);
             return 0;
         }
     }
@@ -681,7 +681,7 @@ class EmailScheduler {
             }
             
         } catch (error) {
-            console.error(`❌ Reply status update error for ${email}:`, error);
+            console.error(`❌ Reply status update error for ${email}: ${error.message}`);
         }
     }
 
@@ -822,7 +822,7 @@ class EmailScheduler {
             }
             
         } catch (error) {
-            console.error(`❌ Graph API Excel update failed:`, error);
+            console.error(`❌ Graph API Excel update failed: ${error.message}`);
             return false;
         }
     }
@@ -924,7 +924,7 @@ class EmailScheduler {
             return sentEmails;
             
         } catch (error) {
-            console.error(`❌ Failed to get sent emails via Graph API:`, error);
+            console.error(`❌ Failed to get sent emails via Graph API: ${error.message}`);
             return [];
         }
     }
@@ -988,7 +988,7 @@ class EmailScheduler {
 
             return stats;
         } catch (error) {
-            console.error('Error getting processing stats:', error);
+            console.error('Error getting processing stats:', error.message);
             return {
                 activeSessions: 0,
                 totalLeadsDue: 0,
@@ -1010,7 +1010,7 @@ class EmailScheduler {
                 console.log(`🧹 Cleaned up ${cleanedCount} expired sessions`);
             }
         } catch (error) {
-            console.error('Error cleaning up expired sessions:', error);
+            console.error('Error cleaning up expired sessions:', error.message);
         }
     }
 }

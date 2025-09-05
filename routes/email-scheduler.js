@@ -145,7 +145,7 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('❌ Campaign start error:', error);
+        console.error('❌ Campaign start error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Failed to start campaign',
@@ -189,7 +189,7 @@ router.get('/campaigns/:campaignId', requireDelegatedAuth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('❌ Campaign status error:', error);
+        console.error('❌ Campaign status error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Failed to get campaign status',
@@ -238,7 +238,7 @@ router.get('/campaigns', requireDelegatedAuth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('❌ Campaigns retrieval error:', error);
+        console.error('❌ Campaigns retrieval error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Failed to retrieve campaigns',
@@ -273,7 +273,7 @@ router.post('/campaigns/:campaignId/pause', requireDelegatedAuth, async (req, re
         });
 
     } catch (error) {
-        console.error('❌ Campaign pause error:', error);
+        console.error('❌ Campaign pause error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Failed to pause campaign',
@@ -308,7 +308,7 @@ router.post('/campaigns/:campaignId/resume', requireDelegatedAuth, async (req, r
         });
 
     } catch (error) {
-        console.error('❌ Campaign resume error:', error);
+        console.error('❌ Campaign resume error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Failed to resume campaign',
@@ -385,7 +385,7 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
         });
 
     } catch (error) {
-        console.error('❌ Scheduled campaigns processing error:', error);
+        console.error('❌ Scheduled campaigns processing error:', error.message);
         res.status(500).json({
             success: false,
             message: 'Failed to process scheduled campaigns',
@@ -473,12 +473,7 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 templates
             );
             
-            console.log(`📝 Email content generated for ${lead.Email}:`, {
-                subject: emailContent.subject?.substring(0, 50) + '...',
-                contentType: emailContent.contentType,
-                hasBody: !!emailContent.body,
-                bodyLength: emailContent.body?.length || 0
-            });
+            console.log(`📝 Email content generated for ${lead.Email}`);
 
             // Validate email content
             const validation = emailContentProcessor.validateEmailContent(emailContent);
@@ -510,12 +505,6 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
             };
 
             console.log(`📧 Attempting to send email via Microsoft Graph to: ${lead.Email}`);
-            console.log(`📋 Email message structure:`, {
-                subject: emailMessage.subject,
-                bodyType: emailMessage.body.contentType,
-                recipientEmail: emailMessage.toRecipients[0].emailAddress.address,
-                hasContent: !!emailMessage.body.content
-            });
 
             const sendResult = await graphClient.api('/me/sendMail').post({
                 message: emailMessage,
@@ -710,7 +699,7 @@ async function updateLeadsAfterCampaign(graphClient, results, followUpDays) {
         }
 
     } catch (error) {
-        console.error('❌ Error queuing leads updates after campaign:', error);
+        console.error('❌ Error queuing leads updates after campaign:', error.message);
         throw error;
     }
 }
@@ -841,7 +830,7 @@ async function recordCampaignHistory(graphClient, campaignData) {
         }
         
     } catch (error) {
-        console.error('❌ Error recording campaign history:', error);
+        console.error('❌ Error recording campaign history:', error.message);
         // Don't throw error - campaign history is not critical for email sending
         return false;
     }
@@ -925,7 +914,7 @@ async function getMasterFileData(graphClient, useCache = true) {
         };
         
     } catch (error) {
-        console.error('❌ Graph Workbook API error:', error);
+        console.error('❌ Graph Workbook API error:', error.message);
         console.log('⚠️ Falling back to raw download method...');
         return await downloadMasterFileRaw(graphClient, useCache);
     }
@@ -1049,7 +1038,7 @@ async function downloadMasterFileRaw(graphClient, useCache = true) {
         
         return workbook;
     } catch (error) {
-        console.error('❌ Master file download error:', error);
+        console.error('❌ Master file download error:', error.message);
         console.error('❌ Full error details:', {
             message: error.message,
             code: error.code,
@@ -1144,7 +1133,7 @@ async function updateLeadStatusViaGraph(graphClient, leadEmail, updates) {
         }
         
     } catch (error) {
-        console.error(`❌ Graph API lead update failed:`, error);
+        console.error(`❌ Graph API lead update failed: ${error.message}`);
         throw error;
     }
 }
@@ -1207,7 +1196,7 @@ async function getTemplatesViaGraphAPI(graphClient) {
         }
         
     } catch (error) {
-        console.error('❌ Get templates via Graph API error:', error);
+        console.error('❌ Get templates via Graph API error:', error.message);
         return [];
     }
 }
@@ -1258,7 +1247,7 @@ async function getCampaignHistoryViaGraphAPI(graphClient) {
         }
         
     } catch (error) {
-        console.error('❌ Get campaign history via Graph API error:', error);
+        console.error('❌ Get campaign history via Graph API error:', error.message);
         return null;
     }
 }
@@ -1333,12 +1322,12 @@ async function updateCampaignStatusViaGraphAPI(graphClient, campaignId, newStatu
             return true;
             
         } catch (error) {
-            console.error('❌ Error updating campaign status:', error);
+            console.error('❌ Error updating campaign status:', error.message);
             return false;
         }
         
     } catch (error) {
-        console.error('❌ Update campaign status via Graph API error:', error);
+        console.error('❌ Update campaign status via Graph API error:', error.message);
         return false;
     }
 }
@@ -1375,7 +1364,7 @@ async function getScheduledCampaignsDueViaGraphAPI(graphClient) {
         }));
         
     } catch (error) {
-        console.error('❌ Get scheduled campaigns due via Graph API error:', error);
+        console.error('❌ Get scheduled campaigns due via Graph API error:', error.message);
         return [];
     }
 }

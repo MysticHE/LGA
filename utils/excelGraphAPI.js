@@ -121,7 +121,7 @@ async function updateLeadViaGraphAPI(graphClient, email, updates) {
         return true;
         
     } catch (error) {
-        console.error('❌ Update lead via Graph API error:', error);
+        console.error('❌ Update lead via Graph API error:', error.message);
         return false;
     }
 }
@@ -183,7 +183,7 @@ async function getLeadsViaGraphAPI(graphClient) {
         }).filter(lead => lead.Email);
         
     } catch (error) {
-        console.error('❌ Get leads via Graph API error:', error);
+        console.error('❌ Get leads via Graph API error:', error.message);
         return null;
     }
 }

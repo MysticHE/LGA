@@ -302,7 +302,7 @@ class DelegatedGraphAuth {
                 setImmediate(() => this.refreshExpiringSessions());
             }
         } catch (error) {
-            console.error('❌ Failed to load persisted sessions:', error);
+            console.error('❌ Failed to load persisted sessions:', error.message);
         }
     }
 
@@ -351,7 +351,7 @@ class DelegatedGraphAuth {
             }
 
         } catch (error) {
-            console.error('❌ Background token refresh error:', error);
+            console.error('❌ Background token refresh error:', error.message);
         }
     }
 
@@ -470,8 +470,7 @@ function requireDelegatedAuth(req, res, next) {
         req.sessionId = sessionId;
         next();
     } catch (error) {
-        console.error('❌ Delegated auth middleware error:', error);
-        console.error('Stack trace:', error.stack);
+        console.error('❌ Delegated auth middleware error:', error.message);
         res.status(500).json({
             error: 'Authentication Error',
             message: 'Failed to validate authentication',
