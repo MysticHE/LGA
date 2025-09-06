@@ -161,6 +161,12 @@
                             <option value="Email_Template_1">Email Template 1</option>
                             <option value="Email_Template_2">Email Template 2</option>
                         </select>
+                        <select id="filterLastEmail" class="form-select filter-select">
+                            <option value="">Last Email Sent</option>
+                            <option value="7">Past 7 Days</option>
+                            <option value="14">Past 14 Days</option>
+                            <option value="21">Past 21 Days</option>
+                        </select>
                     </div>
                     <div class="flex gap-sm">
                         <button class="btn btn-success" onclick="sendFilteredEmails()" title="Send emails to filtered leads">
@@ -202,13 +208,11 @@
                             <th>Status</th>
                             <th>Campaign Stage</th>
                             <th>Last Email</th>
-                            <th>Next Email</th>
-                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="masterListBody">
                         <tr>
-                            <td colspan="10" class="text-center loading-cell">
+                            <td colspan="7" class="text-center loading-cell">
                                 <div class="flex-center">
                                     <div class="spinner"></div>
                                     <span class="ml-md">Loading master list...</span>
@@ -510,6 +514,10 @@
             });
 
             document.getElementById('filterTemplate').addEventListener('change', function() {
+                filterMasterList();
+            });
+
+            document.getElementById('filterLastEmail').addEventListener('change', function() {
                 filterMasterList();
             });
         }
@@ -815,13 +823,13 @@
                     displayMasterListWithPagination(filteredLeadsData);
                 } else {
                     document.getElementById('masterListBody').innerHTML = `
-                        <tr><td colspan="9" style="text-align: center; padding: 40px;">No leads found.</td></tr>
+                        <tr><td colspan="7" style="text-align: center; padding: 40px;">No leads found.</td></tr>
                     `;
                 }
             } catch (error) {
                 console.error('❌ Master list loading error:', error);
                 document.getElementById('masterListBody').innerHTML = `
-                    <tr><td colspan="9" style="text-align: center; padding: 40px;">Error loading master list.</td></tr>
+                    <tr><td colspan="7" style="text-align: center; padding: 40px;">Error loading master list.</td></tr>
                 `;
             }
         }
@@ -844,7 +852,7 @@
             
             if (data.length === 0) {
                 tbody.innerHTML = `
-                    <tr><td colspan="10" class="text-center loading-cell">
+                    <tr><td colspan="7" class="text-center loading-cell">
                         <div style="padding: var(--space-xl);">
                             <div style="font-size: 48px; margin-bottom: var(--space-md);">📋</div>
                             <p>No leads match the current filters.</p>
@@ -867,14 +875,6 @@
                     <td><span class="status-badge status-${(lead.Status || 'new').toLowerCase()}">${lead.Status || 'New'}</span></td>
                     <td title="${lead.Campaign_Stage || 'First_Contact'}">${(lead.Campaign_Stage || 'First_Contact').replace('_', ' ')}</td>
                     <td title="${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleString() : 'Never sent'}">${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleDateString() : '-'}</td>
-                    <td title="${lead.Next_Email_Date ? parseExcelDateForDisplay(lead.Next_Email_Date).toLocaleString() : 'Not scheduled'}">${lead.Next_Email_Date ? parseExcelDateForDisplay(lead.Next_Email_Date).toLocaleDateString() : '-'}</td>
-                    <td>
-                        <div class="flex gap-sm">
-                            <button class="btn" onclick="editLead('${lead.Email}')" title="Edit lead details">Edit</button>
-                            <button class="btn btn-success" onclick="sendNow('${lead.Email}')" title="Send email now">Send</button>
-                            <button class="btn btn-outline" onclick="viewLeadHistory('${lead.Email}')" title="View lead history">History</button>
-                        </div>
-                    </td>
                 </tr>
                 `;
             }).join('');
@@ -1607,11 +1607,12 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             }
         };
 
-        // Filter master list based on search, status, and template
+        // Filter master list based on search, status, template, and last email sent
         function filterMasterList() {
             const searchTerm = document.getElementById('searchLeads').value.toLowerCase();
             const statusFilter = document.getElementById('filterStatus').value.toLowerCase();
             const templateFilter = document.getElementById('filterTemplate').value;
+            const lastEmailFilter = document.getElementById('filterLastEmail').value;
             
             // If no original data stored, store it
             if (!window.originalMasterListData) {
@@ -1633,7 +1634,21 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 const matchesTemplate = !templateFilter || 
                     (lead.Template_Used && lead.Template_Used === templateFilter);
                 
-                return matchesSearch && matchesStatus && matchesTemplate;
+                // Last Email Sent filter - shows leads that had emails sent to them within the specified time period
+                let matchesLastEmail = true;
+                if (lastEmailFilter && lead.Last_Email_Date) {
+                    const filterDays = parseInt(lastEmailFilter);
+                    const lastEmailDate = parseExcelDateForDisplay(lead.Last_Email_Date);
+                    const currentDate = new Date();
+                    const daysDifference = (currentDate - lastEmailDate) / (1000 * 60 * 60 * 24);
+                    
+                    matchesLastEmail = daysDifference <= filterDays;
+                } else if (lastEmailFilter && !lead.Last_Email_Date) {
+                    // If filter is selected but lead has no email sent to them, exclude it
+                    matchesLastEmail = false;
+                }
+                
+                return matchesSearch && matchesStatus && matchesTemplate && matchesLastEmail;
             });
             
             // Reset to first page when filters change
@@ -1642,7 +1657,7 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             // Update display with pagination
             displayMasterListWithPagination(filteredData);
             
-            console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total (Search: "${searchTerm}", Status: "${statusFilter}", Template: "${templateFilter}")`);
+            console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total (Search: "${searchTerm}", Status: "${statusFilter}", Template: "${templateFilter}", Last Email: "${lastEmailFilter} days")`);
         }
 
         // Send emails to filtered leads
@@ -1650,6 +1665,7 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             const searchTerm = document.getElementById('searchLeads').value.toLowerCase();
             const statusFilter = document.getElementById('filterStatus').value.toLowerCase();
             const templateFilter = document.getElementById('filterTemplate').value;
+            const lastEmailFilter = document.getElementById('filterLastEmail').value;
             
             // Get currently filtered data
             if (!window.originalMasterListData) {
@@ -1671,7 +1687,21 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 const matchesTemplate = !templateFilter || 
                     (lead.Template_Used && lead.Template_Used === templateFilter);
                 
-                return matchesSearch && matchesStatus && matchesTemplate;
+                // Last Email Sent filter - shows leads that had emails sent to them within the specified time period
+                let matchesLastEmail = true;
+                if (lastEmailFilter && lead.Last_Email_Date) {
+                    const filterDays = parseInt(lastEmailFilter);
+                    const lastEmailDate = parseExcelDateForDisplay(lead.Last_Email_Date);
+                    const currentDate = new Date();
+                    const daysDifference = (currentDate - lastEmailDate) / (1000 * 60 * 60 * 24);
+                    
+                    matchesLastEmail = daysDifference <= filterDays;
+                } else if (lastEmailFilter && !lead.Last_Email_Date) {
+                    // If filter is selected but lead has no email sent to them, exclude it
+                    matchesLastEmail = false;
+                }
+                
+                return matchesSearch && matchesStatus && matchesTemplate && matchesLastEmail;
             });
             
             if (filteredData.length === 0) {
@@ -1684,6 +1714,7 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             if (searchTerm) filterDesc.push(`Search: "${searchTerm}"`);
             if (statusFilter) filterDesc.push(`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`);
             if (templateFilter) filterDesc.push(`Template: ${templateFilter.replace('_', ' ')}`);
+            if (lastEmailFilter) filterDesc.push(`Last Email Sent: Past ${lastEmailFilter} Days`);
             
             const filterDescription = filterDesc.length > 0 ? `\n\nFilter criteria:\n${filterDesc.join('\n')}` : '';
             
