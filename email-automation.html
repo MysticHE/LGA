@@ -225,7 +225,8 @@
                     <span class="text-muted">Items per page:</span>
                     <select id="itemsPerPage" class="form-select pagination-select" onchange="changeItemsPerPage()">
                         <option value="25">25</option>
-                        <option value="50" selected>50</option>
+                        <option value="30" selected>30</option>
+                        <option value="50">50</option>
                         <option value="100">100</option>
                     </select>
                 </div>
@@ -780,12 +781,19 @@
             `).join('');
         }
 
-        // Load master list
+        // Global pagination variables
+        let currentPage = 1;
+        let leadsPerPage = 30;
+        let totalLeads = 0;
+        let filteredLeadsData = [];
+
+        // Load master list with all data
         async function loadMasterList() {
-            console.log('📋 Loading master list...');
+            console.log('📋 Loading complete master list...');
             
             try {
-                const response = await fetch('/api/email-automation/master-list/data', {
+                // Load ALL data by setting a high limit
+                const response = await fetch('/api/email-automation/master-list/data?limit=10000', {
                     headers: {
                         'X-Session-Id': sessionId
                     }
@@ -795,8 +803,16 @@
                 
                 if (result.success) {
                     masterListData = result.data || [];
-                    console.log(`📊 Loaded ${masterListData.length} leads from master file`);
-                    displayMasterList(masterListData);
+                    totalLeads = result.total || masterListData.length;
+                    console.log(`📊 Loaded ${masterListData.length} leads from master file (Total: ${totalLeads})`);
+                    
+                    // Store original data for filtering
+                    window.originalMasterListData = [...masterListData];
+                    filteredLeadsData = [...masterListData];
+                    
+                    // Reset to first page
+                    currentPage = 1;
+                    displayMasterListWithPagination(filteredLeadsData);
                 } else {
                     document.getElementById('masterListBody').innerHTML = `
                         <tr><td colspan="9" style="text-align: center; padding: 40px;">No leads found.</td></tr>
@@ -810,15 +826,20 @@
             }
         }
 
-        // Display master list
-        function displayMasterList(data) {
+        // Display master list with pagination
+        function displayMasterListWithPagination(data) {
+            filteredLeadsData = data;
+            const totalPages = Math.ceil(data.length / leadsPerPage);
+            const startIndex = (currentPage - 1) * leadsPerPage;
+            const endIndex = startIndex + leadsPerPage;
+            const pageData = data.slice(startIndex, endIndex);
+            
             const tbody = document.getElementById('masterListBody');
             const showingCount = document.getElementById('showingCount');
             const totalCount = document.getElementById('totalCount');
             
             // Update counts
-            const displayCount = Math.min(data.length, 50);
-            showingCount.textContent = displayCount;
+            showingCount.textContent = pageData.length;
             totalCount.textContent = data.length;
             
             if (data.length === 0) {
@@ -826,17 +847,20 @@
                     <tr><td colspan="10" class="text-center loading-cell">
                         <div style="padding: var(--space-xl);">
                             <div style="font-size: 48px; margin-bottom: var(--space-md);">📋</div>
-                            <p>No leads in master list.</p>
-                            <p class="text-muted">Upload an Excel file to get started.</p>
+                            <p>No leads match the current filters.</p>
+                            <p class="text-muted">Try adjusting your search criteria.</p>
                         </div>
                     </td></tr>
                 `;
+                updatePaginationControls(0, 0);
                 return;
             }
             
-            tbody.innerHTML = data.slice(0, 50).map((lead, index) => `
+            tbody.innerHTML = pageData.map((lead, index) => {
+                const globalIndex = startIndex + index;
+                return `
                 <tr>
-                    <td><input type="checkbox" class="lead-checkbox" data-email="${lead.Email}" data-index="${index}"></td>
+                    <td><input type="checkbox" class="lead-checkbox" data-email="${lead.Email}" data-index="${globalIndex}"></td>
                     <td title="${lead.Name || 'No name'}">${lead.Name || '<span class="text-muted">No name</span>'}</td>
                     <td title="${lead.Email}">${lead.Email || ''}</td>
                     <td title="${lead['Company Name'] || 'No company'}">${lead['Company Name'] || '<span class="text-muted">No company</span>'}</td>
@@ -852,18 +876,16 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
-            
-            if (data.length > 50) {
-                tbody.innerHTML += `
-                    <tr><td colspan="10" class="text-center" style="padding: var(--space-lg); color: var(--medium-grey);">
-                        <div class="flex-center gap-md">
-                            <span>Showing first 50 leads of ${data.length} total</span>
-                            <button class="btn btn-outline" onclick="loadMoreLeads()">Load More</button>
-                        </div>
-                    </td></tr>
                 `;
-            }
+            }).join('');
+            
+            // Update pagination controls
+            updatePaginationControls(totalPages, data.length);
+        }
+
+        // Legacy function for backward compatibility
+        function displayMasterList(data) {
+            displayMasterListWithPagination(data);
         }
 
         // Modal functions
@@ -1326,19 +1348,106 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             console.log('Cleared all selections');
         }
 
-        // Change items per page
-        function changeItemsPerPage() {
-            const itemsPerPage = document.getElementById('itemsPerPage').value;
-            console.log('Items per page changed to:', itemsPerPage);
-            // TODO: Implement pagination logic
-            loadMasterList();
+        // Update pagination controls
+        function updatePaginationControls(totalPages, totalItems) {
+            const paginationControls = document.getElementById('paginationControls');
+            const listStats = document.getElementById('listStats');
+            
+            if (totalPages <= 1) {
+                paginationControls.innerHTML = '';
+                return;
+            }
+            
+            const startItem = ((currentPage - 1) * leadsPerPage) + 1;
+            const endItem = Math.min(currentPage * leadsPerPage, totalItems);
+            
+            // Update showing info
+            const showingSpan = listStats.querySelector('#showingCount');
+            const totalSpan = listStats.querySelector('#totalCount');
+            if (showingSpan) showingSpan.textContent = `${startItem}-${endItem}`;
+            if (totalSpan) totalSpan.textContent = totalItems;
+            
+            let controlsHTML = '<div class="flex gap-sm align-center">';
+            
+            // Previous button
+            if (currentPage > 1) {
+                controlsHTML += `<button class="btn btn-outline" onclick="goToPage(${currentPage - 1})" title="Previous page">‹ Previous</button>`;
+            }
+            
+            // Page numbers
+            controlsHTML += '<div class="flex gap-sm">';
+            const maxPagesToShow = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+            let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+            
+            if (endPage - startPage + 1 < maxPagesToShow) {
+                startPage = Math.max(1, endPage - maxPagesToShow + 1);
+            }
+            
+            // First page and ellipsis
+            if (startPage > 1) {
+                controlsHTML += `<button class="btn btn-outline" onclick="goToPage(1)">1</button>`;
+                if (startPage > 2) {
+                    controlsHTML += '<span class="pagination-ellipsis">...</span>';
+                }
+            }
+            
+            // Page number buttons
+            for (let page = startPage; page <= endPage; page++) {
+                const isActive = page === currentPage;
+                controlsHTML += `<button class="btn ${isActive ? 'btn-primary' : 'btn-outline'}" onclick="goToPage(${page})" ${isActive ? 'disabled' : ''}>${page}</button>`;
+            }
+            
+            // Last page and ellipsis
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    controlsHTML += '<span class="pagination-ellipsis">...</span>';
+                }
+                controlsHTML += `<button class="btn btn-outline" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+            }
+            
+            controlsHTML += '</div>';
+            
+            // Next button
+            if (currentPage < totalPages) {
+                controlsHTML += `<button class="btn btn-outline" onclick="goToPage(${currentPage + 1})" title="Next page">Next ›</button>`;
+            }
+            
+            // Page info
+            controlsHTML += `<span class="text-muted ml-md">Page ${currentPage} of ${totalPages}</span>`;
+            controlsHTML += '</div>';
+            
+            paginationControls.innerHTML = controlsHTML;
+        }
+        
+        // Go to specific page
+        function goToPage(page) {
+            const totalPages = Math.ceil(filteredLeadsData.length / leadsPerPage);
+            if (page < 1 || page > totalPages) return;
+            
+            currentPage = page;
+            displayMasterListWithPagination(filteredLeadsData);
+            
+            // Scroll to top of table
+            document.getElementById('masterListTable').scrollIntoView({ behavior: 'smooth' });
         }
 
-        // Load more leads
+        // Change items per page
+        function changeItemsPerPage() {
+            const newItemsPerPage = parseInt(document.getElementById('itemsPerPage').value);
+            if (newItemsPerPage !== leadsPerPage) {
+                leadsPerPage = newItemsPerPage;
+                currentPage = 1; // Reset to first page
+                displayMasterListWithPagination(filteredLeadsData);
+                console.log(`Items per page changed to: ${leadsPerPage}`);
+            }
+        }
+
+        // Load more leads (legacy function - now redirects to pagination)
         function loadMoreLeads() {
-            console.log('Loading more leads...');
-            // TODO: Implement load more functionality
-            alert('Load more functionality coming soon!');
+            if (currentPage < Math.ceil(filteredLeadsData.length / leadsPerPage)) {
+                goToPage(currentPage + 1);
+            }
         }
 
         // Show dashboard insights
@@ -1527,8 +1636,11 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 return matchesSearch && matchesStatus && matchesTemplate;
             });
             
-            // Update display
-            displayMasterList(filteredData);
+            // Reset to first page when filters change
+            currentPage = 1;
+            
+            // Update display with pagination
+            displayMasterListWithPagination(filteredData);
             
             console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total (Search: "${searchTerm}", Status: "${statusFilter}", Template: "${templateFilter}")`);
         }
