@@ -137,56 +137,6 @@
             </div>
         </div>
 
-        <!-- Campaign Management -->
-        <div class="card full-width">
-            <div class="card-header">
-                <h3 class="card-title">Campaign Management</h3>
-                <div class="flex gap-sm">
-                    <button class="btn" onclick="showCampaignHistory()" title="View Campaign History">
-                        History
-                    </button>
-                    <button class="btn btn-success" onclick="openCampaignModal()" title="Start New Campaign">
-                        Start Campaign
-                    </button>
-                </div>
-            </div>
-            <div class="campaign-actions-grid">
-                <div class="action-group">
-                    <h4>Quick Actions</h4>
-                    <div class="action-buttons">
-                        <button class="btn" onclick="showDueLeads()" title="View leads due for email today">
-                            View Due Today
-                        </button>
-                        <button class="btn btn-warning" onclick="showScheduledCampaigns()" title="View and manage scheduled campaigns">
-                            Scheduled Campaigns
-                        </button>
-                        <button class="btn" onclick="viewMasterList()" title="View complete master list">
-                            View Master List
-                        </button>
-                        <button class="btn btn-outline" onclick="bulkActions()" title="Perform bulk actions">
-                            Bulk Actions
-                        </button>
-                    </div>
-                </div>
-                <div class="action-group">
-                    <h4>Automation Settings</h4>
-                    <div class="action-buttons">
-                        <button class="btn" onclick="openAutomationSettings()" title="Configure automation rules">
-                            Configure Rules
-                        </button>
-                        <button class="btn btn-warning" onclick="pauseAutomation()" title="Pause all automated campaigns">
-                            Pause All
-                        </button>
-                        <button class="btn btn-success" onclick="resumeAutomation()" title="Resume all automated campaigns">
-                            Resume All
-                        </button>
-                        <button class="btn btn-outline" onclick="viewAutomationLogs()" title="View automation activity logs">
-                            View Logs
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <!-- Master List Table -->
         <div class="card full-width">
@@ -201,9 +151,21 @@
                             <option value="sent">Sent</option>
                             <option value="read">Read</option>
                             <option value="replied">Replied</option>
+                            <option value="bounced">Bounced</option>
+                        </select>
+                        <select id="filterTemplate" class="form-select filter-select">
+                            <option value="">All Templates</option>
+                            <option value="AI_Generated">AI Generated</option>
+                            <option value="First_Contact">First Contact</option>
+                            <option value="Follow_Up">Follow Up</option>
+                            <option value="Email_Template_1">Email Template 1</option>
+                            <option value="Email_Template_2">Email Template 2</option>
                         </select>
                     </div>
                     <div class="flex gap-sm">
+                        <button class="btn btn-success" onclick="sendFilteredEmails()" title="Send emails to filtered leads">
+                            Send Emails
+                        </button>
                         <button class="btn btn-outline" onclick="exportMasterList()" title="Export to Excel">
                             Export Excel
                         </button>
@@ -543,6 +505,10 @@
             });
 
             document.getElementById('filterStatus').addEventListener('change', function() {
+                filterMasterList();
+            });
+
+            document.getElementById('filterTemplate').addEventListener('change', function() {
                 filterMasterList();
             });
         }
@@ -1532,10 +1498,11 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             }
         };
 
-        // Filter master list based on search and status
+        // Filter master list based on search, status, and template
         function filterMasterList() {
             const searchTerm = document.getElementById('searchLeads').value.toLowerCase();
             const statusFilter = document.getElementById('filterStatus').value.toLowerCase();
+            const templateFilter = document.getElementById('filterTemplate').value;
             
             // If no original data stored, store it
             if (!window.originalMasterListData) {
@@ -1553,13 +1520,124 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 const matchesStatus = !statusFilter || 
                     (lead.Status && lead.Status.toLowerCase() === statusFilter);
                 
-                return matchesSearch && matchesStatus;
+                // Template filter (check Template_Used field)
+                const matchesTemplate = !templateFilter || 
+                    (lead.Template_Used && lead.Template_Used === templateFilter);
+                
+                return matchesSearch && matchesStatus && matchesTemplate;
             });
             
             // Update display
             displayMasterList(filteredData);
             
-            console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total`);
+            console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total (Search: "${searchTerm}", Status: "${statusFilter}", Template: "${templateFilter}")`);
+        }
+
+        // Send emails to filtered leads
+        async function sendFilteredEmails() {
+            const searchTerm = document.getElementById('searchLeads').value.toLowerCase();
+            const statusFilter = document.getElementById('filterStatus').value.toLowerCase();
+            const templateFilter = document.getElementById('filterTemplate').value;
+            
+            // Get currently filtered data
+            if (!window.originalMasterListData) {
+                window.originalMasterListData = [...masterListData];
+            }
+            
+            let filteredData = window.originalMasterListData.filter(lead => {
+                // Search filter
+                const matchesSearch = !searchTerm || 
+                    (lead.Name && lead.Name.toLowerCase().includes(searchTerm)) ||
+                    (lead.Email && lead.Email.toLowerCase().includes(searchTerm)) ||
+                    (lead['Company Name'] && lead['Company Name'].toLowerCase().includes(searchTerm));
+                
+                // Status filter
+                const matchesStatus = !statusFilter || 
+                    (lead.Status && lead.Status.toLowerCase() === statusFilter);
+                
+                // Template filter
+                const matchesTemplate = !templateFilter || 
+                    (lead.Template_Used && lead.Template_Used === templateFilter);
+                
+                return matchesSearch && matchesStatus && matchesTemplate;
+            });
+            
+            if (filteredData.length === 0) {
+                alert('📧 No leads match the current filter criteria.\n\nPlease adjust your filters and try again.');
+                return;
+            }
+            
+            // Build filter description for confirmation
+            const filterDesc = [];
+            if (searchTerm) filterDesc.push(`Search: "${searchTerm}"`);
+            if (statusFilter) filterDesc.push(`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`);
+            if (templateFilter) filterDesc.push(`Template: ${templateFilter.replace('_', ' ')}`);
+            
+            const filterDescription = filterDesc.length > 0 ? `\n\nFilter criteria:\n${filterDesc.join('\n')}` : '';
+            
+            // Confirmation dialog
+            const confirmed = confirm(
+                `📧 Send Emails to Filtered Leads\n\n` +
+                `This will send emails to ${filteredData.length} leads that match your current filter settings.` +
+                filterDescription +
+                `\n\nEmails will be sent with rate limiting to maintain deliverability.\n\n` +
+                `Do you want to proceed?`
+            );
+            
+            if (!confirmed) {
+                return;
+            }
+            
+            // Determine template type for email content
+            let emailContentType = 'AI_Generated'; // Default
+            if (templateFilter) {
+                emailContentType = templateFilter;
+            }
+            
+            try {
+                console.log(`🚀 Starting filtered email campaign to ${filteredData.length} leads...`);
+                
+                const campaignData = {
+                    campaignName: `Filtered Campaign - ${new Date().toLocaleDateString()} - ${filteredData.length} leads`,
+                    emailContentType: emailContentType,
+                    targetLeads: 'custom', // We'll use custom since we have our own filtered list
+                    sendSchedule: 'immediate',
+                    followUpDays: 7,
+                    customLeadList: filteredData.map(lead => lead.Email) // Send email list for targeted sending
+                };
+                
+                const response = await fetch('/api/email-scheduler/campaigns/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Id': sessionId
+                    },
+                    body: JSON.stringify(campaignData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    await refreshDashboard(); // Refresh to show updated stats
+                    await loadMasterList(); // Refresh master list to show updated statuses
+                    
+                    alert(
+                        `✅ Email Campaign Started Successfully!\n\n` +
+                        `📊 Campaign Details:\n` +
+                        `• Leads targeted: ${filteredData.length}\n` +
+                        `• Emails queued: ${result.emailsSent || result.emailsQueued || filteredData.length}\n` +
+                        `• Template used: ${emailContentType.replace('_', ' ')}\n` +
+                        `• Campaign ID: ${result.campaignId}\n\n` +
+                        `Emails are being sent with proper rate limiting to maintain deliverability.`
+                    );
+                } else {
+                    alert('❌ Failed to start email campaign: ' + result.message);
+                }
+                
+            } catch (error) {
+                console.error('❌ Send filtered emails error:', error);
+                alert('❌ Failed to send emails to filtered leads.');
+            }
         }
     </script>
 </body>
