@@ -224,10 +224,10 @@ class EmailContentProcessor {
      */
     generateFallbackContent(lead) {
         const companyName = lead['Company Name'] || 'your company';
-        const leadName = lead.Name || 'there';
+        const leadName = lead.Name || 'Sir/Madam';
 
         const fallbackSubject = `Partnership opportunity with ${companyName}`;
-        const fallbackBody = `Hi ${leadName},
+        const fallbackBody = `Dear ${leadName},
 
 I hope this email finds you well. I'm reaching out because ${companyName} could benefit from our services.
 
@@ -581,13 +581,20 @@ ${leadName}`);
     personalizeSquareBrackets(body, lead) {
         if (!body || !lead) return body;
 
-        const leadName = lead.Name || 'there';
+        const leadName = lead.Name || null;
         const companyName = lead['Company Name'] || lead.Company || 'your company';
         
+        // For greetings, use "Sir/Madam" when name is not available
+        const greetingName = leadName || 'Sir/Madam';
+        // For other contexts, use "there" as fallback
+        const fallbackName = leadName || 'there';
+        
         return body
-            .replace(/\[Owner's Name\]/gi, leadName)
-            .replace(/\[Owner Name\]/gi, leadName)
-            .replace(/\[Name\]/gi, leadName)
+            .replace(/\[Owner's Name\]/gi, fallbackName)
+            .replace(/\[Owner Name\]/gi, fallbackName)
+            .replace(/\[Name\]/gi, fallbackName)
+            .replace(/\[Recipient's Name\]/gi, greetingName)
+            .replace(/\[Recipient Name\]/gi, greetingName)
             .replace(/\[Your Company\]/gi, companyName)
             .replace(/\[Company Name\]/gi, companyName)
             .replace(/\[Company\]/gi, companyName);
@@ -599,7 +606,7 @@ ${leadName}`);
     ensureProperGreeting(body, lead) {
         if (!body || !lead) return body;
 
-        const leadName = lead.Name || 'there';
+        const leadName = lead.Name || 'Sir/Madam';
         const bodyTrimmed = body.trim();
         
         // Check if body already starts with a proper greeting
