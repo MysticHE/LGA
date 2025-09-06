@@ -163,9 +163,9 @@
                         </select>
                         <select id="filterLastEmail" class="form-select filter-select">
                             <option value="">Last Email Sent</option>
-                            <option value="7">Past 7 Days</option>
-                            <option value="14">Past 14 Days</option>
-                            <option value="21">Past 21 Days</option>
+                            <option value="7-13">Last Email Past 7-13 Days</option>
+                            <option value="14-20">Last Email Past 14-20 Days</option>
+                            <option value="21+">Last Email Past 21+ Days</option>
                         </select>
                     </div>
                     <div class="flex gap-sm">
@@ -1634,15 +1634,23 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 const matchesTemplate = !templateFilter || 
                     (lead.Template_Used && lead.Template_Used === templateFilter);
                 
-                // Last Email Sent filter - shows leads that had emails sent to them within the specified time period
+                // Last Email Sent filter - shows leads based on when their last email was sent
                 let matchesLastEmail = true;
                 if (lastEmailFilter && lead.Last_Email_Date) {
-                    const filterDays = parseInt(lastEmailFilter);
                     const lastEmailDate = parseExcelDateForDisplay(lead.Last_Email_Date);
                     const currentDate = new Date();
-                    const daysDifference = (currentDate - lastEmailDate) / (1000 * 60 * 60 * 24);
+                    const daysDifference = Math.floor((currentDate - lastEmailDate) / (1000 * 60 * 60 * 24));
                     
-                    matchesLastEmail = daysDifference <= filterDays;
+                    if (lastEmailFilter === '7-13') {
+                        // Show leads with last email sent 7-13 days ago
+                        matchesLastEmail = daysDifference >= 7 && daysDifference <= 13;
+                    } else if (lastEmailFilter === '14-20') {
+                        // Show leads with last email sent 14-20 days ago
+                        matchesLastEmail = daysDifference >= 14 && daysDifference <= 20;
+                    } else if (lastEmailFilter === '21+') {
+                        // Show leads with last email sent 21 or more days ago
+                        matchesLastEmail = daysDifference >= 21;
+                    }
                 } else if (lastEmailFilter && !lead.Last_Email_Date) {
                     // If filter is selected but lead has no email sent to them, exclude it
                     matchesLastEmail = false;
@@ -1657,11 +1665,15 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             // Update display with pagination
             displayMasterListWithPagination(filteredData);
             
-            console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total (Search: "${searchTerm}", Status: "${statusFilter}", Template: "${templateFilter}", Last Email: "${lastEmailFilter} days")`);
+            console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total (Search: "${searchTerm}", Status: "${statusFilter}", Template: "${templateFilter}", Last Email: "${lastEmailFilter || 'none'}")`);
         }
 
-        // Send emails to filtered leads
+        // Send emails to selected or filtered leads
         async function sendFilteredEmails() {
+            // First, check if any leads are manually selected via checkboxes
+            const selectedCheckboxes = document.querySelectorAll('.lead-checkbox:checked');
+            const selectedEmails = Array.from(selectedCheckboxes).map(cb => cb.dataset.email);
+            
             const searchTerm = document.getElementById('searchLeads').value.toLowerCase();
             const statusFilter = document.getElementById('filterStatus').value.toLowerCase();
             const templateFilter = document.getElementById('filterTemplate').value;
@@ -1687,15 +1699,23 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 const matchesTemplate = !templateFilter || 
                     (lead.Template_Used && lead.Template_Used === templateFilter);
                 
-                // Last Email Sent filter - shows leads that had emails sent to them within the specified time period
+                // Last Email Sent filter - shows leads based on when their last email was sent
                 let matchesLastEmail = true;
                 if (lastEmailFilter && lead.Last_Email_Date) {
-                    const filterDays = parseInt(lastEmailFilter);
                     const lastEmailDate = parseExcelDateForDisplay(lead.Last_Email_Date);
                     const currentDate = new Date();
-                    const daysDifference = (currentDate - lastEmailDate) / (1000 * 60 * 60 * 24);
+                    const daysDifference = Math.floor((currentDate - lastEmailDate) / (1000 * 60 * 60 * 24));
                     
-                    matchesLastEmail = daysDifference <= filterDays;
+                    if (lastEmailFilter === '7-13') {
+                        // Show leads with last email sent 7-13 days ago
+                        matchesLastEmail = daysDifference >= 7 && daysDifference <= 13;
+                    } else if (lastEmailFilter === '14-20') {
+                        // Show leads with last email sent 14-20 days ago
+                        matchesLastEmail = daysDifference >= 14 && daysDifference <= 20;
+                    } else if (lastEmailFilter === '21+') {
+                        // Show leads with last email sent 21 or more days ago
+                        matchesLastEmail = daysDifference >= 21;
+                    }
                 } else if (lastEmailFilter && !lead.Last_Email_Date) {
                     // If filter is selected but lead has no email sent to them, exclude it
                     matchesLastEmail = false;
@@ -1704,25 +1724,82 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 return matchesSearch && matchesStatus && matchesTemplate && matchesLastEmail;
             });
             
-            if (filteredData.length === 0) {
-                alert('📧 No leads match the current filter criteria.\n\nPlease adjust your filters and try again.');
+            // Determine which leads to send emails to: selected leads take priority
+            let targetLeads = [];
+            let emailMode = '';
+            
+            if (selectedEmails.length > 0) {
+                // Priority 1: Use manually selected leads
+                targetLeads = window.originalMasterListData.filter(lead => 
+                    selectedEmails.includes(lead.Email)
+                );
+                emailMode = 'selected';
+            } else if (filteredData.length > 0) {
+                // Priority 2: Use filtered leads if no manual selection
+                const hasActiveFilters = searchTerm || statusFilter || templateFilter || lastEmailFilter;
+                
+                if (hasActiveFilters) {
+                    // User has applied filters, send to filtered results
+                    targetLeads = filteredData;
+                    emailMode = 'filtered';
+                } else {
+                    // No filters and no selection - ask user to select leads or apply filters
+                    alert('📧 No Leads Selected\n\nPlease either:\n• Select specific leads using the checkboxes, OR\n• Apply filters (Status, Template, etc.) to target specific leads\n\nThis prevents accidentally sending emails to all leads.');
+                    return;
+                }
+            } else {
+                alert('📧 No leads match the current filter criteria.\n\nPlease adjust your filters or select specific leads and try again.');
                 return;
             }
             
-            // Build filter description for confirmation
-            const filterDesc = [];
-            if (searchTerm) filterDesc.push(`Search: "${searchTerm}"`);
-            if (statusFilter) filterDesc.push(`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`);
-            if (templateFilter) filterDesc.push(`Template: ${templateFilter.replace('_', ' ')}`);
-            if (lastEmailFilter) filterDesc.push(`Last Email Sent: Past ${lastEmailFilter} Days`);
+            // Build description for confirmation
+            let confirmationTitle = '';
+            let confirmationMessage = '';
+            let criteriaDescription = '';
             
-            const filterDescription = filterDesc.length > 0 ? `\n\nFilter criteria:\n${filterDesc.join('\n')}` : '';
+            if (emailMode === 'selected') {
+                confirmationTitle = '📧 Send Emails to Selected Leads';
+                confirmationMessage = `This will send emails to ${targetLeads.length} manually selected leads.`;
+                
+                // Show which leads are selected
+                const selectedNames = targetLeads.map(lead => 
+                    `• ${lead.Name || 'No name'} (${lead.Email})`
+                ).slice(0, 5); // Show first 5
+                
+                if (targetLeads.length <= 5) {
+                    criteriaDescription = `\n\nSelected leads:\n${selectedNames.join('\n')}`;
+                } else {
+                    criteriaDescription = `\n\nSelected leads (first 5 of ${targetLeads.length}):\n${selectedNames.join('\n')}\n... and ${targetLeads.length - 5} more`;
+                }
+                
+            } else if (emailMode === 'filtered') {
+                confirmationTitle = '📧 Send Emails to Filtered Leads';
+                confirmationMessage = `This will send emails to ${targetLeads.length} leads that match your current filter settings.`;
+                
+                // Show active filters
+                const filterDesc = [];
+                if (searchTerm) filterDesc.push(`Search: "${searchTerm}"`);
+                if (statusFilter) filterDesc.push(`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`);
+                if (templateFilter) filterDesc.push(`Template: ${templateFilter.replace('_', ' ')}`);
+                if (lastEmailFilter) {
+                    let filterLabel = '';
+                    if (lastEmailFilter === '7-13') {
+                        filterLabel = 'Last Email Sent: 7-13 Days Ago';
+                    } else if (lastEmailFilter === '14-20') {
+                        filterLabel = 'Last Email Sent: 14-20 Days Ago';
+                    } else if (lastEmailFilter === '21+') {
+                        filterLabel = 'Last Email Sent: 21+ Days Ago';
+                    }
+                    filterDesc.push(filterLabel);
+                }
+                criteriaDescription = filterDesc.length > 0 ? `\n\nActive filters:\n${filterDesc.join('\n')}` : '';
+            }
             
             // Confirmation dialog
             const confirmed = confirm(
-                `📧 Send Emails to Filtered Leads\n\n` +
-                `This will send emails to ${filteredData.length} leads that match your current filter settings.` +
-                filterDescription +
+                `${confirmationTitle}\n\n` +
+                confirmationMessage +
+                criteriaDescription +
                 `\n\nEmails will be sent with rate limiting to maintain deliverability.\n\n` +
                 `Do you want to proceed?`
             );
@@ -1738,15 +1815,19 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             }
             
             try {
-                console.log(`🚀 Starting filtered email campaign to ${filteredData.length} leads...`);
+                const campaignName = emailMode === 'selected' 
+                    ? `Selected Campaign - ${new Date().toLocaleDateString()} - ${targetLeads.length} leads`
+                    : `Filtered Campaign - ${new Date().toLocaleDateString()} - ${targetLeads.length} leads`;
+                    
+                console.log(`🚀 Starting ${emailMode} email campaign to ${targetLeads.length} leads...`);
                 
                 const campaignData = {
-                    campaignName: `Filtered Campaign - ${new Date().toLocaleDateString()} - ${filteredData.length} leads`,
+                    campaignName: campaignName,
                     emailContentType: emailContentType,
-                    targetLeads: 'custom', // We'll use custom since we have our own filtered list
+                    targetLeads: 'custom', // We'll use custom since we have our own target list
                     sendSchedule: 'immediate',
                     followUpDays: 7,
-                    customLeadList: filteredData.map(lead => lead.Email) // Send email list for targeted sending
+                    customLeadList: targetLeads.map(lead => lead.Email) // Send email list for targeted sending
                 };
                 
                 const response = await fetch('/api/email-scheduler/campaigns/start', {
@@ -1764,11 +1845,12 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                     await refreshDashboard(); // Refresh to show updated stats
                     await loadMasterList(); // Refresh master list to show updated statuses
                     
+                    const modeText = emailMode === 'selected' ? 'manually selected' : 'filtered';
                     alert(
                         `✅ Email Campaign Started Successfully!\n\n` +
                         `📊 Campaign Details:\n` +
-                        `• Leads targeted: ${filteredData.length}\n` +
-                        `• Emails queued: ${result.emailsSent || result.emailsQueued || filteredData.length}\n` +
+                        `• Leads targeted: ${targetLeads.length} (${modeText})\n` +
+                        `• Emails queued: ${result.emailsSent || result.emailsQueued || targetLeads.length}\n` +
                         `• Template used: ${emailContentType.replace('_', ' ')}\n` +
                         `• Campaign ID: ${result.campaignId}\n\n` +
                         `Emails are being sent with proper rate limiting to maintain deliverability.`
