@@ -528,10 +528,29 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
             templateData.Active || 'Yes'
         ];
         
+        // First, discover what table to use
+        let actualTableName = tableName;
+        try {
+            const existingTables = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables`)
+                .get();
+            
+            if (existingTables.value.length > 0) {
+                // Use the first available table if our target doesn't exist
+                const targetTable = existingTables.value.find(t => t.name === tableName);
+                if (!targetTable) {
+                    actualTableName = existingTables.value[0].name;
+                    console.log(`🔄 Target table '${tableName}' not found, using existing table '${actualTableName}'`);
+                }
+            }
+        } catch (discoverError) {
+            console.log('📋 Could not discover existing tables, will try default name');
+        }
+
         try {
             // Try to add row to existing table first
             await graphClient
-                .api(`/me/drive/items/${fileId}/workbook/tables/${tableName}/rows/add`)
+                .api(`/me/drive/items/${fileId}/workbook/tables/${actualTableName}/rows/add`)
                 .post({
                     values: [templateRow]
                 });
@@ -539,18 +558,21 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
             console.log(`✅ Template added to existing table: ${templateId}`);
             
         } catch (tableError) {
-            console.log('📋 Table does not exist, creating it first...');
+            console.log('📋 Table operation failed, will try to create/fix table...');
             
             try {
-                // Create table if it doesn't exist
-                await createTemplatesTable(graphClient, fileId, worksheetName, tableName);
+                // Create table if it doesn't exist, or get existing table name
+                const returnedTableName = await createTemplatesTable(graphClient, fileId, worksheetName, tableName);
+                const tableNameToUse = returnedTableName || tableName;
+                
+                console.log(`📝 Using table name: ${tableNameToUse}`);
                 
                 // Wait a moment for table to be ready
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 
-                // Now add the row to the newly created table
+                // Now add the row to the table
                 await graphClient
-                    .api(`/me/drive/items/${fileId}/workbook/tables/${tableName}/rows/add`)
+                    .api(`/me/drive/items/${fileId}/workbook/tables/${tableNameToUse}/rows/add`)
                     .post({
                         values: [templateRow]
                     });
@@ -744,9 +766,21 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
             });
             
             // If there's already a table with our name, just return
-            if (existingTables.value.find(t => t.name === tableName)) {
+            const existingTargetTable = existingTables.value.find(t => t.name === tableName);
+            if (existingTargetTable) {
                 console.log(`✅ Table '${tableName}' already exists, skipping creation`);
                 return;
+            }
+            
+            // Check if there are any tables that might conflict
+            // Since we want to use A1:F1, let's try to use any existing table instead
+            if (existingTables.value.length > 0) {
+                const firstTable = existingTables.value[0];
+                console.log(`💡 Found existing table '${firstTable.name}' - will try to use it instead of creating new one`);
+                
+                // Update the table name we'll use to match the existing one
+                console.log(`🔄 Using existing table name '${firstTable.name}' instead of '${tableName}'`);
+                return firstTable.name; // Return the existing table name to use
             }
         } catch (error) {
             console.log('📋 No existing tables found or error checking tables');
