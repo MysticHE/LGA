@@ -692,7 +692,7 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-lg);
-    align-items: flex-end;
+    align-items: flex-start;
     margin-bottom: var(--space-md);
     padding: var(--space-lg);
     background: var(--grey-50);
@@ -783,12 +783,12 @@ body {
 
 /* Search and Filter Inputs */
 .search-input {
-    width: 250px;
-    min-width: 200px;
+    width: 180px;
+    min-width: 160px;
 }
 
 .filter-select {
-    width: 150px;
+    width: 140px;
     min-width: 120px;
 }
 
@@ -814,7 +814,11 @@ body {
     background: var(--success-grey-dark);
     border: 2px solid var(--success-grey-dark);
     font-weight: var(--font-weight-semibold);
-    padding: var(--space-sm) var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .primary-action-btn:hover {
