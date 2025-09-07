@@ -704,6 +704,10 @@
                     document.getElementById('repliesReceived').textContent = stats.data.repliesReceived || 0;
                     document.getElementById('newRecords').textContent = stats.data.newRecords || 0;
                 }
+                
+                // Also refresh templates when dashboard is refreshed
+                await loadTemplates();
+                
             } catch (error) {
                 console.error('❌ Dashboard refresh error:', error);
             }
@@ -725,6 +729,7 @@
                 if (result.success) {
                     templates = result.templates || [];
                     displayTemplates(templates);
+                    updateTemplateDropdowns(templates);
                 } else {
                     document.getElementById('templatesList').innerHTML = '<p>No templates found.</p>';
                 }
@@ -786,6 +791,50 @@
                     </div>
                 </div>
             `).join('');
+        }
+
+        // Update template dropdowns with current templates
+        function updateTemplateDropdowns(templateList) {
+            const activeTemplates = templateList.filter(t => t.Active === 'Yes');
+            
+            // Get all template dropdowns
+            const dropdowns = [
+                document.getElementById('emailContentSelect'),
+                document.getElementById('filterTemplate'),
+                document.getElementById('templateType'),
+                document.querySelector('#scheduleEmailModal select[id*="content"]')
+            ].filter(Boolean); // Remove any null elements
+            
+            dropdowns.forEach(dropdown => {
+                // Store current value
+                const currentValue = dropdown.value;
+                
+                // Get existing static options (like AI_Generated)
+                const staticOptions = Array.from(dropdown.querySelectorAll('option')).filter(option => 
+                    !option.value.startsWith('Email_Template_') || option.value === ''
+                );
+                
+                // Clear all options
+                dropdown.innerHTML = '';
+                
+                // Re-add static options
+                staticOptions.forEach(option => dropdown.appendChild(option.cloneNode(true)));
+                
+                // Add dynamic template options
+                activeTemplates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.Template_Type;
+                    option.textContent = template.Template_Name;
+                    dropdown.appendChild(option);
+                });
+                
+                // Restore previous value if it still exists
+                if (currentValue && Array.from(dropdown.options).some(opt => opt.value === currentValue)) {
+                    dropdown.value = currentValue;
+                }
+            });
+            
+            console.log(`📝 Updated template dropdowns with ${activeTemplates.length} active templates`);
         }
 
         // Global pagination variables

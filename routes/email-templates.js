@@ -528,7 +528,7 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
             templateData.Active || 'Yes'
         ];
         
-        // First, discover what table to use
+        // Discover what table to use
         let actualTableName = tableName;
         try {
             const existingTables = await graphClient
@@ -536,15 +536,14 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
                 .get();
             
             if (existingTables.value.length > 0) {
-                // Use the first available table if our target doesn't exist
                 const targetTable = existingTables.value.find(t => t.name === tableName);
                 if (!targetTable) {
                     actualTableName = existingTables.value[0].name;
-                    console.log(`🔄 Target table '${tableName}' not found, using existing table '${actualTableName}'`);
+                    console.log(`🔄 Using existing table '${actualTableName}' for templates`);
                 }
             }
         } catch (discoverError) {
-            console.log('📋 Could not discover existing tables, will try default name');
+            // Will use default table name
         }
 
         try {
@@ -558,14 +557,10 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
             console.log(`✅ Template added to existing table: ${templateId}`);
             
         } catch (tableError) {
-            console.log('📋 Table operation failed, will try to create/fix table...');
-            
             try {
                 // Create table if it doesn't exist, or get existing table name
                 const returnedTableName = await createTemplatesTable(graphClient, fileId, worksheetName, tableName);
                 const tableNameToUse = returnedTableName || tableName;
-                
-                console.log(`📝 Using table name: ${tableNameToUse}`);
                 
                 // Wait a moment for table to be ready
                 await new Promise(resolve => setTimeout(resolve, 1000));
@@ -577,7 +572,7 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
                         values: [templateRow]
                     });
                     
-                console.log(`✅ Template added to new table: ${templateId}`);
+                console.log(`✅ Template added: ${templateId}`);
                 
             } catch (createError) {
                 console.error('❌ Error creating table and adding template:', createError);
@@ -754,36 +749,26 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
     try {
         console.log(`🗂️ Creating Templates table '${tableName}'...`);
         
-        // First check if any tables already exist in the worksheet
+        // Check if any tables already exist in the worksheet
         try {
             const existingTables = await graphClient
                 .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables`)
                 .get();
             
-            console.log(`📋 Found ${existingTables.value.length} existing tables in '${worksheetName}':`);
-            existingTables.value.forEach(table => {
-                console.log(`  - ${table.name} (${table.range})`);
-            });
-            
             // If there's already a table with our name, just return
             const existingTargetTable = existingTables.value.find(t => t.name === tableName);
             if (existingTargetTable) {
-                console.log(`✅ Table '${tableName}' already exists, skipping creation`);
                 return;
             }
             
-            // Check if there are any tables that might conflict
-            // Since we want to use A1:F1, let's try to use any existing table instead
+            // Use any existing table to avoid conflicts
             if (existingTables.value.length > 0) {
                 const firstTable = existingTables.value[0];
-                console.log(`💡 Found existing table '${firstTable.name}' - will try to use it instead of creating new one`);
-                
-                // Update the table name we'll use to match the existing one
-                console.log(`🔄 Using existing table name '${firstTable.name}' instead of '${tableName}'`);
-                return firstTable.name; // Return the existing table name to use
+                console.log(`🔄 Using existing table '${firstTable.name}' for templates`);
+                return firstTable.name;
             }
         } catch (error) {
-            console.log('📋 No existing tables found or error checking tables');
+            // No existing tables found, will create new one
         }
         
         // Define template headers matching the Excel columns
@@ -819,33 +804,14 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
             name: tableName
         };
         
-        console.log(`📊 Creating table with range: ${tableRange}`);
-        console.log(`📊 Table request:`, JSON.stringify(tableRequest, null, 2));
-        
         await graphClient
             .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables/add`)
             .post(tableRequest);
         
-        console.log(`✅ Created Templates table '${tableName}' with headers: ${headers.join(', ')}`);
+        console.log(`✅ Created Templates table '${tableName}'`);
         
     } catch (error) {
-        console.error(`❌ Error creating Templates table:`, error);
-        
-        // If it's a table overlap error, list all existing tables for debugging
-        if (error.message && error.message.includes('overlap')) {
-            try {
-                const existingTables = await graphClient
-                    .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables`)
-                    .get();
-                console.log(`🔍 Debugging table overlap - Existing tables:`);
-                existingTables.value.forEach(table => {
-                    console.log(`  - Name: ${table.name}, Range: ${table.range}`);
-                });
-            } catch (debugError) {
-                console.log(`❌ Could not list existing tables for debugging:`, debugError.message);
-            }
-        }
-        
+        console.error(`❌ Error creating Templates table:`, error.message);
         throw error;
     }
 }
