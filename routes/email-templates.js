@@ -732,6 +732,26 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
     try {
         console.log(`🗂️ Creating Templates table '${tableName}'...`);
         
+        // First check if any tables already exist in the worksheet
+        try {
+            const existingTables = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables`)
+                .get();
+            
+            console.log(`📋 Found ${existingTables.value.length} existing tables in '${worksheetName}':`);
+            existingTables.value.forEach(table => {
+                console.log(`  - ${table.name} (${table.range})`);
+            });
+            
+            // If there's already a table with our name, just return
+            if (existingTables.value.find(t => t.name === tableName)) {
+                console.log(`✅ Table '${tableName}' already exists, skipping creation`);
+                return;
+            }
+        } catch (error) {
+            console.log('📋 No existing tables found or error checking tables');
+        }
+        
         // Define template headers matching the Excel columns
         const headers = ['Template_ID', 'Template_Name', 'Template_Type', 'Subject', 'Body', 'Active'];
         
@@ -765,6 +785,9 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
             name: tableName
         };
         
+        console.log(`📊 Creating table with range: ${tableRange}`);
+        console.log(`📊 Table request:`, JSON.stringify(tableRequest, null, 2));
+        
         await graphClient
             .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables/add`)
             .post(tableRequest);
@@ -773,6 +796,22 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
         
     } catch (error) {
         console.error(`❌ Error creating Templates table:`, error);
+        
+        // If it's a table overlap error, list all existing tables for debugging
+        if (error.message && error.message.includes('overlap')) {
+            try {
+                const existingTables = await graphClient
+                    .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables`)
+                    .get();
+                console.log(`🔍 Debugging table overlap - Existing tables:`);
+                existingTables.value.forEach(table => {
+                    console.log(`  - Name: ${table.name}, Range: ${table.range}`);
+                });
+            } catch (debugError) {
+                console.log(`❌ Could not list existing tables for debugging:`, debugError.message);
+            }
+        }
+        
         throw error;
     }
 }
