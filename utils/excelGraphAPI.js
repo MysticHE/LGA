@@ -71,6 +71,9 @@ async function updateLeadViaGraphAPI(graphClient, email, updates) {
         const headers = usedRange.values[0];
         const rows = usedRange.values.slice(1);
         
+        // Debug: Log all headers found
+        console.log(`📋 Excel headers found: ${headers.join(', ')}`);
+        
         // Find email column and target row
         const emailColumnIndex = headers.findIndex(header => 
             header && typeof header === 'string' && 
@@ -98,9 +101,46 @@ async function updateLeadViaGraphAPI(graphClient, email, updates) {
             return false;
         }
         
+        // Helper function for flexible header matching
+        function findHeaderIndex(headers, fieldName) {
+            // Normalize field name for comparison
+            const normalizeString = (str) => str.toString().toLowerCase().trim().replace(/[\s_-]+/g, '');
+            const normalizedField = normalizeString(fieldName);
+            
+            // Try exact match first
+            let colIndex = headers.findIndex(h => h === fieldName);
+            if (colIndex !== -1) return colIndex;
+            
+            // Try case-insensitive exact match
+            colIndex = headers.findIndex(h => 
+                h && h.toString().toLowerCase().trim() === fieldName.toLowerCase().trim()
+            );
+            if (colIndex !== -1) return colIndex;
+            
+            // Try normalized comparison (ignore spaces, underscores, hyphens)
+            colIndex = headers.findIndex(h => 
+                h && normalizeString(h) === normalizedField
+            );
+            if (colIndex !== -1) return colIndex;
+            
+            // For Email_Count, also try variations like "Email Count", "EmailCount", etc.
+            if (fieldName === 'Email_Count') {
+                const variations = ['Email Count', 'EmailCount', 'Email-Count', 'email_count', 'email count', 'emailcount'];
+                for (const variation of variations) {
+                    colIndex = headers.findIndex(h => 
+                        h && normalizeString(h) === normalizeString(variation)
+                    );
+                    if (colIndex !== -1) return colIndex;
+                }
+            }
+            
+            return -1;
+        }
+        
         // Update each field
+        console.log(`🔄 Updating ${Object.keys(updates).length} fields: ${Object.keys(updates).join(', ')}`);
         for (const [field, value] of Object.entries(updates)) {
-            const colIndex = headers.findIndex(h => h === field);
+            const colIndex = findHeaderIndex(headers, field);
             if (colIndex !== -1) {
                 const cellAddress = `${getExcelColumnLetter(colIndex)}${targetRowIndex}`;
                 
@@ -111,10 +151,12 @@ async function updateLeadViaGraphAPI(graphClient, email, updates) {
                             values: [[value]]
                         });
                     
-                    console.log(`📝 Updated ${field} = ${value} at ${cellAddress}`);
+                    console.log(`📝 Updated ${field} = ${value} at ${cellAddress} (header: ${headers[colIndex]})`);
                 } catch (cellError) {
                     console.error(`❌ Failed to update ${field} at ${cellAddress}:`, cellError.message);
                 }
+            } else {
+                console.warn(`⚠️ Header not found for field: ${field}. Available headers: ${headers.join(', ')}`);
             }
         }
         

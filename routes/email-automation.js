@@ -1032,8 +1032,6 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             Email_Count: (lead.Email_Count || 0) + 1,
             Template_Used: emailContent.contentType,
             Next_Email_Date: calculateNextEmailDate(new Date(), lead.Follow_Up_Days || 7),
-            'Email Sent': 'Yes',
-            'Email Status': 'Sent',
             'Email Bounce': 'No', // Initialize bounce status
             'Sent By': senderEmail
         };
@@ -1199,8 +1197,6 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                         Last_Email_Date: new Date().toISOString().split('T')[0],
                         Email_Count: (lead.Email_Count || 0) + 1,
                         Template_Used: emailContent.contentType,
-                        'Email Sent': 'Yes',
-                        'Email Status': 'Sent',
                         'Email Bounce': 'No' // Initialize bounce status
                     };
 
@@ -1250,8 +1246,6 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
                             Status: 'Failed',
                             Last_Email_Date: new Date().toISOString().split('T')[0],
                             Email_Count: (lead.Email_Count || 0) + 1, // Still increment attempt count
-                            'Email Sent': 'No',
-                            'Email Status': 'Failed',
                             'Email Bounce': 'No',
                             'Failed Date': new Date().toISOString(),
                             'Failure Reason': emailError.message?.substring(0, 255) || 'Unknown error' // Limit length

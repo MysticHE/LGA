@@ -1176,8 +1176,6 @@ async function updateLeadTrackingInTable(client, fileId, tableName, leadEmail, t
         
         // Update tracking fields
         const updateFields = {
-            'Email Sent': trackingData.sent ? 'Yes' : 'No',
-            'Email Status': trackingData.status || 'Sent',
             'Sent Date': trackingData.sentDate || '',
             'Read Date': trackingData.readDate || '',
             'Reply Date': trackingData.replyDate || '',
@@ -1242,9 +1240,7 @@ function normalizeLeadData(lead) {
         'Reply_Date': lead['Reply_Date'] || '',
         'Email Bounce': lead['Email Bounce'] || 'No', // Initialize bounce status
         
-        // Legacy compatibility columns
-        'Email Sent': lead['Email Sent'] || '',
-        'Email Status': lead['Email Status'] || 'Not Sent',
+        // Legacy compatibility columns removed
         'Sent Date': lead['Sent Date'] || ''
     };
 }
@@ -1479,9 +1475,7 @@ function getColumnWidths() {
         {width: 18}, // Read_Date
         {width: 18}, // Reply_Date
         
-        // Legacy compatibility columns
-        {width: 12}, // Email Sent
-        {width: 15}, // Email Status
+        // Legacy compatibility columns removed
         {width: 20}  // Sent Date
     ];
 }

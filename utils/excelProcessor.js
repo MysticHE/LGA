@@ -53,8 +53,7 @@ class ExcelProcessor {
             'Email_Count': 'number',
             'Read_Date': 'date',
             'Reply_Date': 'date',
-            'Email Bounce': 'text', // Yes|No
-            'Email Sent': 'text' // Yes|No (legacy compatibility)
+            'Email Bounce': 'text' // Yes|No
         };
     }
 
@@ -463,8 +462,7 @@ class ExcelProcessor {
         normalized['Reply_Date'] = '';
         normalized['Email Bounce'] = 'No'; // Initialize bounce status
         
-        // Legacy compatibility  
-        normalized['Email Sent'] = '';
+        // Legacy fields removed for cleaner structure
 
         return normalized;
     }
@@ -888,8 +886,7 @@ class ExcelProcessor {
             {width: 12}, // Email_Count
             {width: 18}, // Read_Date
             {width: 18}, // Reply_Date
-            {width: 15}, // Email Bounce
-            {width: 12}  // Email Sent (legacy compatibility)
+            {width: 15}  // Email Bounce
         ];
     }
 

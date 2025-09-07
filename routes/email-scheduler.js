@@ -555,8 +555,6 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                     Next_Email_Date: calculateNextEmailDate(new Date(), followUpDays || 7),
                     Email_Count: (lead.Email_Count || 0) + 1,
                     Template_Used: emailContent.contentType,
-                    'Email Sent': 'Yes',
-                    'Email Status': 'Sent',
                     'Email Bounce': 'No',
                     Campaign_ID: campaignId
                 };
@@ -607,8 +605,6 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                     Status: 'Failed',
                     Last_Email_Date: new Date().toISOString().split('T')[0],
                     Email_Count: (lead.Email_Count || 0) + 1,
-                    'Email Sent': 'No',
-                    'Email Status': 'Failed',
                     'Email Bounce': 'No',
                     'Failed Date': new Date().toISOString(),
                     'Failure Reason': error.message?.substring(0, 255) || 'Unknown error',

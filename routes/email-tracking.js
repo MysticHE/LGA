@@ -255,7 +255,7 @@ router.get('/diagnostic/:email?', requireDelegatedAuth, async (req, res) => {
                 
                 if (lead.Read_Date) trackingSummary.trackingStats.withReadDate++;
                 if (lead.Reply_Date) trackingSummary.trackingStats.withReplyDate++;
-                if (lead.Last_Email_Date || lead['Email Sent'] === 'Yes') trackingSummary.trackingStats.emailsSent++;
+                if (lead.Last_Email_Date || lead.Status === 'Sent') trackingSummary.trackingStats.emailsSent++;
                 
                 // Add recent activity (last 7 days)
                 if (lead['Last Updated']) {

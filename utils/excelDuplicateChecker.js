@@ -119,16 +119,8 @@ class ExcelDuplicateChecker {
             };
         }
 
-        // Priority 4: Check 'Email Sent' column
-        if (lead['Email Sent']) {
-            const emailSent = lead['Email Sent'].toString().toLowerCase();
-            if (emailSent === 'yes' || emailSent === 'true' || emailSent === '1') {
-                return {
-                    alreadySent: true,
-                    reason: `'Email Sent' is '${lead['Email Sent']}' - already sent`
-                };
-            }
-        }
+        // Priority 4: 'Email Sent' column removed - using Status field instead
+        // This check is now handled by Priority 2: Status-based check
 
         // Priority 5: 'Sent Date' column removed - using other indicators
         // This check was removed as 'Sent Date' is no longer updated by the system
@@ -236,8 +228,7 @@ class ExcelDuplicateChecker {
                     leadData: result.leadData ? {
                         Status: result.leadData.Status,
                         Last_Email_Date: result.leadData.Last_Email_Date,
-                        Email_Count: result.leadData.Email_Count,
-                        'Email Sent': result.leadData['Email Sent']
+                        Email_Count: result.leadData.Email_Count
                     } : null
                 });
 

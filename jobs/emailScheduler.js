@@ -401,8 +401,6 @@ class EmailScheduler {
                         new Date(), 
                         lead.Follow_Up_Days || 7
                     ),
-                    'Email Sent': 'Yes',
-                    'Email Status': 'Sent',
                     'Last Updated': require('../utils/dateFormatter').getCurrentFormattedDate()
                 };
 
