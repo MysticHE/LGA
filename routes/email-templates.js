@@ -751,13 +751,13 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
         
         // Write headers to first row
         await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/range(address='A1:${getExcelColumnLetter(headers.length)}1')`)
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/range(address='A1:${getExcelColumnLetter(headers.length - 1)}1')`)
             .patch({
                 values: [headers]
             });
         
         // Create table from header row
-        const tableRange = `A1:${getExcelColumnLetter(headers.length)}1`;
+        const tableRange = `A1:${getExcelColumnLetter(headers.length - 1)}1`;
         
         const tableRequest = {
             address: tableRange,

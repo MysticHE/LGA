@@ -878,13 +878,13 @@ async function createEmptyExcelTable(client, fileId, worksheetName, tableName, h
         
         // Write only the header row to establish table structure
         await client
-            .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/range(address='A1:${getExcelColumnLetter(headers.length)}1')`)
+            .api(`/me/drive/items/${fileId}/workbook/worksheets/${worksheetName}/range(address='A1:${getExcelColumnLetter(headers.length - 1)}1')`)
             .patch({
                 values: [headers]
             });
         
         // Create table from header row only (A1 to last header column)
-        const tableRange = `A1:${getExcelColumnLetter(headers.length)}1`;
+        const tableRange = `A1:${getExcelColumnLetter(headers.length - 1)}1`;
         
         const tableRequest = {
             address: tableRange,
@@ -920,7 +920,7 @@ async function createExcelTableInFile(client, fileId, worksheetName, tableName, 
         const numRows = initialData.length + 1; // +1 for header row
         
         // Convert column number to Excel column letter
-        const endCol = getExcelColumnLetter(numCols);
+        const endCol = getExcelColumnLetter(numCols - 1);
         const tableRange = `A1:${endCol}${numRows}`;
         
         console.log(`🆕 Creating table '${tableName}' with range ${tableRange}`);
@@ -1018,7 +1018,7 @@ async function populateWorksheetWithData(client, fileId, worksheetName, data) {
         // Calculate range
         const numCols = headers.length;
         const numRows = tableData.length;
-        const endCol = getExcelColumnLetter(numCols);
+        const endCol = getExcelColumnLetter(numCols - 1);
         const range = `A1:${endCol}${numRows}`;
         
         // Update worksheet range
@@ -1358,7 +1358,7 @@ async function convertExistingDataToTable(client, fileId, worksheetName, tableNa
         // Calculate range for the table
         const numCols = finalHeaders.length;
         const numRows = tableData.length;
-        const endCol = getExcelColumnLetter(numCols);
+        const endCol = getExcelColumnLetter(numCols - 1);
         const tableRange = `A1:${endCol}${numRows}`;
         
         console.log(`📝 Writing ${normalizedExistingData.length} rows to table range...`);

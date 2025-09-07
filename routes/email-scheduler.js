@@ -1185,7 +1185,7 @@ async function updateCampaignStatusViaGraphAPI(graphClient, campaignId, newStatu
             
             // Update the status cell
             const excelRowNumber = targetRowIndex + 2; // +2 for header row and 0-based index
-            const statusColumnLetter = getExcelColumnLetter(statusIndex + 1);
+            const statusColumnLetter = getExcelColumnLetter(statusIndex);
             const cellAddress = `${statusColumnLetter}${excelRowNumber}`;
             
             await graphClient
