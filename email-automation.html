@@ -154,12 +154,11 @@
                             <option value="bounced">Bounced</option>
                         </select>
                         <select id="filterTemplate" class="form-select filter-select">
-                            <option value="">All Templates</option>
+                            <option value="">All Email Content</option>
                             <option value="AI_Generated">AI Generated</option>
-                            <option value="First_Contact">First Contact</option>
-                            <option value="Follow_Up">Follow Up</option>
                             <option value="Email_Template_1">Email Template 1</option>
                             <option value="Email_Template_2">Email Template 2</option>
+                            <option value="Email_Template_3">Email Template 3</option>
                         </select>
                         <select id="filterLastEmail" class="form-select filter-select">
                             <option value="">Last Email Sent</option>
@@ -169,6 +168,12 @@
                         </select>
                     </div>
                     <div class="flex gap-sm">
+                        <select id="emailContentSelect" class="form-select" title="Choose email content to send">
+                            <option value="AI_Generated">AI Generated</option>
+                            <option value="Email_Template_1">Email Template 1</option>
+                            <option value="Email_Template_2">Email Template 2</option>
+                            <option value="Email_Template_3">Email Template 3</option>
+                        </select>
                         <button class="btn btn-success" onclick="sendFilteredEmails()" title="Send emails to filtered leads">
                             Send Emails
                         </button>
@@ -257,10 +262,9 @@
                     <label class="form-label">Template Type:</label>
                     <select id="templateType" class="form-select" required>
                         <option value="">Select type...</option>
-                        <option value="First_Contact">First Contact</option>
-                        <option value="Follow_Up">Follow Up</option>
-                        <option value="Nurture">Nurture</option>
-                        <option value="Re_Engagement">Re-engagement</option>
+                        <option value="Email_Template_1">Email Template 1</option>
+                        <option value="Email_Template_2">Email Template 2</option>
+                        <option value="Email_Template_3">Email Template 3</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -1795,11 +1799,15 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 criteriaDescription = filterDesc.length > 0 ? `\n\nActive filters:\n${filterDesc.join('\n')}` : '';
             }
             
+            // Get selected email content type for confirmation
+            const emailContentType = document.getElementById('emailContentSelect').value;
+            
             // Confirmation dialog
             const confirmed = confirm(
                 `${confirmationTitle}\n\n` +
                 confirmationMessage +
                 criteriaDescription +
+                `\n\nEmail Content: ${emailContentType.replace('_', ' ')}\n` +
                 `\n\nEmails will be sent with rate limiting to maintain deliverability.\n\n` +
                 `Do you want to proceed?`
             );
@@ -1808,11 +1816,6 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 return;
             }
             
-            // Determine template type for email content
-            let emailContentType = 'AI_Generated'; // Default
-            if (templateFilter) {
-                emailContentType = templateFilter;
-            }
             
             try {
                 const campaignName = emailMode === 'selected' 
