@@ -500,6 +500,8 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
     try {
         const masterFileName = 'LGA-Master-Email-List.xlsx';
         const masterFolderPath = '/LGA-Email-Automation';
+        const worksheetName = 'Templates';
+        const tableName = 'TemplatesTable';
         
         // Get Excel file ID
         const files = await graphClient
@@ -526,14 +528,41 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
             templateData.Active || 'Yes'
         ];
         
-        // Add row to Templates sheet
-        await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/tables('TemplatesTable')/rows`)
-            .post({
-                values: [templateRow]
-            });
+        try {
+            // Try to add row to existing table first
+            await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/tables/${tableName}/rows/add`)
+                .post({
+                    values: [templateRow]
+                });
+                
+            console.log(`✅ Template added to existing table: ${templateId}`);
+            
+        } catch (tableError) {
+            console.log('📋 Table does not exist, creating it first...');
+            
+            try {
+                // Create table if it doesn't exist
+                await createTemplatesTable(graphClient, fileId, worksheetName, tableName);
+                
+                // Wait a moment for table to be ready
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Now add the row to the newly created table
+                await graphClient
+                    .api(`/me/drive/items/${fileId}/workbook/tables/${tableName}/rows/add`)
+                    .post({
+                        values: [templateRow]
+                    });
+                    
+                console.log(`✅ Template added to new table: ${templateId}`);
+                
+            } catch (createError) {
+                console.error('❌ Error creating table and adding template:', createError);
+                throw createError;
+            }
+        }
         
-        console.log(`✅ Template added via Graph API: ${templateId}`);
         return templateId;
         
     } catch (error) {
@@ -656,7 +685,7 @@ async function deleteTemplateViaGraphAPI(graphClient, templateId) {
         
         // Delete row from table
         await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/tables('TemplatesTable')/rows/itemAt(index=${targetRowIndex})`)
+            .api(`/me/drive/items/${fileId}/workbook/tables/TemplatesTable/rows/itemAt(index=${targetRowIndex})`)
             .delete();
         
         return true;
@@ -695,6 +724,56 @@ async function toggleTemplateStatusViaGraphAPI(graphClient, templateId) {
     } catch (error) {
         console.error('❌ Toggle template status via Graph API error:', error);
         return { success: false };
+    }
+}
+
+// Create Templates table if it doesn't exist
+async function createTemplatesTable(graphClient, fileId, worksheetName, tableName) {
+    try {
+        console.log(`🗂️ Creating Templates table '${tableName}'...`);
+        
+        // Define template headers matching the Excel columns
+        const headers = ['Template_ID', 'Template_Name', 'Template_Type', 'Subject', 'Body', 'Active'];
+        
+        // Check if worksheet exists, create it if not
+        try {
+            await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')`)
+                .get();
+        } catch (worksheetError) {
+            console.log(`📝 Creating worksheet '${worksheetName}'...`);
+            await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets/add`)
+                .post({
+                    name: worksheetName
+                });
+        }
+        
+        // Write headers to first row
+        await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/range(address='A1:${getExcelColumnLetter(headers.length)}1')`)
+            .patch({
+                values: [headers]
+            });
+        
+        // Create table from header row
+        const tableRange = `A1:${getExcelColumnLetter(headers.length)}1`;
+        
+        const tableRequest = {
+            address: tableRange,
+            hasHeaders: true,
+            name: tableName
+        };
+        
+        await graphClient
+            .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/tables/add`)
+            .post(tableRequest);
+        
+        console.log(`✅ Created Templates table '${tableName}' with headers: ${headers.join(', ')}`);
+        
+    } catch (error) {
+        console.error(`❌ Error creating Templates table:`, error);
+        throw error;
     }
 }
 

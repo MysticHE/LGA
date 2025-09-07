@@ -110,9 +110,6 @@
                 <div class="card-header">
                     <h3 class="card-title">Email Templates</h3>
                     <div class="flex gap-sm">
-                        <button class="btn" onclick="loadTemplates()" title="Refresh Templates">
-                            Refresh
-                        </button>
                         <button class="btn btn-success" onclick="openTemplateModal()" title="Create New Template">
                             New Template
                         </button>
@@ -125,13 +122,8 @@
                     </div>
                 </div>
                 <div class="mt-lg">
-                    <div class="flex-between">
-                        <div class="template-stats" id="templateStats">
-                            <span class="text-muted">0 templates</span>
-                        </div>
-                        <button class="btn btn-outline" onclick="importTemplates()" title="Import Templates">
-                            Import
-                        </button>
+                    <div class="template-stats" id="templateStats">
+                        <span class="text-muted">0 templates</span>
                     </div>
                 </div>
             </div>
@@ -759,9 +751,6 @@
                         <div style="font-size: 48px; margin-bottom: var(--space-md);">📝</div>
                         <p>No templates created yet.</p>
                         <p class="text-muted">Create your first email template to get started.</p>
-                        <button class="btn btn-success mt-lg" onclick="openTemplateModal()">
-                            ➕ Create First Template
-                        </button>
                     </div>
                 `;
                 return;
@@ -1497,10 +1486,6 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                   '💡 Tip: Duplicate emails will be automatically merged!');
         }
 
-        // Import templates
-        function importTemplates() {
-            alert('📥 Import Templates\n\nImport templates from:\n- JSON file\n- Another LGA instance\n- Template marketplace\n\nComing soon!');
-        }
 
         // Show campaign history
         function showCampaignHistory() {
