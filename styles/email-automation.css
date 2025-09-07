@@ -687,7 +687,101 @@ body {
     gap: var(--space-sm);
 }
 
-/* Search and Filter */
+/* Enhanced Master List Controls */
+.master-list-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+    align-items: flex-end;
+    margin-bottom: var(--space-md);
+    padding: var(--space-lg);
+    background: var(--grey-50);
+    border-radius: var(--border-radius-lg);
+    border: var(--border-width) solid var(--grey-200);
+}
+
+/* Filter Section */
+.filter-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    flex: 1;
+    min-width: 300px;
+}
+
+.filter-section-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-xs);
+}
+
+.section-label {
+    font-size: 12px;
+    font-weight: var(--font-weight-semibold);
+    color: var(--grey-700);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.section-icon {
+    font-size: 14px;
+}
+
+.filter-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    align-items: center;
+}
+
+/* Email Actions Section */
+.email-actions-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    min-width: 300px;
+}
+
+.email-actions-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    align-items: center;
+}
+
+.template-selector-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    min-width: 180px;
+}
+
+.template-selector-label {
+    font-size: 11px;
+    font-weight: var(--font-weight-medium);
+    color: var(--grey-600);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Visual Separator */
+.section-divider {
+    width: 2px;
+    height: 60px;
+    background: linear-gradient(to bottom, 
+        transparent 0%, 
+        var(--grey-300) 20%, 
+        var(--grey-300) 80%, 
+        transparent 100%);
+    border-radius: 1px;
+    align-self: center;
+}
+
+/* Search and Filter Inputs */
 .search-input {
     width: 250px;
     min-width: 200px;
@@ -698,9 +792,36 @@ body {
     min-width: 120px;
 }
 
+.email-content-select {
+    width: 180px;
+    min-width: 160px;
+    border: 2px solid var(--success-grey-dark);
+    background: var(--white);
+}
+
+.email-content-select:focus {
+    border-color: var(--success-grey-dark);
+    box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.1);
+}
+
 .pagination-select {
     width: 80px;
     min-width: 70px;
+}
+
+/* Action Button Styling */
+.primary-action-btn {
+    background: var(--success-grey-dark);
+    border: 2px solid var(--success-grey-dark);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--space-sm) var(--space-lg);
+}
+
+.primary-action-btn:hover {
+    background: #38a169;
+    border-color: #38a169;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
 }
 
 /* Utility Classes */
@@ -770,6 +891,27 @@ body {
     .campaign-actions-grid {
         grid-template-columns: 1fr;
     }
+    
+    /* Responsive Master List Controls */
+    .master-list-controls {
+        flex-direction: column;
+        gap: var(--space-lg);
+    }
+    
+    .section-divider {
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(to right, 
+            transparent 0%, 
+            var(--grey-300) 20%, 
+            var(--grey-300) 80%, 
+            transparent 100%);
+    }
+    
+    .filter-section,
+    .email-actions-section {
+        min-width: auto;
+    }
 }
 
 @media (max-width: 768px) {
@@ -802,12 +944,26 @@ body {
         grid-template-columns: 1fr 1fr;
     }
     
-    .search-input {
-        width: 100%;
+    /* Mobile Master List Controls */
+    .master-list-controls {
+        padding: var(--space-md);
     }
     
-    .filter-select {
+    .filter-controls,
+    .email-actions-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .search-input,
+    .filter-select,
+    .email-content-select {
         width: 100%;
+        min-width: auto;
+    }
+    
+    .template-selector-wrapper {
+        min-width: auto;
     }
     
     .form-actions {
