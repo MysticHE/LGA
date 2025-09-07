@@ -687,12 +687,15 @@ body {
     gap: var(--space-sm);
 }
 
-/* Enhanced Master List Controls */
-.master-list-controls {
+/* Header Email Actions */
+.header-email-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-lg);
-    align-items: flex-start;
+    gap: var(--space-md);
+    align-items: flex-end;
+}
+
+/* Simplified Filter Controls */
+.filter-only-controls {
     margin-bottom: var(--space-md);
     padding: var(--space-lg);
     background: var(--grey-50);
@@ -783,13 +786,13 @@ body {
 
 /* Search and Filter Inputs */
 .search-input {
-    width: 180px;
-    min-width: 160px;
+    width: 220px;
+    min-width: 200px;
 }
 
 .filter-select {
-    width: 140px;
-    min-width: 120px;
+    width: 180px;
+    min-width: 160px;
 }
 
 .email-content-select {
@@ -896,24 +899,14 @@ body {
         grid-template-columns: 1fr;
     }
     
-    /* Responsive Master List Controls */
-    .master-list-controls {
+    /* Responsive Header Email Actions */
+    .header-email-actions {
         flex-direction: column;
-        gap: var(--space-lg);
+        align-items: stretch;
+        gap: var(--space-sm);
     }
     
-    .section-divider {
-        width: 100%;
-        height: 2px;
-        background: linear-gradient(to right, 
-            transparent 0%, 
-            var(--grey-300) 20%, 
-            var(--grey-300) 80%, 
-            transparent 100%);
-    }
-    
-    .filter-section,
-    .email-actions-section {
+    .template-selector-wrapper {
         min-width: auto;
     }
 }
@@ -948,13 +941,12 @@ body {
         grid-template-columns: 1fr 1fr;
     }
     
-    /* Mobile Master List Controls */
-    .master-list-controls {
+    /* Mobile Filter Controls */
+    .filter-only-controls {
         padding: var(--space-md);
     }
     
-    .filter-controls,
-    .email-actions-controls {
+    .filter-controls {
         flex-direction: column;
         align-items: stretch;
     }
@@ -964,6 +956,12 @@ body {
     .email-content-select {
         width: 100%;
         min-width: auto;
+    }
+    
+    .header-email-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-sm);
     }
     
     .template-selector-wrapper {
