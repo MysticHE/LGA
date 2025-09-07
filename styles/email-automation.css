@@ -694,6 +694,18 @@ body {
     align-items: flex-end;
 }
 
+.header-email-actions .template-selector-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-direction: row;
+}
+
+.header-email-actions .template-selector-label {
+    white-space: nowrap;
+    margin-bottom: 0;
+}
+
 /* Simplified Filter Controls */
 .filter-only-controls {
     margin-bottom: var(--space-md);

@@ -1678,8 +1678,82 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             console.log(`Filtered ${filteredData.length} leads from ${window.originalMasterListData.length} total (Search: "${searchTerm}", Status: "${statusFilter}", Template: "${templateFilter}", Last Email: "${lastEmailFilter || 'none'}")`);
         }
 
+        // Validate email template content
+        async function validateEmailTemplate(templateType) {
+            if (templateType === 'AI_Generated') {
+                // AI Generated is always valid as it creates content dynamically
+                return { isValid: true };
+            }
+            
+            try {
+                // Check if template exists and has content
+                const response = await fetch('/api/email-templates', {
+                    headers: {
+                        'X-Session-Id': sessionId
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    return { 
+                        isValid: false, 
+                        message: 'Unable to load email templates. Please try again.' 
+                    };
+                }
+                
+                // Find the selected template
+                const selectedTemplate = result.templates.find(template => 
+                    template.Template_Type === templateType
+                );
+                
+                if (!selectedTemplate) {
+                    return { 
+                        isValid: false, 
+                        message: `${templateType.replace('_', ' ')} does not exist.\n\nPlease create this template first or select a different email content type.` 
+                    };
+                }
+                
+                // Check if template is active
+                if (selectedTemplate.Active !== 'Yes') {
+                    return { 
+                        isValid: false, 
+                        message: `${templateType.replace('_', ' ')} is currently inactive.\n\nPlease activate the template or select a different email content type.` 
+                    };
+                }
+                
+                // Check if template has content
+                if (!selectedTemplate.Subject || !selectedTemplate.Body || 
+                    selectedTemplate.Subject.trim() === '' || selectedTemplate.Body.trim() === '') {
+                    return { 
+                        isValid: false, 
+                        message: `${templateType.replace('_', ' ')} is missing content.\n\nPlease add subject and body content to the template or select a different email content type.` 
+                    };
+                }
+                
+                return { isValid: true };
+                
+            } catch (error) {
+                console.error('Template validation error:', error);
+                return { 
+                    isValid: false, 
+                    message: 'Unable to validate email template. Please check your connection and try again.' 
+                };
+            }
+        }
+
         // Send emails to selected or filtered leads
         async function sendFilteredEmails() {
+            // Get selected email content type first for validation
+            const emailContentType = document.getElementById('emailContentSelect').value;
+            
+            // Validate email template before proceeding
+            const templateValidation = await validateEmailTemplate(emailContentType);
+            if (!templateValidation.isValid) {
+                alert(`❌ Email Template Error\n\n${templateValidation.message}`);
+                return;
+            }
+            
             // First, check if any leads are manually selected via checkboxes
             const selectedCheckboxes = document.querySelectorAll('.lead-checkbox:checked');
             const selectedEmails = Array.from(selectedCheckboxes).map(cb => cb.dataset.email);
@@ -1805,8 +1879,7 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 criteriaDescription = filterDesc.length > 0 ? `\n\nActive filters:\n${filterDesc.join('\n')}` : '';
             }
             
-            // Get selected email content type for confirmation
-            const emailContentType = document.getElementById('emailContentSelect').value;
+            // emailContentType already declared at the beginning of the function
             
             // Confirmation dialog
             const confirmed = confirm(
