@@ -211,7 +211,7 @@
                             <th>Email</th>
                             <th>Company</th>
                             <th>Status</th>
-                            <th>Campaign Stage</th>
+                            <th>Email Count</th>
                             <th>Last Email</th>
                         </tr>
                     </thead>
@@ -877,7 +877,7 @@
                     <td title="${lead.Email}">${lead.Email || ''}</td>
                     <td title="${lead['Company Name'] || 'No company'}">${lead['Company Name'] || '<span class="text-muted">No company</span>'}</td>
                     <td><span class="status-badge status-${(lead.Status || 'new').toLowerCase()}">${lead.Status || 'New'}</span></td>
-                    <td title="${lead.Campaign_Stage || 'First_Contact'}">${(lead.Campaign_Stage || 'First_Contact').replace('_', ' ')}</td>
+                    <td title="Number of emails sent to this lead">${lead.Email_Count || 0}</td>
                     <td title="${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleString() : 'Never sent'}">${lead.Last_Email_Date ? parseExcelDateForDisplay(lead.Last_Email_Date).toLocaleDateString() : '-'}</td>
                 </tr>
                 `;
