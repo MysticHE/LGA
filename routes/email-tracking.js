@@ -594,7 +594,6 @@ router.get('/test-process-stored-events', async (req, res) => {
     try {
         console.log('🧪 TEST: Manually processing stored tracking events...');
         
-        const trackingFallback = new TrackingFallback();
         const results = await trackingFallback.processStoredEvents();
         
         res.json({
@@ -617,4 +616,6 @@ router.get('/test-process-stored-events', async (req, res) => {
     }
 });
 
+// Export both the router and the TrackingFallbackManager class
 module.exports = router;
+module.exports.TrackingFallbackManager = TrackingFallbackManager;
