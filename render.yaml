@@ -3,7 +3,6 @@ services:
     name: lead-generation-automation
     env: node
     plan: free
-    buildCommand: npm ci --only=production --no-audit --no-fund --prefer-offline
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -29,8 +28,6 @@ services:
         value: https://lead-generation-automation.onrender.com
     healthCheckPath: /
     # Optimize build settings
-    buildPhase: 
-      commands:
-        - npm ci --only=production --no-audit --no-fund
+    buildCommand: npm ci --only=production --no-audit --no-fund
     # Add disk space optimization
     disk: 512
