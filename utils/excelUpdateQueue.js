@@ -80,7 +80,10 @@ class ExcelUpdateQueue {
                 queue.push(updateItem);
             }
             
-            console.log(`📋 Queued Excel update: ${context.type || 'update'} for ${context.email || fileId} (priority: ${updateItem.priority}, queue length: ${queue.length})`);
+            // Only log queue operations if not in quiet mode
+            if (!context.quiet) {
+                console.log(`📋 Queued Excel update: ${context.type || 'update'} for ${context.email || fileId} (priority: ${updateItem.priority}, queue length: ${queue.length})`);
+            }
             
             // Start processing if not already running
             this.processQueue(fileId);
@@ -111,7 +114,10 @@ class ExcelUpdateQueue {
                 const emailAddress = updateItem.context.email || fileId;
                 const priority = updateItem.priority === 'high' ? '🔥' : '📊';
                 
-                console.log(`${priority} Processing Excel update: ${updateType} for ${emailAddress} (priority: ${updateItem.priority})`);
+                // Only log processing details if not in quiet mode
+                if (!updateItem.context.quiet) {
+                    console.log(`${priority} Processing Excel update: ${updateType} for ${emailAddress} (priority: ${updateItem.priority})`);
+                }
                 
                 const startTime = Date.now();
                 const result = await this.executeWithRetry(updateItem);
@@ -119,7 +125,10 @@ class ExcelUpdateQueue {
                 
                 updateItem.resolve(result);
                 
-                console.log(`✅ Excel update completed: ${updateType} for ${emailAddress} (${duration}ms, priority: ${updateItem.priority})`);
+                // Only log completion if not in quiet mode
+                if (!updateItem.context.quiet) {
+                    console.log(`✅ Excel update completed: ${updateType} for ${emailAddress} (${duration}ms, priority: ${updateItem.priority})`);
+                }
                 
                 // Enhanced delay between updates to prevent Graph API rate limiting
                 if (queue.length > 0) {
@@ -139,7 +148,12 @@ class ExcelUpdateQueue {
         }
 
         this.processing.set(fileId, false);
-        console.log(`📋 Excel update queue completed for ${fileId}`);
+        
+        // Only log queue completion if any operations were logged (not quiet mode)
+        const hasQuietOps = this.queues.get(fileId)?.some(item => item.context.quiet);
+        if (!hasQuietOps) {
+            console.log(`📋 Excel update queue completed for ${fileId}`);
+        }
     }
 
     /**

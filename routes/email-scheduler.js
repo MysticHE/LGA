@@ -83,6 +83,24 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         // Get templates using Graph API
         const templates = await getTemplatesViaGraphAPI(graphClient);
 
+        // Early authentication check - test Graph API access before processing leads
+        console.log('🔐 Verifying Microsoft Graph authentication before starting campaign...');
+        try {
+            await graphClient.api('/me').get();
+            console.log('✅ Authentication verified - proceeding with campaign');
+        } catch (authError) {
+            console.error('❌ Authentication failed - stopping campaign to prevent spam logs');
+            return res.status(401).json({
+                success: false,
+                message: 'Microsoft Graph authentication failed. Please reconnect your Microsoft 365 account.',
+                error: 'Authentication required',
+                campaignId: null,
+                emailsSent: 0,
+                leadCount: leadsData.length,
+                authError: authError.message
+            });
+        }
+
         // Process and send emails based on schedule
         let emailsSent = 0;
         let emailsQueued = 0;
@@ -496,9 +514,13 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
     
     // Note: sessionId not available in this function - token management handled at higher level
 
-    for (const lead of leads) {
+    for (let i = 0; i < leads.length; i++) {
+        const lead = leads[i];
         try {
-            console.log(`🔄 Processing lead: ${lead.Email} (${lead.Name})`);
+            // Only log processing every 10 leads or on first/last
+            if (i === 0 || i === leads.length - 1 || (i + 1) % 10 === 0) {
+                console.log(`🔄 Processing lead ${i + 1}/${leads.length}: ${lead.Email} (${lead.Name})`);
+            }
             
             // Process email content
             const emailContent = await emailContentProcessor.processEmailContent(
@@ -506,8 +528,6 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 emailContentType, 
                 templates
             );
-            
-            console.log(`📝 Email content generated for ${lead.Email}`);
 
             // Validate email content
             const validation = emailContentProcessor.validateEmailContent(emailContent);
@@ -538,8 +558,6 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 ]
             };
 
-            console.log(`📧 Attempting to send email via Microsoft Graph to: ${lead.Email}`);
-
             // Handle token refresh for long campaigns
             let sendResult;
             try {
@@ -556,8 +574,6 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 }
                 throw tokenError;
             }
-            
-            console.log(`✅ Microsoft Graph sendMail API response:`, sendResult || 'No response body (normal for sendMail)');
 
             results.push({
                 ...lead,
@@ -568,10 +584,8 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
             });
 
             sent++;
-            console.log(`📧 Email sent to: ${lead.Email}`);
 
             // IMMEDIATE Excel update right after email is sent (for real-time tracking)
-            console.log(`📊 Updating Excel for ${lead.Email} immediately...`);
             try {
                 const updates = {
                     Status: 'Sent',
@@ -591,40 +605,35 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                         type: 'campaign-send', 
                         email: lead.Email, 
                         source: 'email-scheduler',
-                        priority: 'high'
+                        priority: 'high',
+                        quiet: errors.length > 10 // Enable quiet mode if many failures
                     }
                 );
-                console.log(`✅ Excel updated for ${lead.Email} - Status: Sent`);
             } catch (excelError) {
                 console.error(`⚠️ Excel update failed for ${lead.Email}: ${excelError.message}`);
                 // Continue campaign even if Excel update fails
             }
 
-            console.log(`📊 Campaign progress: ${sent}/${leads.length} sent (${Math.round((sent / leads.length) * 100)}% complete)`);
+            // Show progress every 25 emails or on completion
+            if (i === leads.length - 1 || (sent + errors.length) % 25 === 0) {
+                console.log(`📊 Campaign progress: ${sent}/${leads.length} sent, ${errors.length} failed (${Math.round(((sent + errors.length) / leads.length) * 100)}% complete)`);
+            }
 
             // Add progressive delay between emails (skip delay for last email)
-            const leadIndex = leads.indexOf(lead);
-            console.log(`🔍 DELAY DEBUG: leadIndex=${leadIndex}, totalLeads=${leads.length}, shouldDelay=${leadIndex < leads.length - 1}`);
-            if (leadIndex < leads.length - 1) {
+            if (i < leads.length - 1) {
                 const delaySeconds = Math.floor(Math.random() * (120 - 30 + 1)) + 30; // 30-120 seconds
-                console.log(`⏳ Adding ${delaySeconds}s delay before next email...`);
                 await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-                console.log(`✅ Delay completed - ready for next email`);
-            } else {
-                console.log(`🏁 Last email - no delay needed`);
             }
 
         } catch (error) {
-            console.error(`❌ Failed to send email to ${lead.Email}:`, error.message);
-            console.error(`❌ Full error details:`, {
-                code: error.code,
-                statusCode: error.statusCode,
-                message: error.message,
-                stack: process.env.NODE_ENV === 'development' ? error.stack : 'Hidden in production'
-            });
+            // Simplified error logging - only show first few detailed errors to prevent spam
+            if (errors.length < 3) {
+                console.error(`❌ Failed to send email to ${lead.Email}: ${error.message}`);
+            } else if (errors.length === 3) {
+                console.error(`❌ Multiple email failures detected. Suppressing detailed error logs to prevent spam.`);
+            }
 
             // IMMEDIATE Excel update for failed emails (track attempt and failure reason)
-            console.log(`📊 Updating Excel for ${lead.Email} - marking as failed...`);
             try {
                 const failedUpdates = {
                     Status: 'Failed',
@@ -643,12 +652,14 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                         type: 'campaign-failed', 
                         email: lead.Email, 
                         source: 'email-scheduler',
-                        priority: 'high'
+                        priority: 'high',
+                        quiet: errors.length > 10 // Enable quiet mode if many failures
                     }
                 );
-                console.log(`✅ Excel updated for ${lead.Email} - Status: Failed`);
             } catch (excelError) {
-                console.error(`⚠️ Failed to update Excel for failed email ${lead.Email}: ${excelError.message}`);
+                if (errors.length < 3) {
+                    console.error(`⚠️ Failed to update Excel for failed email ${lead.Email}: ${excelError.message}`);
+                }
             }
 
             errors.push({
@@ -659,7 +670,10 @@ async function sendEmailsToLeads(graphClient, leads, emailContentType, templates
                 statusCode: error.statusCode
             });
 
-            console.log(`📊 Campaign progress: ${sent}/${leads.length} sent, ${errors.length} failed (${Math.round(((sent + errors.length) / leads.length) * 100)}% complete)`);
+            // Show progress every 25 emails or on completion
+            if (i === leads.length - 1 || (sent + errors.length) % 25 === 0) {
+                console.log(`📊 Campaign progress: ${sent}/${leads.length} sent, ${errors.length} failed (${Math.round(((sent + errors.length) / leads.length) * 100)}% complete)`);
+            }
         }
     }
 

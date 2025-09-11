@@ -61,7 +61,7 @@ class EmailContentProcessor {
             finalSubject = `Connecting with ${lead['Company Name'] || 'your company'}`;
         }
 
-        console.log(`📧 Email processed for ${lead.Email}`);
+        // Removed verbose per-email logging to reduce spam
         
         return {
             subject: finalSubject,

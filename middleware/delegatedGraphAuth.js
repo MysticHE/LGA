@@ -40,6 +40,7 @@ class DelegatedGraphAuth {
         if (this.clientId && this.clientSecret && this.tenantId) {
             this.msalInstance = new msal.ConfidentialClientApplication(this.msalConfig);
             this.userTokens = new Map(); // In-memory cache
+            this.errorSuppressionCount = new Map(); // Track repeated auth errors
             
             // Load existing sessions on startup
             this.loadPersistedSessions();
@@ -291,7 +292,18 @@ class DelegatedGraphAuth {
                 try {
                     return await this.getAccessToken(sessionId);
                 } catch (tokenError) {
-                    console.error(`🔄 Token refresh failed during Graph API call:`, tokenError.message);
+                    // Smart error suppression for repeated auth failures
+                    const errorCount = this.errorSuppressionCount.get(sessionId) || 0;
+                    
+                    if (errorCount < 3) {
+                        console.error(`🔄 Token refresh failed during Graph API call:`, tokenError.message);
+                        this.errorSuppressionCount.set(sessionId, errorCount + 1);
+                    } else if (errorCount === 3) {
+                        console.error(`🔄 Multiple token refresh failures for session ${sessionId}. Suppressing further auth error logs to prevent spam.`);
+                        this.errorSuppressionCount.set(sessionId, errorCount + 1);
+                    }
+                    // errorCount > 3: suppress logging
+                    
                     throw tokenError;
                 }
             }
