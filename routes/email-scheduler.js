@@ -28,7 +28,8 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
             targetLeads,
             sendSchedule,
             scheduledTime,
-            followUpDays
+            followUpDays,
+            customLeadList
         } = req.body;
 
         console.log(`🚀 Starting email campaign: ${campaignName}`);
@@ -60,7 +61,7 @@ router.post('/campaigns/start', requireDelegatedAuth, async (req, res) => {
         }
 
         // Get leads based on target criteria
-        const leadsData = getTargetLeadsFromData(allLeads, targetLeads);
+        const leadsData = getTargetLeadsFromData(allLeads, targetLeads, customLeadList);
         
         if (leadsData.length === 0) {
             return res.json({
@@ -404,7 +405,7 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
 });
 
 // New function to get target leads from Graph API data (no workbook parsing needed)
-function getTargetLeadsFromData(allLeads, targetCriteria) {
+function getTargetLeadsFromData(allLeads, targetCriteria, customLeadList = null) {
     console.log(`📊 Filtering ${allLeads.length} leads for criteria: ${targetCriteria}`);
 
     switch (targetCriteria) {
@@ -446,6 +447,19 @@ function getTargetLeadsFromData(allLeads, targetCriteria) {
                 return nextEmailDate && nextEmailDate <= todayAllNew && 
                        !['Replied', 'Unsubscribed', 'Bounced'].includes(lead.Status);
             });
+
+        case 'custom':
+            if (!customLeadList || !Array.isArray(customLeadList)) {
+                console.log('📊 No custom lead list provided, returning empty array');
+                return [];
+            }
+            
+            console.log(`📊 Filtering ${allLeads.length} leads to match ${customLeadList.length} custom emails`);
+            const customLeads = allLeads.filter(lead => 
+                customLeadList.includes(lead.Email)
+            );
+            console.log(`📊 Found ${customLeads.length} matching leads for custom list`);
+            return customLeads;
 
         default:
             return [];
