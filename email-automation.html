@@ -1448,12 +1448,50 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             console.log(`Selected all ${filteredData.length} filtered leads (only ${leadCheckboxes.length} visible on current page)`);
         }
 
-        // Select all visible leads
+        // Select all leads (including those not currently visible due to pagination)
         function selectAllLeads() {
+            if (!window.originalMasterListData || window.originalMasterListData.length === 0) {
+                alert('No leads available to select.');
+                return;
+            }
+            
+            // Ask user to confirm selecting all leads vs just visible ones
+            const totalLeads = filteredLeadsData.length;
+            const visibleLeads = document.querySelectorAll('.lead-checkbox').length;
+            
+            if (totalLeads > visibleLeads) {
+                const confirmed = confirm(
+                    `Select All Leads?\n\n` +
+                    `You have ${totalLeads} leads that match your current filters, but only ${visibleLeads} are visible on this page.\n\n` +
+                    `✅ OK = Select ALL ${totalLeads} leads (including those on other pages)\n` +
+                    `❌ Cancel = Select only the ${visibleLeads} visible leads`
+                );
+                
+                if (confirmed) {
+                    // Select all filtered leads (store globally for email sending)
+                    window.globalSelectedEmails = filteredLeadsData.map(lead => lead.Email);
+                    
+                    // Also check all visible checkboxes
+                    const leadCheckboxes = document.querySelectorAll('.lead-checkbox');
+                    leadCheckboxes.forEach(checkbox => checkbox.checked = true);
+                    document.getElementById('selectAllCheckbox').checked = true;
+                    
+                    // Show visual indicator that all leads are selected
+                    alert(`✅ All ${totalLeads} leads selected!\n\nThis includes leads on all pages that match your current filters.`);
+                    console.log(`Selected all ${totalLeads} filtered leads across all pages`);
+                    return;
+                }
+            }
+            
+            // Fallback: Select only visible leads
             const leadCheckboxes = document.querySelectorAll('.lead-checkbox');
             leadCheckboxes.forEach(checkbox => checkbox.checked = true);
             document.getElementById('selectAllCheckbox').checked = true;
-            console.log('Selected all visible leads');
+            
+            // Clear global selection if it exists
+            delete window.globalSelectedEmails;
+            
+            console.log('Selected all visible leads on current page');
         }
 
         // Clear all selections
@@ -1461,8 +1499,9 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             const leadCheckboxes = document.querySelectorAll('.lead-checkbox');
             leadCheckboxes.forEach(checkbox => checkbox.checked = false);
             document.getElementById('selectAllCheckbox').checked = false;
-            // Clear global selection
-            window.allSelectedEmails = [];
+            
+            // Clear global selection if it exists
+            delete window.globalSelectedEmails;
             console.log('Cleared all selections');
         }
 
@@ -1858,19 +1897,14 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 return;
             }
             
-            // First, check if any leads are manually selected via checkboxes
-            // Check for globally stored selection (from Select All) or visible checkbox selection
-            let selectedEmails = [];
-            if (window.allSelectedEmails && window.allSelectedEmails.length > 0) {
-                // Use globally stored selection from Select All functionality
-                selectedEmails = [...window.allSelectedEmails];
-                console.log(`Using globally selected emails: ${selectedEmails.length} leads`);
-            } else {
-                // Use only visible checkbox selections
-                const selectedCheckboxes = document.querySelectorAll('.lead-checkbox:checked');
-                selectedEmails = Array.from(selectedCheckboxes).map(cb => cb.dataset.email);
-                console.log(`Using visible checkbox selections: ${selectedEmails.length} leads`);
-            }
+            // First, check if any leads are manually selected via checkboxes or global selection
+            const selectedCheckboxes = document.querySelectorAll('.lead-checkbox:checked');
+            const manuallySelectedEmails = Array.from(selectedCheckboxes).map(cb => cb.dataset.email);
+            
+            // Check if we have a global selection (from "Select All" across all pages)
+            const selectedEmails = window.globalSelectedEmails && window.globalSelectedEmails.length > 0 
+                ? window.globalSelectedEmails 
+                : manuallySelectedEmails;
             
             const searchTerm = document.getElementById('searchLeads').value.toLowerCase();
             const statusFilter = document.getElementById('filterStatus').value.toLowerCase();
@@ -1927,11 +1961,14 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             let emailMode = '';
             
             if (selectedEmails.length > 0) {
-                // Priority 1: Use manually selected leads
+                // Priority 1: Use selected leads (either manual checkboxes or global selection)
                 targetLeads = window.originalMasterListData.filter(lead => 
                     selectedEmails.includes(lead.Email)
                 );
-                emailMode = 'selected';
+                
+                // Determine if this is a global selection or manual selection
+                const isGlobalSelection = window.globalSelectedEmails && window.globalSelectedEmails.length > 0;
+                emailMode = isGlobalSelection ? 'global_selected' : 'selected';
             } else if (filteredData.length > 0) {
                 // Priority 2: Use filtered leads if no manual selection
                 const hasActiveFilters = searchTerm || statusFilter || templateFilter || lastEmailFilter;
@@ -1955,9 +1992,10 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             let confirmationMessage = '';
             let criteriaDescription = '';
             
-            if (emailMode === 'selected') {
+            if (emailMode === 'selected' || emailMode === 'global_selected') {
+                const selectionType = emailMode === 'global_selected' ? 'globally selected' : 'manually selected';
                 confirmationTitle = '📧 Send Emails to Selected Leads';
-                confirmationMessage = `This will send emails to ${targetLeads.length} manually selected leads.`;
+                confirmationMessage = `This will send emails to ${targetLeads.length} ${selectionType} leads.`;
                 
                 // Show which leads are selected
                 const selectedNames = targetLeads.map(lead => 
@@ -1968,6 +2006,11 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                     criteriaDescription = `\n\nSelected leads:\n${selectedNames.join('\n')}`;
                 } else {
                     criteriaDescription = `\n\nSelected leads (first 5 of ${targetLeads.length}):\n${selectedNames.join('\n')}\n... and ${targetLeads.length - 5} more`;
+                }
+                
+                // Add note for global selection
+                if (emailMode === 'global_selected') {
+                    criteriaDescription += '\n\n✅ Note: This includes leads from all pages that match your current filters.';
                 }
                 
             } else if (emailMode === 'filtered') {
@@ -2011,7 +2054,7 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
             
             
             try {
-                const campaignName = emailMode === 'selected' 
+                const campaignName = (emailMode === 'selected' || emailMode === 'global_selected') 
                     ? `Selected Campaign - ${new Date().toLocaleDateString()} - ${targetLeads.length} leads`
                     : `Filtered Campaign - ${new Date().toLocaleDateString()} - ${targetLeads.length} leads`;
                     
@@ -2041,10 +2084,8 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                     await refreshDashboard(); // Refresh to show updated stats
                     await loadMasterList(); // Refresh master list to show updated statuses
                     
-                    // Clear selections after successful send
-                    clearSelection();
-                    
-                    const modeText = emailMode === 'selected' ? 'manually selected' : 'filtered';
+                    const modeText = emailMode === 'global_selected' ? 'globally selected (all pages)' : 
+                                   emailMode === 'selected' ? 'manually selected' : 'filtered';
                     alert(
                         `✅ Email Campaign Started Successfully!\n\n` +
                         `📊 Campaign Details:\n` +

@@ -407,6 +407,7 @@ router.post('/process-scheduled', requireDelegatedAuth, async (req, res) => {
 // New function to get target leads from Graph API data (no workbook parsing needed)
 function getTargetLeadsFromData(allLeads, targetCriteria, customLeadList = null) {
     console.log(`📊 Filtering ${allLeads.length} leads for criteria: ${targetCriteria}`);
+    console.log(`📧 Custom lead list provided: ${customLeadList ? customLeadList.length + ' emails' : 'none'}`);
 
     switch (targetCriteria) {
         case 'new':
@@ -449,19 +450,29 @@ function getTargetLeadsFromData(allLeads, targetCriteria, customLeadList = null)
             });
 
         case 'custom':
-            if (!customLeadList || !Array.isArray(customLeadList)) {
-                console.log('📊 No custom lead list provided, returning empty array');
+            // Handle custom lead list - filter leads based on provided email list
+            if (!customLeadList || !Array.isArray(customLeadList) || customLeadList.length === 0) {
+                console.log('❌ Custom target selected but no custom lead list provided');
                 return [];
             }
             
-            console.log(`📊 Filtering ${allLeads.length} leads to match ${customLeadList.length} custom emails`);
-            const customLeads = allLeads.filter(lead => 
+            const customLeadsFiltered = allLeads.filter(lead => 
                 customLeadList.includes(lead.Email)
             );
-            console.log(`📊 Found ${customLeads.length} matching leads for custom list`);
-            return customLeads;
+            
+            console.log(`📧 Custom leads filtering: ${customLeadList.length} emails provided, ${customLeadsFiltered.length} leads matched`);
+            
+            // Debug which emails weren't found
+            const foundEmails = customLeadsFiltered.map(lead => lead.Email);
+            const notFoundEmails = customLeadList.filter(email => !foundEmails.includes(email));
+            if (notFoundEmails.length > 0) {
+                console.log(`⚠️ Emails not found in master list: ${notFoundEmails.slice(0, 5).join(', ')}${notFoundEmails.length > 5 ? ' and ' + (notFoundEmails.length - 5) + ' more' : ''}`);
+            }
+            
+            return customLeadsFiltered;
 
         default:
+            console.log(`❌ Unknown target criteria: ${targetCriteria}`);
             return [];
     }
 }
