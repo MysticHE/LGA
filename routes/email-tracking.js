@@ -589,4 +589,32 @@ async function updateEmailReadStatus(trackingId) {
     }
 }
 
+// Test endpoint: Manually process stored tracking events
+router.get('/test-process-stored-events', async (req, res) => {
+    try {
+        console.log('🧪 TEST: Manually processing stored tracking events...');
+        
+        const trackingFallback = new TrackingFallback();
+        const results = await trackingFallback.processStoredEvents();
+        
+        res.json({
+            success: true,
+            message: 'Stored tracking events processing test completed',
+            results: {
+                processed: results.processed,
+                errors: results.errors,
+                timestamp: new Date().toISOString()
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Test stored events processing error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Test failed',
+            message: error.message
+        });
+    }
+});
+
 module.exports = router;

@@ -2,6 +2,9 @@ const express = require('express');
 const { getDelegatedAuthProvider } = require('../middleware/delegatedGraphAuth');
 const router = express.Router();
 
+// Import tracking system for processing stored events after re-authentication
+const { TrackingFallback } = require('../routes/email-tracking');
+
 /**
  * Microsoft 365 Authentication Routes
  * Handles OAuth2 delegated authentication flow
@@ -95,6 +98,20 @@ router.get('/callback', async (req, res) => {
             
             // Session is now persistent and will enable 24/7 background operation
             console.log(`🔄 Session ${sessionId} configured for continuous background operation`);
+            
+            // FIXED: Automatically process stored tracking events after successful authentication
+            try {
+                const trackingFallback = new TrackingFallback();
+                const results = await trackingFallback.processStoredEvents();
+                if (results.processed > 0) {
+                    console.log(`📦 Processed ${results.processed} stored tracking events after re-authentication`);
+                } else {
+                    console.log(`📭 No stored tracking events to process after re-authentication`);
+                }
+            } catch (trackingError) {
+                // Don't fail authentication if tracking processing fails
+                console.error(`⚠️ Non-critical error processing stored tracking events: ${trackingError.message}`);
+            }
             
             res.send(`
                 <html>
