@@ -28,6 +28,6 @@ services:
         value: https://lead-generation-automation.onrender.com
     healthCheckPath: /
     # Optimize build settings
-    buildCommand: npm ci --only=production --no-audit --no-fund
+    buildCommand: npm ci --no-audit --no-fund
     # Add disk space optimization
     disk: 512
