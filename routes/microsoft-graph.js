@@ -88,50 +88,51 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
         fileId = fileInfo.id;
         console.log(`✅ Found existing file with ID: ${fileId}`);
 
-        // Check if ANY table exists in the workbook (comprehensive check)
+        // Check if ANY table exists in the workbook (FIXED: prevents table overlap error)
+        const existingTable = await getAnyExistingTable(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME);
+        
         let tableInfo = null;
         let targetWorksheet = EXCEL_CONFIG.WORKSHEET_NAME;
         
-        // First, get ALL tables in the workbook to see what exists
-        const allTablesInfo = await verifyTableExistsWithPolling(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, 1);
-        
-        if (allTablesInfo) {
-            console.log(`✅ Found existing table: '${allTablesInfo}'`);
-            // Table exists, we can use it
-            tableInfo = { name: allTablesInfo };
-        } else {
-            console.log(`🔍 No tables found - checking individual worksheets...`);
-            // Check specific worksheets for tables
-            tableInfo = await getExcelTableInfo(graphClient, fileId, EXCEL_CONFIG.WORKSHEET_NAME, EXCEL_CONFIG.TABLE_NAME);
+        if (existingTable) {
+            console.log(`✅ Found existing table: '${existingTable.name}' in worksheet '${existingTable.worksheet}'`);
+            console.log(`📊 Table has columns: ${existingTable.columns.join(', ')}`);
             
-            // If not found in "Leads" worksheet, try "Sheet1"
-            if (!tableInfo && EXCEL_CONFIG.WORKSHEET_NAME !== 'Sheet1') {
-                console.log(`🔍 Checking 'Sheet1' worksheet...`);
-                tableInfo = await getExcelTableInfo(graphClient, fileId, 'Sheet1', EXCEL_CONFIG.TABLE_NAME);
-                if (tableInfo) {
-                    targetWorksheet = 'Sheet1';
-                }
+            if (existingTable.isCompatible) {
+                console.log(`✅ Table is compatible with lead data - will append to existing table`);
+            } else {
+                console.log(`⚠️ Table compatibility unclear - will still use it to prevent overlap error`);
             }
+            
+            tableInfo = existingTable;
+            targetWorksheet = existingTable.worksheet || EXCEL_CONFIG.WORKSHEET_NAME;
+        } else {
+            console.log(`✅ No existing tables found - safe to create new table`);
         }
         
         if (!tableInfo) {
-            // Table doesn't exist - this is the common case for uploaded Excel files
-            console.log(`🔄 Excel file found but no table structure - converting to table format`);
-            console.log(`🆕 Creating table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${targetWorksheet}'`);
-            
-            // First, try to convert existing data to table format
+            // No table exists - safe to create new table without overlap
+            console.log(`🆕 Creating new table '${EXCEL_CONFIG.TABLE_NAME}' in worksheet '${targetWorksheet}'`);
             await createExcelTable(graphClient, fileId, targetWorksheet, EXCEL_CONFIG.TABLE_NAME, leads);
         } else {
-            // Table exists, but verify the exact name/ID before appending
-            console.log(`🔍 Verifying existing table name before appending...`);
-            const verifiedTableName = await verifyTableExistsWithPolling(graphClient, fileId, EXCEL_CONFIG.TABLE_NAME, 2);
+            // Table exists - append to it instead of creating new one (FIXES OVERLAP ERROR)
+            console.log(`➕ Appending ${leads.length} leads to existing table '${tableInfo.name}' in '${targetWorksheet}'`);
             
-            if (!verifiedTableName) {
-                throw new Error(`Table '${EXCEL_CONFIG.TABLE_NAME}' verification failed - table may have been renamed or corrupted`);
+            try {
+                await appendDataToExcelTableWithRetry(graphClient, fileId, tableInfo.name, leads);
+                console.log(`✅ Successfully appended data to existing table - no overlap error!`);
+            } catch (appendError) {
+                console.error(`❌ Failed to append to existing table '${tableInfo.name}': ${appendError.message}`);
+                
+                // If table is incompatible, offer to create new table in different worksheet
+                if (appendError.message?.includes('column') || appendError.message?.includes('schema')) {
+                    console.log(`🔄 Table schema incompatible - creating new table in different worksheet`);
+                    const newWorksheet = targetWorksheet === 'Leads' ? 'NewLeads' : 'Leads2';
+                    await createExcelTable(graphClient, fileId, newWorksheet, EXCEL_CONFIG.TABLE_NAME + '_New', leads);
+                } else {
+                    throw appendError;
+                }
             }
-            
-            console.log(`➕ Appending data to verified table '${verifiedTableName}' in '${targetWorksheet}'`);
-            await appendDataToExcelTableWithRetry(graphClient, fileId, verifiedTableName, leads);
         }
 
         res.json({
@@ -150,11 +151,30 @@ router.post('/onedrive/append-to-table', requireDelegatedAuth, async (req, res) 
 
     } catch (error) {
         console.error('OneDrive Excel append error:', error);
-        res.status(500).json({
-            error: 'OneDrive Excel Append Error',
-            message: 'Failed to append data to Excel table in OneDrive',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        
+        // Handle specific table overlap error
+        if (error.code === 'InvalidArgument' && 
+            error.message?.includes("A table can't overlap another table")) {
+            
+            console.error(`❌ TABLE OVERLAP ERROR: ${error.message}`);
+            res.status(400).json({
+                error: 'Table Overlap Error',
+                message: 'Cannot create table because it would overlap with an existing table. The uploaded Excel file already contains a table structure.',
+                solution: 'This should not happen with the new fix. Please report this error.',
+                originalError: error.message,
+                troubleshooting: {
+                    suggestion: 'Try uploading the file again, or check if the Excel file has multiple conflicting tables',
+                    technical: 'The system should now detect existing tables and append to them instead of creating new ones'
+                }
+            });
+        } else {
+            // Handle other errors normally
+            res.status(500).json({
+                error: 'OneDrive Excel Append Error',
+                message: 'Failed to append data to Excel table in OneDrive',
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
     }
 });
 
@@ -1478,6 +1498,114 @@ function getColumnWidths() {
         // Legacy compatibility columns removed
         {width: 20}  // Sent Date
     ];
+}
+
+/**
+ * Get ANY existing table in the workbook (fixes table overlap issue)
+ * @param {Object} client - Microsoft Graph client
+ * @param {string} fileId - OneDrive file ID
+ * @param {string} preferredWorksheet - Preferred worksheet name
+ * @returns {Object|null} Table information or null if no tables found
+ */
+async function getAnyExistingTable(client, fileId, preferredWorksheet = 'Leads') {
+    try {
+        console.log(`🔍 Looking for ANY existing table in workbook...`);
+        
+        // Get all tables in the workbook first
+        const tablesResponse = await client
+            .api(`/me/drive/items/${fileId}/workbook/tables`)
+            .get();
+        
+        const tables = tablesResponse.value;
+        console.log(`📊 Found ${tables.length} existing table(s): ${tables.map(t => t.name).join(', ')}`);
+        
+        if (tables.length === 0) {
+            console.log(`✅ No existing tables found - safe to create new table`);
+            return null;
+        }
+        
+        // If we have tables, find the best one to use
+        // Priority: 1) Table in preferred worksheet, 2) Any table with headers that match lead data
+        for (const table of tables) {
+            try {
+                // Get table details including worksheet
+                const tableDetails = await client
+                    .api(`/me/drive/items/${fileId}/workbook/tables/${table.name}`)
+                    .get();
+                
+                // Get columns to check if it's compatible with lead data
+                const columnsResponse = await client
+                    .api(`/me/drive/items/${fileId}/workbook/tables/${table.name}/columns`)
+                    .get();
+                
+                const columns = columnsResponse.value;
+                const headers = columns.map(col => col.name);
+                
+                // Check if this table has lead-compatible columns (Email, Name, Company, etc.)
+                const leadColumns = ['Email', 'Name', 'Company', 'Title'];
+                const hasLeadColumns = leadColumns.some(col => 
+                    headers.some(header => header.toLowerCase().includes(col.toLowerCase()))
+                );
+                
+                if (hasLeadColumns) {
+                    console.log(`✅ Found compatible existing table: '${table.name}' with columns: ${headers.join(', ')}`);
+                    return {
+                        id: tableDetails.id,
+                        name: tableDetails.name,
+                        range: tableDetails.range,
+                        worksheet: tableDetails.worksheet?.name || 'Unknown',
+                        columns: headers,
+                        isCompatible: true
+                    };
+                }
+            } catch (tableError) {
+                console.log(`⚠️ Could not check table '${table.name}': ${tableError.message}`);
+                continue;
+            }
+        }
+        
+        // If no compatible table found, return the first table anyway (user can decide)
+        if (tables.length > 0) {
+            const firstTable = tables[0];
+            console.log(`⚠️ Found table '${firstTable.name}' but compatibility unclear - will use anyway to avoid overlap`);
+            
+            try {
+                const tableDetails = await client
+                    .api(`/me/drive/items/${fileId}/workbook/tables/${firstTable.name}`)
+                    .get();
+                
+                const columnsResponse = await client
+                    .api(`/me/drive/items/${fileId}/workbook/tables/${firstTable.name}/columns`)
+                    .get();
+                
+                return {
+                    id: tableDetails.id,
+                    name: tableDetails.name,
+                    range: tableDetails.range,
+                    worksheet: tableDetails.worksheet?.name || 'Unknown',
+                    columns: columnsResponse.value.map(col => col.name),
+                    isCompatible: false
+                };
+            } catch (detailError) {
+                console.log(`⚠️ Could not get details for table '${firstTable.name}': ${detailError.message}`);
+                return {
+                    id: firstTable.id,
+                    name: firstTable.name,
+                    range: null,
+                    worksheet: 'Unknown',
+                    columns: [],
+                    isCompatible: false
+                };
+            }
+        }
+        
+        return null;
+        
+    } catch (error) {
+        console.error(`❌ Error checking for existing tables:`, error);
+        // Don't throw error - just return null to allow table creation
+        return null;
+    }
 }
 
 module.exports = router;
