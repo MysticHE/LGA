@@ -336,22 +336,6 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Campaign Attachments (Optional):</label>
-                    <div class="attachment-upload-area">
-                        <input type="file" id="campaignAttachments" class="attachment-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.txt,.csv" />
-                        <label for="campaignAttachments" class="attachment-label campaign-attachment-label">
-                            <div class="attachment-icon">📎</div>
-                            <div class="attachment-text">Additional files for this campaign</div>
-                            <div class="attachment-subtext">These will be sent in addition to template attachments (Feature coming soon!)</div>
-                        </label>
-                        <div id="campaignSelectedAttachments" class="selected-attachments hidden">
-                            <h4>Campaign Files:</h4>
-                            <div id="campaignAttachmentsList" class="attachments-list"></div>
-                            <button type="button" class="btn btn-outline btn-sm" onclick="clearCampaignAttachments()">Clear All</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-group">
                     <label class="form-label">Send Schedule:</label>
                     <select id="sendSchedule" class="form-select" required>
                         <option value="immediate">Send Immediately</option>
@@ -406,7 +390,6 @@
             initializeEmailAutomation();
             setupEventListeners();
             initializeAttachmentHandling();
-            initializeCampaignAttachmentHandling();
         });
 
         // Initialize authentication and load data
@@ -1121,110 +1104,6 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
-        // Campaign attachment handling
-        let campaignSelectedFiles = [];
-
-        // Initialize campaign attachment handling
-        function initializeCampaignAttachmentHandling() {
-            const campaignAttachmentInput = document.getElementById('campaignAttachments');
-            const campaignAttachmentLabel = document.querySelector('.campaign-attachment-label');
-
-            if (!campaignAttachmentInput || !campaignAttachmentLabel) return;
-
-            // File input change handler
-            campaignAttachmentInput.addEventListener('change', function(e) {
-                handleCampaignFileSelection(e.target.files);
-            });
-
-            // Drag and drop handlers
-            campaignAttachmentLabel.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                campaignAttachmentLabel.classList.add('drag-over');
-            });
-
-            campaignAttachmentLabel.addEventListener('dragleave', function(e) {
-                e.preventDefault();
-                campaignAttachmentLabel.classList.remove('drag-over');
-            });
-
-            campaignAttachmentLabel.addEventListener('drop', function(e) {
-                e.preventDefault();
-                campaignAttachmentLabel.classList.remove('drag-over');
-                handleCampaignFileSelection(e.dataTransfer.files);
-            });
-        }
-
-        // Handle campaign file selection
-        function handleCampaignFileSelection(files) {
-            const maxFiles = 5;
-            const maxSize = 25 * 1024 * 1024; // 25MB
-
-            // Validate file count
-            if (campaignSelectedFiles.length + files.length > maxFiles) {
-                alert(`❌ Too many files\n\nMaximum ${maxFiles} files allowed. You currently have ${campaignSelectedFiles.length} campaign files selected.`);
-                return;
-            }
-
-            // Validate and add files
-            Array.from(files).forEach(file => {
-                // Check file size
-                if (file.size > maxSize) {
-                    alert(`❌ File too large\n\n"${file.name}" is ${Math.round(file.size / 1024 / 1024)}MB. Maximum size is 25MB.`);
-                    return;
-                }
-
-                // Check if file already selected
-                if (campaignSelectedFiles.some(f => f.name === file.name && f.size === file.size)) {
-                    alert(`⚠️ File already selected\n\n"${file.name}" is already in your campaign selection.`);
-                    return;
-                }
-
-                campaignSelectedFiles.push(file);
-            });
-
-            updateCampaignAttachmentsList();
-        }
-
-        // Update campaign attachments display
-        function updateCampaignAttachmentsList() {
-            const selectedAttachments = document.getElementById('campaignSelectedAttachments');
-            const attachmentsList = document.getElementById('campaignAttachmentsList');
-
-            if (campaignSelectedFiles.length === 0) {
-                selectedAttachments.classList.add('hidden');
-                return;
-            }
-
-            selectedAttachments.classList.remove('hidden');
-
-            attachmentsList.innerHTML = campaignSelectedFiles.map((file, index) => `
-                <div class="attachment-item">
-                    <div class="attachment-info">
-                        <div class="attachment-file-icon">${getFileIcon(file.name)}</div>
-                        <div class="attachment-details">
-                            <div class="attachment-name" title="${file.name}">${file.name}</div>
-                            <div class="attachment-size">${formatFileSize(file.size)}</div>
-                        </div>
-                    </div>
-                    <button class="attachment-remove" onclick="removeCampaignAttachment(${index})" title="Remove file">
-                        ×
-                    </button>
-                </div>
-            `).join('');
-        }
-
-        // Remove campaign attachment
-        function removeCampaignAttachment(index) {
-            campaignSelectedFiles.splice(index, 1);
-            updateCampaignAttachmentsList();
-        }
-
-        // Clear all campaign attachments
-        function clearCampaignAttachments() {
-            campaignSelectedFiles = [];
-            updateCampaignAttachmentsList();
-            document.getElementById('campaignAttachments').value = '';
-        }
 
         // Save template
         async function saveTemplate(e) {
