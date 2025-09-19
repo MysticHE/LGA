@@ -498,6 +498,46 @@ router.get('/type/:templateType', requireDelegatedAuth, async (req, res) => {
     }
 });
 
+// Test endpoint for template operations (bypasses Azure for testing)
+router.get('/test/templates', async (req, res) => {
+    res.json({
+        success: true,
+        message: 'Template operations test endpoint',
+        templates: [
+            {
+                Template_ID: 'template_test_1',
+                Template_Name: 'Test Template 1',
+                Template_Type: 'Template_1',
+                Subject: 'Test Subject 1',
+                Body: 'Test Body 1',
+                Active: 'Yes',
+                Attachment_Count: 0
+            },
+            {
+                Template_ID: 'template_test_2',
+                Template_Name: 'Test Template 2',
+                Template_Type: 'Template_2',
+                Subject: 'Test Subject 2',
+                Body: 'Test Body 2',
+                Active: 'No',
+                Attachment_Count: 1
+            }
+        ]
+    });
+});
+
+router.delete('/test/:templateId', async (req, res) => {
+    const { templateId } = req.params;
+    console.log(`🧪 TEST DELETE: Template ID ${templateId}`);
+
+    res.json({
+        success: true,
+        message: 'Template delete test successful',
+        templateId: templateId,
+        note: 'This is a test endpoint - no actual deletion performed'
+    });
+});
+
 // Debug endpoint to check raw Excel data
 router.get('/debug/excel-data', requireDelegatedAuth, async (req, res) => {
     try {
