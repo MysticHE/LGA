@@ -787,6 +787,7 @@
                 
                 if (result.success) {
                     templates = result.templates || [];
+                    window.templates = templates; // Store globally for editing
                     displayTemplates(templates);
                     updateTemplateDropdowns(templates);
                 } else {
@@ -834,9 +835,6 @@
                             </span>
                         </div>
                         <div class="template-actions">
-                            <button class="btn" onclick="previewTemplate('${template.Template_ID}')" title="Preview template">
-                                👁️ Preview
-                            </button>
                             <button class="btn" onclick="editTemplate('${template.Template_ID}')" title="Edit template">
                                 ✏️ Edit
                             </button>
@@ -1296,48 +1294,6 @@
         }
 
         // Utility functions
-        async function previewTemplate(templateId) {
-            try {
-                const response = await fetch(`/api/email-templates/${templateId}/preview`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Session-Id': sessionId
-                    },
-                    body: JSON.stringify({
-                        sampleLead: {
-                            Name: 'John Smith',
-                            'Company Name': 'ABC Corporation', 
-                            Title: 'Marketing Manager',
-                            Email: 'john.smith@abccorp.com'
-                        }
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    const preview = result.preview;
-                    const previewContent = `
-📧 TEMPLATE PREVIEW
-
-Subject: ${preview.subject}
-
-Body:
-${preview.body}
-
-Variables used: ${preview.variables.join(', ')}
-Sample data: John Smith, ABC Corporation, Marketing Manager
-                    `;
-                    alert(previewContent);
-                } else {
-                    alert('❌ Failed to preview template: ' + result.message);
-                }
-            } catch (error) {
-                console.error('❌ Template preview error:', error);
-                alert('❌ Failed to preview template.');
-            }
-        }
 
         function previewCampaign() {
             alert('Campaign preview functionality coming soon!');
@@ -1345,32 +1301,51 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
 
         async function editTemplate(templateId) {
             try {
-                // Get template data
-                const response = await fetch(`/api/email-templates/${templateId}`, {
-                    headers: {
-                        'X-Session-Id': sessionId
+                // First try to find template in cached data
+                let template = null;
+                if (window.templates && window.templates.length > 0) {
+                    template = window.templates.find(t => t.Template_ID === templateId);
+                }
+
+                // If not found in cache, try API
+                if (!template) {
+                    console.log('📝 Template not in cache, fetching from API...');
+                    const response = await fetch(`/api/email-templates/${templateId}`, {
+                        headers: {
+                            'X-Session-Id': sessionId
+                        }
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        template = result.template;
+                    } else {
+                        alert('❌ Failed to load template: ' + result.message);
+                        return;
                     }
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    const template = result.template;
-                    
+                }
+
+                if (template) {
+                    console.log('📝 Editing template:', template);
+
                     // Populate form with template data
-                    document.getElementById('templateName').value = template.Template_Name;
-                    document.getElementById('templateType').value = template.Template_Type;
-                    document.getElementById('templateSubject').value = template.Subject;
-                    document.getElementById('templateContent').value = template.Body;
-                    document.getElementById('templateActive').value = template.Active;
-                    
+                    document.getElementById('templateName').value = template.Template_Name || '';
+                    document.getElementById('templateType').value = template.Template_Type || '';
+                    document.getElementById('templateSubject').value = template.Subject || '';
+                    document.getElementById('templateContent').value = template.Body || '';
+                    document.getElementById('templateActive').value = template.Active || 'Yes';
+
                     // Store template ID for updating
                     document.getElementById('templateForm').dataset.editingId = templateId;
-                    
+
+                    // Update preview if visible
+                    updatePreview();
+
                     // Open modal
                     document.getElementById('templateModal').style.display = 'block';
                 } else {
-                    alert('❌ Failed to load template: ' + result.message);
+                    alert('❌ Template not found.');
                 }
             } catch (error) {
                 console.error('❌ Template edit error:', error);
