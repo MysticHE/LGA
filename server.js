@@ -95,7 +95,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static files (before rate limiting)
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.static(__dirname)); // Serve files from root directory (for styles, etc.)
 
 // No rate limiting - removed for simplified system
 
