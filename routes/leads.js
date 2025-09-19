@@ -206,8 +206,9 @@ router.get('/product-materials-content', async (req, res) => {
         try {
             // Process content with Content Processor if available
             if (contentProcessor) {
-                const processedResult = contentProcessor.processContent ?
-                    await contentProcessor.processContent(materials, leadContext) : null;
+                const processedResult = contentProcessor.processContent
+                ? await contentProcessor.processContent(materials, leadContext)
+                : null;
 
                 if (processedResult?.success) {
                     productContext = processedResult.content;

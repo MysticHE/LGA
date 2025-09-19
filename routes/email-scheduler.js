@@ -1272,10 +1272,9 @@ async function getScheduledCampaignsDueViaGraphAPI(graphClient) {
             Campaign_ID: campaign.Campaign_ID,
             Campaign_Name: campaign.Campaign_Name,
             Start_Date: campaign.Start_Date,
-            // These would need to be stored in the campaign record or a separate sheet
-            targetLeads: [], // TODO: Retrieve from campaign details
-            emailContentType: 'ai_generated', // TODO: Retrieve from campaign details
-            followUpDays: 7 // TODO: Retrieve from campaign details
+            targetLeads: campaign.Target_Leads || [],
+            emailContentType: campaign.Email_Content_Type || 'ai_generated',
+            followUpDays: campaign.Follow_Up_Days || 7
         }));
         
     } catch (error) {

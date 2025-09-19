@@ -105,7 +105,6 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/microsoft-graph', microsoftGraphRoutes);
 app.use('/api/email-automation', emailAutomationRoutes);
 app.use('/api/email-automation/templates', emailTemplatesRoutes);
-app.use('/api/email-templates', emailTemplatesRoutes);
 app.use('/api/email', emailTrackingRoutes);
 app.use('/api/email-scheduler', emailSchedulerRoutes);  // Fixed: Use correct path
 app.use('/api/email-delay', emailDelayTestRoutes);
