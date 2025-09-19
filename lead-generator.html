@@ -3291,7 +3291,10 @@ Best regards,
                         this.uploadedFiles.push(...data.materials);
                         this.updateMaterialsList();
                         this.showStatus(`✅ Successfully uploaded ${data.materials.length} materials`, 'success');
-                        
+
+                        // Save uploaded materials to session storage
+                        this.saveMaterialsState();
+
                         // Materials will be automatically used when uploaded
                     } else {
                         throw new Error(data.message || 'Upload failed');
@@ -3345,6 +3348,9 @@ Best regards,
                         this.updateMaterialsList();
                         this.showStatus('📄 Material removed', 'info');
 
+                        // Save updated materials state
+                        this.saveMaterialsState();
+
                         // Materials automatically managed
                     } else {
                         throw new Error(data.message || 'Failed to remove material');
@@ -3369,6 +3375,9 @@ Best regards,
                     this.uploadedFiles = [];
                     this.updateMaterialsList();
                     this.showStatus('📄 All materials cleared', 'info');
+
+                    // Save updated materials state
+                    this.saveMaterialsState();
                 } catch (error) {
                     console.error('Clear materials error:', error);
                     this.showStatus(`❌ Failed to clear materials: ${error.message}`, 'error');
@@ -3381,6 +3390,37 @@ Best regards,
                 const sizes = ['Bytes', 'KB', 'MB', 'GB'];
                 const i = Math.floor(Math.log(bytes) / Math.log(k));
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            // Save materials state to session storage
+            saveMaterialsState() {
+                const materialsData = {
+                    uploadedFiles: this.uploadedFiles,
+                    timestamp: Date.now()
+                };
+                SessionManager.save('materialsState', materialsData);
+            }
+
+            // Restore materials state from session storage
+            async restoreMaterialsState() {
+                const materialsState = SessionManager.load('materialsState');
+                if (materialsState && materialsState.uploadedFiles) {
+                    // Verify materials still exist on server
+                    try {
+                        const response = await fetch('/api/leads/materials');
+                        const data = await response.json();
+
+                        if (data.success && data.materials.length > 0) {
+                            this.uploadedFiles = data.materials;
+                            this.updateMaterialsList();
+                            this.showStatus(`📄 Restored ${data.materials.length} uploaded material(s)`, 'info');
+                        }
+                    } catch (error) {
+                        console.warn('Failed to restore materials:', error);
+                        // Clear stale session data
+                        SessionManager.clear('materialsState');
+                    }
+                }
             }
         }
 
@@ -3524,12 +3564,17 @@ Best regards,
             }
         };
 
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             leadGenerator = new LeadGenerator();
             handleExclusionFileUpload();
 
             // Restore form state from session storage
             restoreFormState();
+
+            // Restore materials state from session storage
+            if (leadGenerator.pdfUploadManager) {
+                await leadGenerator.pdfUploadManager.restoreMaterialsState();
+            }
 
             // Save form state when values change
             setupFormStatePersistence();
@@ -3566,6 +3611,56 @@ Best regards,
                     const maxRecordsInput = document.getElementById('maxRecords');
                     if (maxRecordsInput) maxRecordsInput.value = formState.maxRecords;
                 }
+
+                // Restore exclude email domains
+                if (formState.excludeEmailDomains) {
+                    const excludeEmailInput = document.getElementById('excludeEmailDomains');
+                    if (excludeEmailInput) excludeEmailInput.value = formState.excludeEmailDomains;
+                }
+
+                // Restore exclude industries
+                if (formState.excludeIndustries) {
+                    const excludeIndustriesInput = document.getElementById('excludeIndustries');
+                    if (excludeIndustriesInput) excludeIndustriesInput.value = formState.excludeIndustries;
+                }
+
+                // Restore OneDrive checkbox
+                if (formState.saveToOneDrive !== undefined) {
+                    const saveToOneDriveCheckbox = document.getElementById('saveToOneDrive');
+                    if (saveToOneDriveCheckbox) saveToOneDriveCheckbox.checked = formState.saveToOneDrive;
+                }
+
+                // Restore email campaign checkbox
+                if (formState.sendEmailCampaign !== undefined) {
+                    const sendEmailCheckbox = document.getElementById('sendEmailCampaign');
+                    if (sendEmailCheckbox) {
+                        sendEmailCheckbox.checked = formState.sendEmailCampaign;
+                        // Trigger change event to show/hide email details
+                        sendEmailCheckbox.dispatchEvent(new Event('change'));
+                    }
+                }
+
+                // Restore email subject
+                if (formState.emailSubject) {
+                    const emailSubjectInput = document.getElementById('emailSubject');
+                    if (emailSubjectInput) emailSubjectInput.value = formState.emailSubject;
+                }
+
+                // Restore email template
+                if (formState.emailTemplate) {
+                    const emailTemplateInput = document.getElementById('emailTemplate');
+                    if (emailTemplateInput) emailTemplateInput.value = formState.emailTemplate;
+                }
+
+                // Restore template choice
+                if (formState.templateChoice) {
+                    const templateChoiceSelect = document.getElementById('templateChoice');
+                    if (templateChoiceSelect) {
+                        templateChoiceSelect.value = formState.templateChoice;
+                        // Trigger change event to show/hide custom template
+                        templateChoiceSelect.dispatchEvent(new Event('change'));
+                    }
+                }
             }
         }
 
@@ -3583,6 +3678,13 @@ Best regards,
                 jobTitles: Array.from(document.querySelectorAll('input[name="jobTitle"]:checked')).map(input => input.value),
                 companySizes: Array.from(document.querySelectorAll('input[name="companySize"]:checked')).map(input => input.value),
                 maxRecords: document.getElementById('maxRecords')?.value || '',
+                excludeEmailDomains: document.getElementById('excludeEmailDomains')?.value || '',
+                excludeIndustries: document.getElementById('excludeIndustries')?.value || '',
+                saveToOneDrive: document.getElementById('saveToOneDrive')?.checked || false,
+                sendEmailCampaign: document.getElementById('sendEmailCampaign')?.checked || false,
+                emailSubject: document.getElementById('emailSubject')?.value || '',
+                emailTemplate: document.getElementById('emailTemplate')?.value || '',
+                templateChoice: document.getElementById('templateChoice')?.value || '',
                 timestamp: Date.now()
             };
 
