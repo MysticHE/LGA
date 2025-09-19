@@ -467,8 +467,8 @@ ${leadName}`);
     /**
      * Create email message object for Microsoft Graph API
      */
-    createEmailMessage(emailContent, leadEmail, leadData = null, trackReads = false) {
-        return {
+    createEmailMessage(emailContent, leadEmail, leadData = null, trackReads = false, attachments = []) {
+        const emailMessage = {
             subject: emailContent.subject,
             body: {
                 contentType: 'HTML',
@@ -482,6 +482,130 @@ ${leadName}`);
                     }
                 }
             ]
+        };
+
+        // Add attachments if provided
+        if (attachments && attachments.length > 0) {
+            emailMessage.attachments = this.processAttachmentsForGraph(attachments);
+        }
+
+        return emailMessage;
+    }
+
+    /**
+     * Process attachments for Microsoft Graph API format
+     */
+    processAttachmentsForGraph(attachments) {
+        return attachments.map(attachment => {
+            // Handle different attachment input formats
+            if (typeof attachment === 'string') {
+                // If it's just a file path or URL, create basic attachment
+                return {
+                    '@odata.type': '#microsoft.graph.fileAttachment',
+                    name: attachment.split('/').pop(),
+                    contentBytes: null, // Will be set when actual file data is available
+                    contentType: this.getContentTypeFromFileName(attachment)
+                };
+            } else if (attachment.buffer) {
+                // Handle file buffer (from multer uploads)
+                return {
+                    '@odata.type': '#microsoft.graph.fileAttachment',
+                    name: attachment.originalname || attachment.name || 'attachment',
+                    contentBytes: attachment.buffer.toString('base64'),
+                    contentType: attachment.mimetype || this.getContentTypeFromFileName(attachment.originalname || attachment.name)
+                };
+            } else if (attachment.contentBytes) {
+                // Handle pre-processed attachment with base64 content
+                return {
+                    '@odata.type': '#microsoft.graph.fileAttachment',
+                    name: attachment.name || 'attachment',
+                    contentBytes: attachment.contentBytes,
+                    contentType: attachment.contentType || this.getContentTypeFromFileName(attachment.name)
+                };
+            } else {
+                // Handle attachment metadata that needs to be fetched
+                return {
+                    '@odata.type': '#microsoft.graph.fileAttachment',
+                    name: attachment.name || 'attachment',
+                    contentBytes: null, // Will be populated later
+                    contentType: attachment.contentType || this.getContentTypeFromFileName(attachment.name)
+                };
+            }
+        }).filter(attachment => attachment.name); // Only include attachments with valid names
+    }
+
+    /**
+     * Get content type from file name
+     */
+    getContentTypeFromFileName(fileName) {
+        if (!fileName) return 'application/octet-stream';
+
+        const ext = fileName.toLowerCase().split('.').pop();
+        const contentTypes = {
+            // Documents
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+
+            // Images
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'bmp': 'image/bmp',
+            'webp': 'image/webp',
+
+            // Text files
+            'txt': 'text/plain',
+            'csv': 'text/csv',
+            'html': 'text/html',
+            'htm': 'text/html',
+
+            // Archives
+            'zip': 'application/zip',
+            'rar': 'application/x-rar-compressed',
+            '7z': 'application/x-7z-compressed'
+        };
+
+        return contentTypes[ext] || 'application/octet-stream';
+    }
+
+    /**
+     * Validate attachment for email sending
+     */
+    validateAttachment(attachment) {
+        const errors = [];
+        const maxSizeBytes = 25 * 1024 * 1024; // 25MB limit for Microsoft Graph
+        const allowedTypes = [
+            'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'image/jpeg', 'image/png', 'image/gif', 'text/plain', 'text/csv'
+        ];
+
+        // Check file size
+        if (attachment.size && attachment.size > maxSizeBytes) {
+            errors.push(`File size (${Math.round(attachment.size / 1024 / 1024)}MB) exceeds 25MB limit`);
+        }
+
+        // Check content type
+        const contentType = attachment.contentType || this.getContentTypeFromFileName(attachment.name);
+        if (!allowedTypes.includes(contentType)) {
+            errors.push(`File type ${contentType} is not allowed`);
+        }
+
+        // Check file name
+        if (!attachment.name || attachment.name.trim() === '') {
+            errors.push('File name is required');
+        }
+
+        return {
+            isValid: errors.length === 0,
+            errors: errors
         };
     }
 

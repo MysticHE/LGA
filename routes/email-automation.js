@@ -999,22 +999,29 @@ router.post('/send-email/:email', requireDelegatedAuth, async (req, res) => {
             });
         }
 
-        // Send email using Microsoft Graph
-        const emailMessage = {
-            subject: emailContent.subject,
-            body: {
-                contentType: 'HTML',
-                content: emailContentProcessor.convertToHTML(emailContent, lead.Email, lead)
-            },
-            toRecipients: [
-                {
-                    emailAddress: {
-                        address: lead.Email,
-                        name: lead.Name
-                    }
-                }
-            ]
-        };
+        // Extract attachments from template if using a template
+        let attachments = [];
+        if (emailChoice !== 'AI_Generated' && templates) {
+            const template = templates.find(t =>
+                t.Template_ID === emailChoice ||
+                t.Template_Name === emailChoice ||
+                t.Template_Type === emailChoice
+            );
+
+            if (template && template.attachments && template.attachments.length > 0) {
+                attachments = template.attachments;
+                console.log(`📎 Found ${attachments.length} attachments in template ${emailChoice}`);
+            }
+        }
+
+        // Send email using Microsoft Graph with attachment support
+        const emailMessage = emailContentProcessor.createEmailMessage(
+            emailContent,
+            lead.Email,
+            lead,
+            true, // Enable tracking for single emails
+            attachments
+        );
 
         await graphClient.api('/me/sendMail').post({
             message: emailMessage,
@@ -1175,12 +1182,28 @@ router.post('/send-campaign', requireDelegatedAuth, async (req, res) => {
 
                     console.log(`📧 Processing email content for ${lead.Email} using ${emailChoice}`);
 
+                    // Extract attachments from template if using a template
+                    let attachments = [];
+                    if (emailChoice !== 'AI_Generated' && templates) {
+                        const template = templates.find(t =>
+                            t.Template_ID === emailChoice ||
+                            t.Template_Name === emailChoice ||
+                            t.Template_Type === emailChoice
+                        );
+
+                        if (template && template.attachments && template.attachments.length > 0) {
+                            attachments = template.attachments;
+                            console.log(`📎 Found ${attachments.length} attachments in template ${emailChoice}`);
+                        }
+                    }
+
                     // Send email via Microsoft Graph
                     const emailMessage = emailContentProcessor.createEmailMessage(
-                        emailContent, 
-                        lead.Email, 
+                        emailContent,
+                        lead.Email,
                         lead,
-                        trackReads
+                        trackReads,
+                        attachments
                     );
 
                     console.log(`📧 Attempting to send email via Microsoft Graph to: ${lead.Email}`);

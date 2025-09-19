@@ -1028,3 +1028,172 @@ body {
         border: var(--border-width) solid var(--grey-400);
     }
 }
+
+/* Attachment Upload Styles */
+.attachment-upload-area {
+    position: relative;
+    margin-top: var(--space-sm);
+}
+
+.attachment-input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+}
+
+.attachment-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-xl);
+    border: 2px dashed var(--grey-400);
+    border-radius: var(--radius-md);
+    background: var(--grey-100);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    min-height: 120px;
+}
+
+.attachment-label:hover {
+    border-color: var(--primary-grey);
+    background: var(--white);
+    transform: translateY(-2px);
+}
+
+.attachment-icon {
+    font-size: 2rem;
+    color: var(--grey-600);
+    margin-bottom: var(--space-sm);
+}
+
+.attachment-text {
+    font-size: 16px;
+    font-weight: var(--font-weight-medium);
+    color: var(--grey-700);
+    margin-bottom: var(--space-xs);
+}
+
+.attachment-subtext {
+    font-size: 12px;
+    color: var(--grey-600);
+    text-align: center;
+    line-height: 1.4;
+}
+
+.selected-attachments {
+    margin-top: var(--space-md);
+    padding: var(--space-md);
+    background: var(--white);
+    border: var(--border-width) solid var(--grey-300);
+    border-radius: var(--radius-md);
+}
+
+.selected-attachments h4 {
+    font-size: 14px;
+    font-weight: var(--font-weight-semibold);
+    color: var(--grey-700);
+    margin-bottom: var(--space-sm);
+}
+
+.attachments-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+}
+
+.attachment-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-sm);
+    background: var(--grey-100);
+    border: var(--border-width) solid var(--grey-300);
+    border-radius: var(--radius-sm);
+}
+
+.attachment-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex: 1;
+}
+
+.attachment-file-icon {
+    font-size: 1.2rem;
+    color: var(--primary-grey);
+}
+
+.attachment-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.attachment-name {
+    font-size: 14px;
+    font-weight: var(--font-weight-medium);
+    color: var(--grey-700);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.attachment-size {
+    font-size: 12px;
+    color: var(--grey-600);
+    margin-top: 2px;
+}
+
+.attachment-remove {
+    background: none;
+    border: none;
+    color: var(--danger-grey-dark);
+    cursor: pointer;
+    padding: var(--space-xs);
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+    line-height: 1;
+    transition: all 0.2s ease;
+}
+
+.attachment-remove:hover {
+    background: var(--danger-grey);
+    color: var(--white);
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--primary-grey);
+    border: var(--border-width) solid var(--primary-grey);
+}
+
+.btn-outline:hover {
+    background: var(--primary-grey);
+    color: var(--white);
+}
+
+.btn-sm {
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 12px;
+}
+
+/* Drag and Drop States */
+.attachment-label.drag-over {
+    border-color: var(--success-grey-dark);
+    background: var(--success-grey);
+    color: var(--white);
+}
+
+.attachment-label.drag-over .attachment-icon,
+.attachment-label.drag-over .attachment-text,
+.attachment-label.drag-over .attachment-subtext {
+    color: var(--white);
+}
+
+/* Hidden utility class */
+.hidden {
+    display: none !important;
+}

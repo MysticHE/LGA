@@ -1,8 +1,41 @@
 const express = require('express');
+const multer = require('multer');
 const { requireDelegatedAuth } = require('../middleware/delegatedGraphAuth');
 const EmailContentProcessor = require('../utils/emailContentProcessor');
 const { getExcelColumnLetter } = require('../utils/excelGraphAPI');
 const router = express.Router();
+
+// Configure multer for attachment uploads
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 25 * 1024 * 1024, // 25MB limit (Microsoft Graph attachment limit)
+        files: 5 // Maximum 5 files per template
+    },
+    fileFilter: (req, file, cb) => {
+        // Allow common business file types
+        const allowedMimes = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'image/jpeg',
+            'image/png',
+            'image/gif',
+            'text/plain',
+            'text/csv'
+        ];
+
+        if (allowedMimes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error(`File type ${file.mimetype} not allowed. Allowed types: PDF, Word, Excel, PowerPoint, Images, Text files.`), false);
+        }
+    }
+});
 
 // Initialize processors
 const emailContentProcessor = new EmailContentProcessor();
@@ -91,8 +124,8 @@ router.get('/:templateId', requireDelegatedAuth, async (req, res) => {
     }
 });
 
-// Create new template
-router.post('/', requireDelegatedAuth, async (req, res) => {
+// Create new template with optional file attachments
+router.post('/', requireDelegatedAuth, upload.array('attachments', 5), async (req, res) => {
     try {
         const templateData = req.body;
         console.log('📝 Creating new template:', templateData.Template_Name);
@@ -107,6 +140,45 @@ router.post('/', requireDelegatedAuth, async (req, res) => {
                 message: 'Missing required fields',
                 missingFields: missingFields
             });
+        }
+
+        // Process uploaded attachments
+        let attachments = [];
+        if (req.files && req.files.length > 0) {
+            console.log(`📎 Processing ${req.files.length} attachments for template`);
+
+            // Validate each attachment
+            for (const file of req.files) {
+                const validation = emailContentProcessor.validateAttachment({
+                    name: file.originalname,
+                    size: file.size,
+                    contentType: file.mimetype
+                });
+
+                if (!validation.isValid) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Attachment validation failed: ${validation.errors.join(', ')}`,
+                        attachment: file.originalname
+                    });
+                }
+
+                // Convert file to attachment format for storage
+                attachments.push({
+                    name: file.originalname,
+                    contentType: file.mimetype,
+                    size: file.size,
+                    contentBytes: file.buffer.toString('base64'),
+                    uploadDate: new Date().toISOString()
+                });
+            }
+
+            console.log(`✅ ${attachments.length} attachments processed successfully`);
+        }
+
+        // Add attachments to template data
+        if (attachments.length > 0) {
+            templateData.attachments = attachments;
         }
 
         // Get authenticated Graph client
@@ -127,7 +199,13 @@ router.post('/', requireDelegatedAuth, async (req, res) => {
             templateId: templateId,
             template: {
                 Template_ID: templateId,
-                ...templateData
+                ...templateData,
+                attachmentCount: attachments.length,
+                attachments: attachments.map(att => ({
+                    name: att.name,
+                    size: att.size,
+                    contentType: att.contentType
+                })) // Don't include base64 content in response
             }
         });
 
@@ -486,6 +564,31 @@ async function getTemplatesViaGraphAPI(graphClient) {
             headers.forEach((header, index) => {
                 template[header] = row[index] || '';
             });
+
+            // Parse attachments JSON if present
+            if (template.Attachments && template.Attachments.trim()) {
+                try {
+                    template.attachments = JSON.parse(template.Attachments);
+                    // Don't include full base64 content in list responses for performance
+                    template.attachmentSummary = template.attachments.map(att => ({
+                        name: att.name,
+                        size: att.size,
+                        contentType: att.contentType,
+                        uploadDate: att.uploadDate
+                    }));
+                } catch (parseError) {
+                    console.warn(`⚠️ Failed to parse attachments for template ${template.Template_ID}:`, parseError.message);
+                    template.attachments = [];
+                    template.attachmentSummary = [];
+                }
+            } else {
+                template.attachments = [];
+                template.attachmentSummary = [];
+            }
+
+            // Ensure attachment count is a number
+            template.Attachment_Count = parseInt(template.Attachment_Count) || 0;
+
             return template;
         }).filter(template => template.Template_ID);
         
@@ -519,13 +622,18 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
         const templateId = `template_${Date.now()}`;
         
         // Prepare template row data
+        const attachmentInfo = templateData.attachments ? JSON.stringify(templateData.attachments) : '';
+        const attachmentCount = templateData.attachments ? templateData.attachments.length : 0;
+
         const templateRow = [
             templateId,
             templateData.Template_Name || '',
             templateData.Template_Type || '',
             templateData.Subject || '',
             templateData.Body || '',
-            templateData.Active || 'Yes'
+            templateData.Active || 'Yes',
+            attachmentInfo,
+            attachmentCount
         ];
         
         // Discover what table to use
@@ -772,7 +880,7 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
         }
         
         // Define template headers matching the Excel columns
-        const headers = ['Template_ID', 'Template_Name', 'Template_Type', 'Subject', 'Body', 'Active'];
+        const headers = ['Template_ID', 'Template_Name', 'Template_Type', 'Subject', 'Body', 'Active', 'Attachments', 'Attachment_Count'];
         
         // Check if worksheet exists, create it if not
         try {
