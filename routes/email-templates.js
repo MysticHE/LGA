@@ -249,18 +249,59 @@ router.post('/', requireDelegatedAuth, upload.array('attachments', 5), async (re
 });
 
 // Update existing template
-router.put('/:templateId', requireDelegatedAuth, async (req, res) => {
+router.put('/:templateId', requireDelegatedAuth, upload.array('attachments', 5), async (req, res) => {
     try {
         const { templateId } = req.params;
         const updates = req.body;
         console.log(`📝 Updating template: ${templateId}`);
+
+        // Process uploaded attachments if any
+        let attachments = [];
+        if (req.files && req.files.length > 0) {
+            console.log(`📎 Processing ${req.files.length} attachments for template update`);
+
+            // Validate each attachment
+            for (const file of req.files) {
+                const validation = emailContentProcessor.validateAttachment({
+                    name: file.originalname,
+                    size: file.size,
+                    contentType: file.mimetype
+                });
+
+                if (!validation.isValid) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Attachment validation failed: ${validation.errors.join(', ')}`,
+                        attachment: file.originalname
+                    });
+                }
+
+                // Convert file to attachment format for storage
+                attachments.push({
+                    name: file.originalname,
+                    contentType: file.mimetype,
+                    size: file.size,
+                    contentBytes: file.buffer.toString('base64'),
+                    uploadDate: new Date().toISOString()
+                });
+            }
+
+            console.log(`✅ ${attachments.length} attachments processed successfully for update`);
+        }
+
+        // Add attachments to updates if provided
+        if (attachments.length > 0) {
+            updates.attachments = attachments;
+            updates.Attachments = JSON.stringify(attachments);
+            updates.Attachment_Count = attachments.length;
+        }
 
         // Get authenticated Graph client
         const graphClient = await req.delegatedAuth.getGraphClient(req.sessionId);
 
         // Update template using Graph API
         const updateSuccess = await updateTemplateViaGraphAPI(graphClient, templateId, updates);
-        
+
         if (!updateSuccess) {
             return res.status(404).json({
                 success: false,
@@ -274,7 +315,8 @@ router.put('/:templateId', requireDelegatedAuth, async (req, res) => {
             success: true,
             message: 'Template updated successfully',
             templateId: templateId,
-            updatedFields: Object.keys(updates)
+            updatedFields: Object.keys(updates),
+            attachmentCount: attachments.length
         });
 
     } catch (error) {
@@ -951,9 +993,27 @@ async function deleteTemplateViaGraphAPI(graphClient, templateId) {
             return false;
         }
         
+        // Find the correct table name
+        let actualTableName = 'TemplatesTable';
+        try {
+            const existingTables = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('Templates')/tables`)
+                .get();
+
+            if (existingTables.value.length > 0) {
+                const targetTable = existingTables.value.find(t => t.name === 'TemplatesTable');
+                if (!targetTable) {
+                    actualTableName = existingTables.value[0].name;
+                    console.log(`🔄 Using existing table '${actualTableName}' for deletion`);
+                }
+            }
+        } catch (discoverError) {
+            console.warn('⚠️ Could not discover table name, using default:', discoverError.message);
+        }
+
         // Delete row from table
         await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/tables/TemplatesTable/rows/itemAt(index=${targetRowIndex})`)
+            .api(`/me/drive/items/${fileId}/workbook/tables/${actualTableName}/rows/itemAt(index=${targetRowIndex})`)
             .delete();
         
         return true;
