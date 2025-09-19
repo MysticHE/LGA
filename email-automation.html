@@ -905,7 +905,7 @@
             console.log(`📝 Updated template dropdowns with ${activeTemplates.length} active templates`);
         }
 
-        // Update Template Type dropdown for template creation (shows available slots)
+        // Update Template Type dropdown for template creation/editing
         function updateTemplateTypeDropdown(dropdown, templateList) {
             // Store current value
             const currentValue = dropdown.value;
@@ -913,11 +913,24 @@
             // Define all possible template types (Template_1 through Template_5)
             const allTemplateTypes = ['Template_1', 'Template_2', 'Template_3', 'Template_4', 'Template_5'];
 
+            // Check if we're in editing mode
+            const templateForm = document.getElementById('templateForm');
+            const isEditing = templateForm && templateForm.dataset.editingId;
+
             // Get existing template types
             const existingTypes = templateList.map(t => t.Template_Type);
 
-            // Find available template types
-            const availableTypes = allTemplateTypes.filter(type => !existingTypes.includes(type));
+            // Determine which types to show
+            let typesToShow;
+            if (isEditing) {
+                // When editing, show ALL template types so user can see current value
+                typesToShow = allTemplateTypes;
+                console.log(`📝 Editing mode: showing all template types`);
+            } else {
+                // When creating, show only available template types
+                typesToShow = allTemplateTypes.filter(type => !existingTypes.includes(type));
+                console.log(`📝 Creation mode: showing ${typesToShow.length} available slots`);
+            }
 
             // Clear dropdown
             dropdown.innerHTML = '';
@@ -928,16 +941,29 @@
             defaultOption.textContent = 'Select type...';
             dropdown.appendChild(defaultOption);
 
-            // Add available template type options
-            availableTypes.forEach(type => {
+            // Add template type options
+            typesToShow.forEach(type => {
                 const option = document.createElement('option');
                 option.value = type;
                 option.textContent = type.replace('_', ' ');
+
+                // If this type is already used by another template (and we're editing), mark it
+                if (isEditing && existingTypes.includes(type)) {
+                    const templateUsingType = templateList.find(t => t.Template_Type === type);
+                    const editingId = templateForm.dataset.editingId;
+
+                    // Only disable if it's used by a DIFFERENT template
+                    if (templateUsingType && templateUsingType.Template_ID !== editingId) {
+                        option.disabled = true;
+                        option.textContent += ` (used by ${templateUsingType.Template_Name})`;
+                    }
+                }
+
                 dropdown.appendChild(option);
             });
 
-            // If no available types, show message
-            if (availableTypes.length === 0) {
+            // If no types to show in creation mode, show message
+            if (!isEditing && typesToShow.length === 0) {
                 const noSlotsOption = document.createElement('option');
                 noSlotsOption.value = '';
                 noSlotsOption.textContent = 'All template slots are used';
@@ -945,12 +971,13 @@
                 dropdown.appendChild(noSlotsOption);
             }
 
-            // Restore previous value if it's still available
-            if (currentValue && availableTypes.includes(currentValue)) {
+            // Restore previous value
+            if (currentValue && (isEditing || typesToShow.includes(currentValue))) {
                 dropdown.value = currentValue;
+                console.log(`📝 Set dropdown value to: ${currentValue}`);
             }
 
-            console.log(`📝 Template Type dropdown updated: ${availableTypes.length} available slots (${availableTypes.join(', ')})`);
+            console.log(`📝 Template Type dropdown updated: ${typesToShow.length} types shown (${typesToShow.join(', ')})`);
         }
 
         // Global pagination variables
@@ -1055,13 +1082,37 @@
         // Modal functions
         function openTemplateModal() {
             document.getElementById('templateModal').style.display = 'block';
+
             // Clear form and edit mode
             document.getElementById('templateForm').reset();
             delete document.getElementById('templateForm').dataset.editingId;
+
+            // Refresh Template Type dropdown to show available slots for new templates
+            const templateTypeDropdown = document.getElementById('templateType');
+            if (templateTypeDropdown && window.templates) {
+                updateTemplateTypeDropdown(templateTypeDropdown, window.templates);
+            }
+
+            console.log('📝 New template modal opened, editing mode cleared');
         }
 
         function closeTemplateModal() {
             document.getElementById('templateModal').style.display = 'none';
+
+            // Clear editing mode
+            const templateForm = document.getElementById('templateForm');
+            delete templateForm.dataset.editingId;
+
+            // Reset form
+            templateForm.reset();
+
+            // Refresh Template Type dropdown to show available slots for new templates
+            const templateTypeDropdown = document.getElementById('templateType');
+            if (templateTypeDropdown && window.templates) {
+                updateTemplateTypeDropdown(templateTypeDropdown, window.templates);
+            }
+
+            console.log('📝 Template modal closed, editing mode cleared');
         }
 
         function openCampaignModal() {
@@ -1329,6 +1380,15 @@
                 if (template) {
                     console.log('📝 Editing template:', template);
 
+                    // Store template ID for updating FIRST (this enables editing mode)
+                    document.getElementById('templateForm').dataset.editingId = templateId;
+
+                    // Refresh the Template Type dropdown to show all types in editing mode
+                    const templateTypeDropdown = document.getElementById('templateType');
+                    if (templateTypeDropdown && window.templates) {
+                        updateTemplateTypeDropdown(templateTypeDropdown, window.templates);
+                    }
+
                     // Populate form with template data
                     document.getElementById('templateName').value = template.Template_Name || '';
                     document.getElementById('templateType').value = template.Template_Type || '';
@@ -1336,11 +1396,10 @@
                     document.getElementById('templateContent').value = template.Body || '';
                     document.getElementById('templateActive').value = template.Active || 'Yes';
 
-                    // Store template ID for updating
-                    document.getElementById('templateForm').dataset.editingId = templateId;
-
                     // Update preview if visible
                     updatePreview();
+
+                    console.log(`📝 Template form populated with type: ${template.Template_Type}`);
 
                     // Open modal
                     document.getElementById('templateModal').style.display = 'block';
