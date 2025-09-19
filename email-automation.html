@@ -274,11 +274,43 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label">Subject Line:</label>
-                    <input type="text" id="templateSubject" class="form-input" placeholder="Use {Name}, {Company}, {Title} for personalization" required>
+                    <div class="input-with-variables">
+                        <input type="text" id="templateSubject" class="form-input" placeholder="Enter subject line..." required>
+                        <div class="variable-helpers">
+                            <span class="variable-label">Quick Insert:</span>
+                            <button type="button" class="variable-btn" onclick="insertVariable('templateSubject', '{Name}')">Name</button>
+                            <button type="button" class="variable-btn" onclick="insertVariable('templateSubject', '{Company}')">Company</button>
+                            <button type="button" class="variable-btn" onclick="insertVariable('templateSubject', '{Title}')">Title</button>
+                            <button type="button" class="variable-btn" onclick="showVariableModal('templateSubject')">More...</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Email Content:</label>
-                    <textarea id="templateContent" class="form-textarea" placeholder="Use {Name}, {Company}, {Title} for personalization" required></textarea>
+                    <div class="input-with-variables">
+                        <textarea id="templateContent" class="form-textarea" placeholder="Enter email content..." required></textarea>
+                        <div class="variable-helpers">
+                            <span class="variable-label">Quick Insert:</span>
+                            <button type="button" class="variable-btn" onclick="insertVariable('templateContent', '{Name}')">Name</button>
+                            <button type="button" class="variable-btn" onclick="insertVariable('templateContent', '{Company}')">Company</button>
+                            <button type="button" class="variable-btn" onclick="insertVariable('templateContent', '{Title}')">Title</button>
+                            <button type="button" class="variable-btn" onclick="insertVariable('templateContent', '{Email}')">Email</button>
+                            <button type="button" class="variable-btn" onclick="showVariableModal('templateContent')">More...</button>
+                        </div>
+                    </div>
+                    <div class="template-preview" id="templatePreview" style="display: none;">
+                        <h4>Preview with Sample Data:</h4>
+                        <div class="preview-content">
+                            <div class="preview-subject">
+                                <strong>Subject:</strong> <span id="previewSubject"></span>
+                            </div>
+                            <div class="preview-body">
+                                <strong>Body:</strong> <span id="previewBody"></span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary" onclick="togglePreview()">Hide Preview</button>
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="togglePreview()" id="showPreviewBtn">Show Preview</button>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Attachments:</label>
@@ -2324,6 +2356,175 @@ Sample data: John Smith, ABC Corporation, Marketing Manager
                 console.error('❌ Send filtered emails error:', error);
                 alert('❌ Failed to send emails to filtered leads.');
             }
+        }
+
+        // Variable Helper Functions
+
+        const availableVariables = {
+            personal: [
+                { name: '{Name}', description: 'Contact name' },
+                { name: '{Title}', description: 'Job title' },
+                { name: '{Email}', description: 'Email address' }
+            ],
+            company: [
+                { name: '{Company}', description: 'Company name' },
+                { name: '{Industry}', description: 'Industry type' },
+                { name: '{Size}', description: 'Company size' },
+                { name: '{Location}', description: 'Company location' },
+                { name: '{Website}', description: 'Company website' }
+            ],
+            social: [
+                { name: '{LinkedIn_URL}', description: 'LinkedIn profile' }
+            ],
+            meta: [
+                { name: '{Date}', description: 'Current date' },
+                { name: '{Time}', description: 'Current time' }
+            ]
+        };
+
+        const sampleData = {
+            Name: 'John Smith',
+            Title: 'Marketing Director',
+            Email: 'john.smith@acmecorp.com',
+            Company: 'ACME Corporation',
+            Industry: 'Technology',
+            Size: '100-500 employees',
+            Location: 'Singapore',
+            Website: 'www.acmecorp.com',
+            LinkedIn_URL: 'https://linkedin.com/in/johnsmith',
+            Date: new Date().toLocaleDateString(),
+            Time: new Date().toLocaleTimeString()
+        };
+
+        // Insert variable at cursor position
+        function insertVariable(fieldId, variable) {
+            const field = document.getElementById(fieldId);
+            const cursorPos = field.selectionStart;
+            const textBefore = field.value.substring(0, cursorPos);
+            const textAfter = field.value.substring(field.selectionEnd);
+
+            field.value = textBefore + variable + textAfter;
+
+            // Update cursor position
+            const newPos = cursorPos + variable.length;
+            field.focus();
+            field.setSelectionRange(newPos, newPos);
+
+            // Update preview if visible
+            updatePreview();
+        }
+
+        // Show variable modal
+        function showVariableModal(fieldId) {
+            const modal = document.createElement('div');
+            modal.className = 'variable-modal';
+            modal.onclick = (e) => { if (e.target === modal) closeVariableModal(modal); };
+
+            modal.innerHTML = `
+                <div class="variable-modal-content">
+                    <div class="variable-modal-header">
+                        <h3 class="variable-modal-title">Insert Variable</h3>
+                        <button class="variable-modal-close" onclick="closeVariableModal(this.closest('.variable-modal'))">&times;</button>
+                    </div>
+                    <div class="variable-categories">
+                        ${Object.entries(availableVariables).map(([category, variables]) => `
+                            <div class="variable-category">
+                                <h4>${category.charAt(0).toUpperCase() + category.slice(1)} Information</h4>
+                                <div class="variable-grid">
+                                    ${variables.map(variable => `
+                                        <div class="variable-item" onclick="insertVariableFromModal('${fieldId}', '${variable.name}', this.closest('.variable-modal'))">
+                                            <div>${variable.name}</div>
+                                            <div class="variable-description">${variable.description}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+        }
+
+        // Insert variable from modal
+        function insertVariableFromModal(fieldId, variable, modal) {
+            insertVariable(fieldId, variable);
+            closeVariableModal(modal);
+        }
+
+        // Close variable modal
+        function closeVariableModal(modal) {
+            modal.remove();
+        }
+
+        // Toggle preview
+        function togglePreview() {
+            const preview = document.getElementById('templatePreview');
+            const btn = document.getElementById('showPreviewBtn');
+
+            if (preview.style.display === 'none') {
+                preview.style.display = 'block';
+                btn.style.display = 'none';
+                updatePreview();
+            } else {
+                preview.style.display = 'none';
+                btn.style.display = 'block';
+            }
+        }
+
+        // Update preview with sample data
+        function updatePreview() {
+            const subjectField = document.getElementById('templateSubject');
+            const contentField = document.getElementById('templateContent');
+            const previewSubject = document.getElementById('previewSubject');
+            const previewBody = document.getElementById('previewBody');
+
+            if (!previewSubject || !previewBody) return;
+
+            let subject = subjectField.value;
+            let body = contentField.value;
+
+            // Replace variables with sample data
+            Object.entries(sampleData).forEach(([key, value]) => {
+                const regex = new RegExp(`\\{${key}\\}`, 'g');
+                subject = subject.replace(regex, `<span class="variable-highlight">${value}</span>`);
+                body = body.replace(regex, `<span class="variable-highlight">${value}</span>`);
+            });
+
+            previewSubject.innerHTML = subject || '<em>Enter subject line...</em>';
+            previewBody.innerHTML = body.replace(/\n/g, '<br>') || '<em>Enter email content...</em>';
+        }
+
+        // Add event listeners for real-time preview updates
+        document.addEventListener('DOMContentLoaded', function() {
+            const subjectField = document.getElementById('templateSubject');
+            const contentField = document.getElementById('templateContent');
+
+            if (subjectField && contentField) {
+                subjectField.addEventListener('input', updatePreview);
+                contentField.addEventListener('input', updatePreview);
+            }
+        });
+
+        // Variable highlighting in text areas (basic implementation)
+        function highlightVariables(fieldId) {
+            const field = document.getElementById(fieldId);
+            const text = field.value;
+
+            // Simple validation - check for unmatched braces or invalid variables
+            const variables = text.match(/\{[^}]*\}/g) || [];
+            const invalidVariables = variables.filter(variable => {
+                const varName = variable.slice(1, -1);
+                return !Object.values(availableVariables).flat().some(v => v.name === variable);
+            });
+
+            if (invalidVariables.length > 0) {
+                console.warn('Invalid variables found:', invalidVariables);
+                return false;
+            }
+
+            return true;
         }
     </script>
 </body>

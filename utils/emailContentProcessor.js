@@ -7,8 +7,14 @@ class EmailContentProcessor {
     constructor() {
         this.variablePattern = /\{([^}]+)\}/g;
         this.supportedVariables = [
-            'Name', 'Company', 'Title', 'Industry', 'Location', 'Email',
-            'Company_Name', 'LinkedIn_URL', 'Size'
+            // Personal information
+            'Name', 'Title', 'Email',
+            // Company information
+            'Company', 'Company_Name', 'Industry', 'Size', 'Location', 'Website',
+            // Social/Contact
+            'LinkedIn_URL',
+            // Meta/System
+            'Date', 'Time'
         ];
     }
 
@@ -115,17 +121,27 @@ class EmailContentProcessor {
             const trimmedVar = variableName.trim();
             
             // Map common variable names to lead properties
+            const now = new Date();
             const variableMap = {
+                // Personal information
                 'Name': lead.Name || '',
-                'Company': lead['Company Name'] || '',
-                'Company_Name': lead['Company Name'] || '',
                 'Title': lead.Title || '',
-                'Industry': lead.Industry || '',
-                'Location': lead.Location || '',
                 'Email': lead.Email || '',
-                'LinkedIn_URL': lead['LinkedIn URL'] || '',
+
+                // Company information
+                'Company': lead['Company Name'] || lead.Company || '',
+                'Company_Name': lead['Company Name'] || lead.Company || '',
+                'Industry': lead.Industry || '',
                 'Size': lead.Size || '',
-                'Website': lead['Company Website'] || ''
+                'Location': lead.Location || '',
+                'Website': lead['Company Website'] || lead.Website || '',
+
+                // Social/Contact
+                'LinkedIn_URL': lead['LinkedIn URL'] || lead.LinkedIn_URL || '',
+
+                // Meta/System variables
+                'Date': now.toLocaleDateString(),
+                'Time': now.toLocaleTimeString()
             };
 
             const replacement = variableMap[trimmedVar] || 
@@ -301,13 +317,17 @@ Joel Lee`;
     previewEmailContent(template, sampleLead = null) {
         const defaultSampleLead = {
             Name: 'John Smith',
-            'Company Name': 'ABC Corporation',
-            Title: 'Marketing Manager',
+            'Company Name': 'ACME Corporation',
+            Company: 'ACME Corporation',
+            Title: 'Marketing Director',
             Industry: 'Technology',
             Location: 'Singapore',
-            Email: 'john.smith@abccorp.com',
+            Email: 'john.smith@acmecorp.com',
             'LinkedIn URL': 'https://linkedin.com/in/johnsmith',
-            Size: '100-500'
+            LinkedIn_URL: 'https://linkedin.com/in/johnsmith',
+            Size: '100-500 employees',
+            'Company Website': 'www.acmecorp.com',
+            Website: 'www.acmecorp.com'
         };
 
         const lead = sampleLead || defaultSampleLead;
