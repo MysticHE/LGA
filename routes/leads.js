@@ -38,6 +38,165 @@ const excelProcessor = new ExcelProcessor();
 // Initialize product materials storage (in-memory, like job storage)
 global.productMaterials = global.productMaterials || new Map();
 
+// Initialize email prompt template storage
+global.emailPromptTemplate = global.emailPromptTemplate || null;
+
+// Default email prompt template
+const DEFAULT_EMAIL_PROMPT_TEMPLATE = `{PRODUCT_MATERIALS_SECTION}PROSPECT RESEARCH
+
+Research the company "{COMPANY_NAME}" using your knowledge base to understand:
+Their industry-specific risks, potential insurance gaps, employee retention, wellness, medical needs
+
+LEAD INFORMATION
+
+Name: {LEAD_NAME}
+Title: {LEAD_TITLE}
+Company: {COMPANY_NAME}
+Industry: {LEAD_INDUSTRY}
+Location: {LEAD_COUNTRY}
+LinkedIn: {LINKEDIN_URL}
+
+TASK:
+
+Create a personalized, consultative marketing email for SME insurance solutions focusing on:
+Employee protection & retention, medical needs, health and wellness, cost savings
+
+GENERATE:
+
+📧 PROFESSIONAL EMAIL (150–180 words)
+
+1. Subject Line:
+
+Generate (6–10 words) that are:
+- Benefit-Oriented or pain point to capture attention
+- Personalized with company or industry reference
+- Clear, no jargon or vague phrasing
+
+2. Email Body:
+
+EMAIL OPENING RULES:
+- Start with a natural sentence linking the company's business goals or industry context to the challenges addressed by insurance solutions.
+- Avoid generic phrases like "you are likely aware" or "as the CEO...".
+- Make it sound consultative and empathetic, not scripted.
+
+Second paragraph with 2–3 potential pain points in bullets form companies like theirs face (e.g. Abusive claims, rising costs, talent retention, limited coverage etc).
+
+Third paragraph name the product with 2–3 insurance solutions in bullets form from materials, described benefit-first.
+
+Forth paragraph, briefly mention similar companies helped or results achieved.
+
+Lastly, call to action, Professional request for brief meeting/call.
+
+WRITING GUIDELINES:
+
+- Professional, consultative tone — talk with them, not at them
+- No generic "we offer insurance" pitches
+- No heavy jargon or long product descriptions
+- No passive CTAs like "looking forward to your reply"
+- Output in plain text, not Markdown
+- Use short paragraphs and simple bullet points for readability
+- No extra formatting symbols like **bold** or ---; just clear text formatting for email
+
+LANGUAGE & TONE RULES:
+- Avoid repetitive use of "yours," "your company," or "your team."
+- Maintain a consultative, professional tone — avoid overly casual or familiar language
+- Keep language clear, benefit-focused, and respectful of executive-level readers
+
+Make sure that you review the email content to achieve a rating of 10/10;
+- Hooks readers faster with benefit-focused subject lines
+- Speaks to their challenges clearly and empathetically
+- Structures the email for easy reading with bullets and concise paragraphs
+- Makes the call-to-action specific and easy to accept`;
+
+// Get current email prompt template
+router.get('/email-prompt', (req, res) => {
+    try {
+        const currentTemplate = global.emailPromptTemplate || DEFAULT_EMAIL_PROMPT_TEMPLATE;
+
+        res.json({
+            success: true,
+            template: currentTemplate,
+            isDefault: !global.emailPromptTemplate,
+            availableVariables: [
+                '{PRODUCT_MATERIALS_SECTION}',
+                '{COMPANY_NAME}',
+                '{LEAD_NAME}',
+                '{LEAD_TITLE}',
+                '{LEAD_INDUSTRY}',
+                '{LEAD_COUNTRY}',
+                '{LINKEDIN_URL}'
+            ]
+        });
+    } catch (error) {
+        console.error('Error retrieving email prompt template:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to retrieve email prompt template'
+        });
+    }
+});
+
+// Update email prompt template
+router.post('/email-prompt', (req, res) => {
+    try {
+        const { template } = req.body;
+
+        if (!template || typeof template !== 'string') {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: 'Template is required and must be a string'
+            });
+        }
+
+        // Basic validation - ensure required variables are present
+        const requiredVariables = ['{COMPANY_NAME}', '{LEAD_NAME}'];
+        const missingVariables = requiredVariables.filter(variable => !template.includes(variable));
+
+        if (missingVariables.length > 0) {
+            return res.status(400).json({
+                error: 'Validation Error',
+                message: `Template must include required variables: ${missingVariables.join(', ')}`
+            });
+        }
+
+        // Store the template
+        global.emailPromptTemplate = template;
+
+        res.json({
+            success: true,
+            message: 'Email prompt template updated successfully',
+            template: template
+        });
+
+    } catch (error) {
+        console.error('Error updating email prompt template:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to update email prompt template'
+        });
+    }
+});
+
+// Reset email prompt template to default
+router.post('/email-prompt/reset', (req, res) => {
+    try {
+        global.emailPromptTemplate = null;
+
+        res.json({
+            success: true,
+            message: 'Email prompt template reset to default',
+            template: DEFAULT_EMAIL_PROMPT_TEMPLATE
+        });
+
+    } catch (error) {
+        console.error('Error resetting email prompt template:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to reset email prompt template'
+        });
+    }
+});
+
 // PDF upload endpoint for product materials
 router.post('/upload-materials', upload.array('pdfs'), async (req, res) => {
     try {
@@ -261,6 +420,27 @@ router.post('/generate-outreach', async (req, res) => {
     }
 });
 
+// Helper function to substitute variables in email prompt template
+function substituteTemplateVariables(template, lead, productContext = '') {
+    const productMaterialsSection = productContext ?
+        `[IF PDF MATERIALS UPLOADED - up to 3.5K characters:]
+PRODUCT MATERIALS & SERVICES:
+${productContext}
+
+Use this product information to generate tailored, benefit-focused email content aligned with the prospect's industry challenges and role priorities
+
+` : '';
+
+    return template
+        .replace(/{PRODUCT_MATERIALS_SECTION}/g, productMaterialsSection)
+        .replace(/{COMPANY_NAME}/g, lead.organization_name || 'the company')
+        .replace(/{LEAD_NAME}/g, lead.name || 'the prospect')
+        .replace(/{LEAD_TITLE}/g, lead.title || 'the executive')
+        .replace(/{LEAD_INDUSTRY}/g, lead.industry || 'their industry')
+        .replace(/{LEAD_COUNTRY}/g, lead.country || 'their location')
+        .replace(/{LINKEDIN_URL}/g, lead.linkedin_url || 'Not available');
+}
+
 // Generate outreach content for a single lead with optimized content processing
 async function generateOutreachContent(lead, useProductMaterials = false) {
     const startTime = Date.now();
@@ -346,77 +526,9 @@ async function generateOutreachContent(lead, useProductMaterials = false) {
         }
     }
 
-    const prompt = `${productContext ? `[IF PDF MATERIALS UPLOADED - up to 3.5K characters:]
-PRODUCT MATERIALS & SERVICES:
-${productContext}
-
-Use this product information to generate tailored, benefit-focused email content aligned with the prospect's industry challenges and role priorities
-
-` : ''}PROSPECT RESEARCH
-
-Research the company "${lead.organization_name}" using your knowledge base to understand:
-Their industry-specific risks, potential insurance gaps, employee retention, wellness, medical needs
-
-LEAD INFORMATION
-
-Name: ${lead.name}
-Title: ${lead.title}
-Company: ${lead.organization_name}
-Industry: ${lead.industry}
-Location: ${lead.country}
-LinkedIn: ${lead.linkedin_url || 'Not available'}
-
-TASK:
-
-Create a personalized, consultative marketing email for SME insurance solutions focusing on:
-Employee protection & retention, medical needs, health and wellness, cost savings
-
-GENERATE:
-
-📧 PROFESSIONAL EMAIL (150–180 words)
-
-1. Subject Line:
-
-Generate (6–10 words) that are:
-- Benefit-Oriented or pain point to capture attention
-- Personalized with company or industry reference
-- Clear, no jargon or vague phrasing
-
-2. Email Body:
-
-EMAIL OPENING RULES:
-- Start with a natural sentence linking the company's business goals or industry context to the challenges addressed by insurance solutions.
-- Avoid generic phrases like "you are likely aware" or "as the CEO...".
-- Make it sound consultative and empathetic, not scripted.
-
-Second paragraph with 2–3 potential pain points in bullets form companies like theirs face (e.g. Abusive claims, rising costs, talent retention, limited coverage etc).
-
-Third paragraph name the product with 2–3 insurance solutions in bullets form from materials, described benefit-first.
-
-Forth paragraph, briefly mention similar companies helped or results achieved.
-
-Lastly, call to action, Professional request for brief meeting/call.
-
-WRITING GUIDELINES:
-
-- Professional, consultative tone — talk with them, not at them
-- No generic "we offer insurance" pitches
-- No heavy jargon or long product descriptions
-- No passive CTAs like "looking forward to your reply"
-- Output in plain text, not Markdown
-- Use short paragraphs and simple bullet points for readability
-- No extra formatting symbols like **bold** or ---; just clear text formatting for email
-
-LANGUAGE & TONE RULES:
-- Avoid repetitive use of "yours," "your company," or "your team."
-- Maintain a consultative, professional tone — avoid overly casual or familiar language
-- Keep language clear, benefit-focused, and respectful of executive-level readers
-
-Make sure that you review the email content to achieve a rating of 10/10;
-- Hooks readers faster with benefit-focused subject lines
-- Speaks to their challenges clearly and empathetically
-- Structures the email for easy reading with bullets and concise paragraphs
-- Makes the call-to-action specific and easy to accept`;
+    // Get the current template and substitute variables
+    const currentTemplate = global.emailPromptTemplate || DEFAULT_EMAIL_PROMPT_TEMPLATE;
+    const prompt = substituteTemplateVariables(currentTemplate, lead, productContext);
 
     try {
         const response = await openai.chat.completions.create({

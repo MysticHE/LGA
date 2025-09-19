@@ -123,6 +123,11 @@ app.get('/email-automation', (req, res) => {
     res.sendFile(path.join(__dirname, 'email-automation.html'));
 });
 
+// Serve prompt editor page
+app.get('/prompt-editor', (req, res) => {
+    res.sendFile(path.join(__dirname, 'prompt-editor.html'));
+});
+
 // Favicon route to prevent 404 errors
 app.get('/favicon.ico', (req, res) => {
     res.status(204).send();
