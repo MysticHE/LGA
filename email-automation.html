@@ -759,10 +759,14 @@
                     updateTemplateDropdowns(templates);
                 } else {
                     document.getElementById('templatesList').innerHTML = '<p>No templates found.</p>';
+                    // Still update dropdowns with empty template list (shows all available slots)
+                    updateTemplateDropdowns([]);
                 }
             } catch (error) {
                 console.error('❌ Templates loading error:', error);
                 document.getElementById('templatesList').innerHTML = '<p>Error loading templates.</p>';
+                // Initialize dropdowns with empty template list (shows all available slots)
+                updateTemplateDropdowns([]);
             }
         }
 
@@ -824,45 +828,99 @@
         // Update template dropdowns with current templates
         function updateTemplateDropdowns(templateList) {
             const activeTemplates = templateList.filter(t => t.Active === 'Yes');
-            
-            // Get all template dropdowns
-            const dropdowns = [
+
+            // Handle template creation dropdown differently from content selection dropdowns
+            const templateTypeDropdown = document.getElementById('templateType');
+            const contentDropdowns = [
                 document.getElementById('emailContentSelect'),
                 document.getElementById('filterTemplate'),
-                document.getElementById('templateType'),
                 document.querySelector('#scheduleEmailModal select[id*="content"]')
-            ].filter(Boolean); // Remove any null elements
-            
-            dropdowns.forEach(dropdown => {
+            ].filter(Boolean);
+
+            // Update Template Type dropdown for creation (show available slots)
+            if (templateTypeDropdown) {
+                updateTemplateTypeDropdown(templateTypeDropdown, templateList);
+            }
+
+            // Update content selection dropdowns (show existing active templates)
+            contentDropdowns.forEach(dropdown => {
                 // Store current value
                 const currentValue = dropdown.value;
-                
+
                 // Get existing static options (like AI_Generated)
                 const staticOptions = Array.from(dropdown.querySelectorAll('option')).filter(option =>
                     !option.value.startsWith('Template_') || option.value === ''
                 );
-                
+
                 // Clear all options
                 dropdown.innerHTML = '';
-                
+
                 // Re-add static options
                 staticOptions.forEach(option => dropdown.appendChild(option.cloneNode(true)));
-                
-                // Add dynamic template options
+
+                // Add dynamic template options (existing active templates)
                 activeTemplates.forEach(template => {
                     const option = document.createElement('option');
                     option.value = template.Template_Type;
                     option.textContent = template.Template_Name;
                     dropdown.appendChild(option);
                 });
-                
+
                 // Restore previous value if it still exists
                 if (currentValue && Array.from(dropdown.options).some(opt => opt.value === currentValue)) {
                     dropdown.value = currentValue;
                 }
             });
-            
+
             console.log(`📝 Updated template dropdowns with ${activeTemplates.length} active templates`);
+        }
+
+        // Update Template Type dropdown for template creation (shows available slots)
+        function updateTemplateTypeDropdown(dropdown, templateList) {
+            // Store current value
+            const currentValue = dropdown.value;
+
+            // Define all possible template types (Template_1 through Template_5)
+            const allTemplateTypes = ['Template_1', 'Template_2', 'Template_3', 'Template_4', 'Template_5'];
+
+            // Get existing template types
+            const existingTypes = templateList.map(t => t.Template_Type);
+
+            // Find available template types
+            const availableTypes = allTemplateTypes.filter(type => !existingTypes.includes(type));
+
+            // Clear dropdown
+            dropdown.innerHTML = '';
+
+            // Add default option
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Select type...';
+            dropdown.appendChild(defaultOption);
+
+            // Add available template type options
+            availableTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type.replace('_', ' ');
+                dropdown.appendChild(option);
+            });
+
+            // If no available types, show message
+            if (availableTypes.length === 0) {
+                const noSlotsOption = document.createElement('option');
+                noSlotsOption.value = '';
+                noSlotsOption.textContent = 'All template slots are used';
+                noSlotsOption.disabled = true;
+                dropdown.appendChild(noSlotsOption);
+            }
+
+            // Restore previous value if it's still available
+            if (currentValue && availableTypes.includes(currentValue)) {
+                dropdown.value = currentValue;
+            }
+
+            console.log(`📝 Template Type dropdown updated: ${availableTypes.length} available slots (${availableTypes.join(', ')})`);
         }
 
         // Global pagination variables
