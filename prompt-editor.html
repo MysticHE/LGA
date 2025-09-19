@@ -372,12 +372,20 @@
                 </div>
             </div>
 
+            <div class="variables-info" id="materialsInfo" style="display: none;">
+                <h3>📄 Product Materials Status</h3>
+                <div id="materialsStatus">Loading materials...</div>
+            </div>
+
             <div class="button-group">
                 <button class="btn btn-primary" onclick="saveTemplate()">
                     <span id="saveIcon">💾</span> Save Template
                 </button>
                 <button class="btn btn-secondary" onclick="updatePreview()">
                     🔄 Update Preview
+                </button>
+                <button class="btn btn-secondary" onclick="refreshMaterials()">
+                    📄 Refresh Materials
                 </button>
                 <button class="btn btn-warning" onclick="resetToDefault()">
                     ⚠️ Reset to Default
@@ -428,16 +436,69 @@
 
         let currentTemplate = '';
         let availableVariables = [];
+        let currentProductMaterials = null;
 
         // Load initial data
         document.addEventListener('DOMContentLoaded', function() {
             loadTemplate();
+            loadProductMaterials();
             displaySampleData();
         });
 
         // Display sample data
         function displaySampleData() {
             document.getElementById('sampleDataDisplay').textContent = JSON.stringify(sampleLead, null, 2);
+        }
+
+        // Load current product materials from server
+        async function loadProductMaterials() {
+            try {
+                const response = await fetch('/api/leads/product-materials-content');
+                const data = await response.json();
+
+                if (data.success) {
+                    currentProductMaterials = data;
+                    updateMaterialsDisplay();
+                    updatePreview(); // Refresh preview with real materials
+                } else {
+                    console.warn('Failed to load product materials:', data.message);
+                    currentProductMaterials = { hasContent: false, materialCount: 0 };
+                }
+            } catch (error) {
+                console.error('Error loading product materials:', error);
+                currentProductMaterials = { hasContent: false, materialCount: 0 };
+            }
+        }
+
+        // Update materials display in the UI
+        function updateMaterialsDisplay() {
+            const materialsInfo = document.getElementById('materialsInfo');
+            const materialsStatus = document.getElementById('materialsStatus');
+
+            if (currentProductMaterials?.hasContent) {
+                const count = currentProductMaterials.materialCount;
+                const materials = currentProductMaterials.materials || [];
+
+                materialsStatus.innerHTML = `
+                    <div style="color: var(--color-success); font-weight: var(--font-weight-medium);">
+                        ✅ ${count} material${count > 1 ? 's' : ''} loaded
+                    </div>
+                    <div style="font-size: var(--font-size-sm); color: var(--color-gray-600); margin-top: var(--space-1);">
+                        ${materials.map(m => m.filename).join(', ')}
+                    </div>
+                `;
+                materialsInfo.style.display = 'block';
+            } else {
+                materialsStatus.innerHTML = `
+                    <div style="color: var(--color-gray-500); font-weight: var(--font-weight-medium);">
+                        📄 No materials uploaded
+                    </div>
+                    <div style="font-size: var(--font-size-sm); color: var(--color-gray-600); margin-top: var(--space-1);">
+                        Upload PDF materials in Lead Generator to enhance email prompts
+                    </div>
+                `;
+                materialsInfo.style.display = 'block';
+            }
         }
 
         // Load current template from server
@@ -500,9 +561,17 @@
         function updatePreview() {
             const template = document.getElementById('templateEditor').value;
 
-            // Simple variable substitution for preview
+            // Use real product materials if available, otherwise show placeholder
+            let productMaterialsContent;
+            if (currentProductMaterials?.hasContent) {
+                productMaterialsContent = currentProductMaterials.content;
+            } else {
+                productMaterialsContent = '[No Product Materials Uploaded]\n(Upload PDF materials in the Lead Generator to see actual content here)\n\n';
+            }
+
+            // Variable substitution for preview
             let preview = template
-                .replace(/{PRODUCT_MATERIALS_SECTION}/g, '[Sample Product Materials Section]\nPRODUCT MATERIALS & SERVICES:\nSample insurance products and services content...\n\n')
+                .replace(/{PRODUCT_MATERIALS_SECTION}/g, productMaterialsContent)
                 .replace(/{COMPANY_NAME}/g, sampleLead.organization_name)
                 .replace(/{LEAD_NAME}/g, sampleLead.name)
                 .replace(/{LEAD_TITLE}/g, sampleLead.title)
@@ -590,6 +659,13 @@
                     statusDiv.className = '';
                 }, 3000);
             }
+        }
+
+        // Refresh materials manually
+        async function refreshMaterials() {
+            showStatus('Refreshing product materials...', 'success');
+            await loadProductMaterials();
+            showStatus('Product materials refreshed!', 'success');
         }
 
         // Auto-update preview as user types (debounced)

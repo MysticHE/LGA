@@ -177,6 +177,87 @@ router.post('/email-prompt', (req, res) => {
     }
 });
 
+// Get current product materials content for prompt preview
+router.get('/product-materials-content', async (req, res) => {
+    try {
+        global.productMaterials = global.productMaterials || new Map();
+        const materials = Array.from(global.productMaterials.values());
+
+        if (materials.length === 0) {
+            return res.json({
+                success: true,
+                hasContent: false,
+                content: '',
+                materialCount: 0,
+                materials: []
+            });
+        }
+
+        // Use the same processing logic as in generateOutreachContent
+        const leadContext = {
+            industry: 'Sample Industry',
+            role: 'Sample Role',
+            company: 'Sample Company',
+            country: 'Sample Country'
+        };
+
+        let productContext = '';
+
+        try {
+            // Process content with Content Processor if available
+            if (contentProcessor) {
+                const processedResult = contentProcessor.processContent ?
+                    await contentProcessor.processContent(materials, leadContext) : null;
+
+                if (processedResult?.success) {
+                    productContext = processedResult.content;
+                } else {
+                    // Fallback to simple processing
+                    const allContent = materials.map(m => `${m.filename}:\n${m.content}`).join('\n\n---\n\n');
+                    productContext = allContent.substring(0, 3000) + (allContent.length > 3000 ? '\n\n[Content truncated for preview]' : '');
+                }
+            } else {
+                // Simple processing if no content processor
+                const allContent = materials.map(m => `${m.filename}:\n${m.content}`).join('\n\n---\n\n');
+                productContext = allContent.substring(0, 3000) + (allContent.length > 3000 ? '\n\n[Content truncated for preview]' : '');
+            }
+        } catch (error) {
+            console.error('Error processing materials for preview:', error);
+            // Fallback to basic content
+            productContext = materials.map(m => `${m.filename}: [Content processing error]`).join('\n');
+        }
+
+        const productMaterialsSection = productContext ?
+            `[IF PDF MATERIALS UPLOADED - up to 3.5K characters:]
+PRODUCT MATERIALS & SERVICES:
+${productContext}
+
+Use this product information to generate tailored, benefit-focused email content aligned with the prospect's industry challenges and role priorities
+
+` : '';
+
+        res.json({
+            success: true,
+            hasContent: true,
+            content: productMaterialsSection,
+            materialCount: materials.length,
+            materials: materials.map(m => ({
+                id: m.id,
+                filename: m.filename,
+                pages: m.pages,
+                uploadedAt: m.uploadedAt
+            }))
+        });
+
+    } catch (error) {
+        console.error('Error retrieving product materials content:', error);
+        res.status(500).json({
+            error: 'Server Error',
+            message: 'Failed to retrieve product materials content'
+        });
+    }
+});
+
 // Reset email prompt template to default
 router.post('/email-prompt/reset', (req, res) => {
     try {

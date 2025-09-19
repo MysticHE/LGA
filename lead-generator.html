@@ -3495,10 +3495,99 @@ Best regards,
         }
 
         // Initialize the application
+        // Session storage utilities for state persistence
+        const SessionManager = {
+            save(key, data) {
+                try {
+                    sessionStorage.setItem(`lga_${key}`, JSON.stringify(data));
+                } catch (error) {
+                    console.warn('Failed to save to session storage:', error);
+                }
+            },
+
+            load(key) {
+                try {
+                    const data = sessionStorage.getItem(`lga_${key}`);
+                    return data ? JSON.parse(data) : null;
+                } catch (error) {
+                    console.warn('Failed to load from session storage:', error);
+                    return null;
+                }
+            },
+
+            clear(key) {
+                try {
+                    sessionStorage.removeItem(`lga_${key}`);
+                } catch (error) {
+                    console.warn('Failed to clear session storage:', error);
+                }
+            }
+        };
+
         document.addEventListener('DOMContentLoaded', () => {
             leadGenerator = new LeadGenerator();
             handleExclusionFileUpload();
+
+            // Restore form state from session storage
+            restoreFormState();
+
+            // Save form state when values change
+            setupFormStatePersistence();
         });
+
+        // Restore form state from session storage
+        function restoreFormState() {
+            const formState = SessionManager.load('formState');
+            if (formState) {
+                // Restore job titles
+                if (formState.jobTitles) {
+                    formState.jobTitles.forEach(jobTitle => {
+                        const radio = document.querySelector(`input[name="jobTitle"][value="${jobTitle}"]`);
+                        if (radio) {
+                            radio.checked = true;
+                            radio.closest('.option-chip').classList.add('selected');
+                        }
+                    });
+                }
+
+                // Restore company sizes
+                if (formState.companySizes) {
+                    formState.companySizes.forEach(size => {
+                        const checkbox = document.querySelector(`input[name="companySize"][value="${size}"]`);
+                        if (checkbox) {
+                            checkbox.checked = true;
+                            checkbox.closest('.option-chip').classList.add('selected');
+                        }
+                    });
+                }
+
+                // Restore other form fields
+                if (formState.maxRecords) {
+                    const maxRecordsInput = document.getElementById('maxRecords');
+                    if (maxRecordsInput) maxRecordsInput.value = formState.maxRecords;
+                }
+            }
+        }
+
+        // Setup form state persistence
+        function setupFormStatePersistence() {
+            const form = document.getElementById('leadForm');
+            if (form) {
+                form.addEventListener('change', saveFormState);
+            }
+        }
+
+        // Save current form state
+        function saveFormState() {
+            const formData = {
+                jobTitles: Array.from(document.querySelectorAll('input[name="jobTitle"]:checked')).map(input => input.value),
+                companySizes: Array.from(document.querySelectorAll('input[name="companySize"]:checked')).map(input => input.value),
+                maxRecords: document.getElementById('maxRecords')?.value || '',
+                timestamp: Date.now()
+            };
+
+            SessionManager.save('formState', formData);
+        }
     </script>
 </body>
 </html>
