@@ -387,6 +387,9 @@
                 <button class="btn btn-secondary" onclick="refreshMaterials()">
                     📄 Refresh Materials
                 </button>
+                <button class="btn btn-warning" onclick="clearMaterials()">
+                    🗑️ Clear Materials
+                </button>
                 <button class="btn btn-warning" onclick="resetToDefault()">
                     ⚠️ Reset to Default
                 </button>
@@ -666,6 +669,40 @@
             showStatus('Refreshing product materials...', 'success');
             await loadProductMaterials();
             showStatus('Product materials refreshed!', 'success');
+        }
+
+        // Clear uploaded materials
+        async function clearMaterials() {
+            if (!confirm('Are you sure you want to clear all uploaded materials? This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                showStatus('Clearing uploaded materials...', 'success');
+
+                const response = await fetch('/api/leads/clear-materials', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus(data.message, 'success');
+
+                    // Reset materials data
+                    currentProductMaterials = { hasContent: false, materialCount: 0 };
+                    updateMaterialsDisplay();
+                    updatePreview();
+                } else {
+                    showStatus('Failed to clear materials: ' + data.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error clearing materials:', error);
+                showStatus('Error clearing materials: ' + error.message, 'error');
+            }
         }
 
         // Auto-update preview as user types (debounced)

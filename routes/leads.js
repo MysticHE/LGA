@@ -1509,6 +1509,31 @@ router.post('/clear-content-cache', (req, res) => {
     }
 });
 
+// Clear uploaded product materials
+router.post('/clear-materials', (req, res) => {
+    try {
+        global.productMaterials = global.productMaterials || new Map();
+        const materialCount = global.productMaterials.size;
+
+        // Clear all uploaded materials
+        global.productMaterials.clear();
+
+        res.json({
+            success: true,
+            message: `Successfully cleared ${materialCount} uploaded material(s)`,
+            clearedCount: materialCount
+        });
+
+    } catch (error) {
+        console.error('Clear materials error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to clear materials',
+            error: error.message
+        });
+    }
+});
+
 // Debug endpoint to check Excel file structure
 router.post('/debug-excel-structure', upload.single('excelFile'), async (req, res) => {
     try {
