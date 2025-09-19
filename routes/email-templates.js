@@ -1021,13 +1021,15 @@ async function deleteTemplateViaGraphAPI(graphClient, templateId) {
         // Find template row
         const templateIdIndex = headers.findIndex(h => h === 'Template_ID');
         let targetRowIndex = -1;
-        
+
         for (let i = 0; i < rows.length; i++) {
             if (rows[i][templateIdIndex] === templateId) {
-                targetRowIndex = i + 1; // +1 for 0-based table rows (excluding header)
+                targetRowIndex = i; // Table rows are 0-based (excluding header)
                 break;
             }
         }
+
+        console.log(`🔍 Delete operation: Template ${templateId} found at data row ${targetRowIndex}, table has ${rows.length} data rows`);
         
         if (targetRowIndex === -1) {
             return false;
@@ -1052,9 +1054,16 @@ async function deleteTemplateViaGraphAPI(graphClient, templateId) {
         }
 
         // Delete row from table
+        console.log(`🗑️ Attempting to delete row ${targetRowIndex} from table '${actualTableName}'`);
+
+        const deleteUrl = `/me/drive/items/${fileId}/workbook/tables/${actualTableName}/rows/itemAt(index=${targetRowIndex})`;
+        console.log(`🔗 Delete URL: ${deleteUrl}`);
+
         await graphClient
-            .api(`/me/drive/items/${fileId}/workbook/tables/${actualTableName}/rows/itemAt(index=${targetRowIndex})`)
+            .api(deleteUrl)
             .delete();
+
+        console.log(`✅ Successfully deleted template ${templateId} from Excel table`);
         
         return true;
         
