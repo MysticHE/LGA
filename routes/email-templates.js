@@ -759,20 +759,48 @@ async function addTemplateViaGraphAPI(graphClient, templateData) {
         // Generate template ID
         const templateId = `template_${Date.now()}`;
         
-        // Prepare template row data
-        const attachmentInfo = templateData.attachments ? JSON.stringify(templateData.attachments) : '';
-        const attachmentCount = templateData.attachments ? templateData.attachments.length : 0;
+        // First, check the existing table structure to see what columns we have
+        let existingHeaders = [];
+        try {
+            const usedRange = await graphClient
+                .api(`/me/drive/items/${fileId}/workbook/worksheets('${worksheetName}')/usedRange`)
+                .get();
 
+            if (usedRange && usedRange.values && usedRange.values.length > 0) {
+                existingHeaders = usedRange.values[0];
+                console.log(`📋 Existing Excel headers: ${existingHeaders.join(', ')}`);
+            }
+        } catch (headerError) {
+            console.warn('⚠️ Could not read existing headers, using default structure');
+        }
+
+        // Prepare template row data to match existing structure
         const templateRow = [
             templateId,
             templateData.Template_Name || '',
             templateData.Template_Type || '',
             templateData.Subject || '',
             templateData.Body || '',
-            templateData.Active || 'Yes',
-            attachmentInfo,
-            attachmentCount
+            templateData.Active || 'Yes'
         ];
+
+        // Only add attachment columns if they exist in the Excel structure
+        const hasAttachmentColumns = existingHeaders.includes('Attachments') || existingHeaders.includes('Attachment_Count');
+
+        if (hasAttachmentColumns) {
+            const attachmentInfo = templateData.attachments ? JSON.stringify(templateData.attachments) : '';
+            const attachmentCount = templateData.attachments ? templateData.attachments.length : 0;
+
+            // Find the correct positions for attachment columns
+            if (existingHeaders.includes('Attachments')) {
+                templateRow.push(attachmentInfo);
+            }
+            if (existingHeaders.includes('Attachment_Count')) {
+                templateRow.push(attachmentCount);
+            }
+        } else {
+            console.log('📋 No attachment columns found in Excel, skipping attachment data');
+        }
         
         // Discover what table to use
         let actualTableName = tableName;
@@ -1017,8 +1045,8 @@ async function createTemplatesTable(graphClient, fileId, worksheetName, tableNam
             // No existing tables found, will create new one
         }
         
-        // Define template headers matching the Excel columns
-        const headers = ['Template_ID', 'Template_Name', 'Template_Type', 'Subject', 'Body', 'Active', 'Attachments', 'Attachment_Count'];
+        // Define template headers matching the existing Excel structure (basic columns only)
+        const headers = ['Template_ID', 'Template_Name', 'Template_Type', 'Subject', 'Body', 'Active'];
         
         // Check if worksheet exists, create it if not
         try {
